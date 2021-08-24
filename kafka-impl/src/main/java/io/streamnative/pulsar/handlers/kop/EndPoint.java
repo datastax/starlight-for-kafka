@@ -23,11 +23,13 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 
 /**
  * The endpoint that KoP binds.
  */
+@Slf4j
 public class EndPoint {
 
     private static final String END_POINT_SEPARATOR = ",";
@@ -84,6 +86,7 @@ public class EndPoint {
     }
 
     public static EndPoint getPlainTextEndPoint(final String listeners) {
+        log.info("getPlainTextEndPoint {}", listeners);
         for (String listener : listeners.split(END_POINT_SEPARATOR)) {
             if (listener.startsWith(SecurityProtocol.PLAINTEXT.name())
                     || listener.startsWith(SecurityProtocol.SASL_PLAINTEXT.name())) {

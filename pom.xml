@@ -81,6 +81,7 @@
     <module>kafka-client-api</module>
     <module>kafka-client-factory</module>
     <module>kafka-impl</module>
+    <module>proxy</module>
     <module>oauth-client</module>
     <module>tests</module>
   </modules>
@@ -132,6 +133,7 @@
       <version>${pulsar.version}</version>
       <scope>provided</scope>
     </dependency>
+
 
     <dependency>
       <groupId>${pulsar.group.id}</groupId>
