@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.google.common.collect.ImmutableMap;
+import io.kubernetes.client.util.credentials.TokenFileAuthentication;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
 
@@ -138,6 +139,7 @@ public class KafkaProtocolProxyMain {
             }
             NamespaceName.validateNamespaceName(tokens[0], tokens[1]);
         }
+
 
         log.info("AuthenticationEnabled:  {}", kafkaConfig.isAuthenticationEnabled());
         log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());

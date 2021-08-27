@@ -80,6 +80,8 @@ import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
@@ -108,7 +110,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final PulsarAdmin admin;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
-    private final String authenticationToken;
+    // this is for Proxy -> Broker authentication
+    private final AuthenticationToken authenticationToken;
 
     private final boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -130,7 +133,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
         this.id = id;
-        this.authenticationToken = kafkaConfig.getKafkaProxyAuthenticationToken();
+        this.authenticationToken = new AuthenticationToken(kafkaConfig.getKafkaProxyAuthenticationToken());
 
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = Executors.newScheduledThreadPool(4);
@@ -1630,7 +1633,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     out = new DataOutputStream(socket.getOutputStream());
                     inputHandler = new Thread(this,"client-"+KafkaProxyRequestHandler.this.id + "-" + connectionKey);
                     inputHandler.start();
-                    if (authenticator != null && authenticator.session() != null  && authenticationToken != null) {
+                    if (authenticator != null && authenticator.session() != null) {
                         String originalPrincipal = authenticator.session().getPrincipal().getName();
                         log.debug("Authenticating to KOP broker with {} identity", originalPrincipal);
                         return saslHandshake() // send SASL mechanism
@@ -1682,7 +1685,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             );
 
             // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
-            String usernamePassword = "PROXY\u0000"+authenticator.session().getPrincipal().getName() + "\u0000" + authenticationToken;
+            String actualAuthenticationToken;
+            try {
+                // this can be token: or file://....
+                actualAuthenticationToken = authenticationToken.getAuthData().getCommandData();
+            } catch (PulsarClientException err) {
+                log.info("Cannot read token for Proxy authentication", err);
+                return FutureUtil.failedFuture(err);
+            }
+            String usernamePassword = "PROXY\u0000"+authenticator.session().getPrincipal().getName() + "\u0000" + actualAuthenticationToken;
             byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
             SaslAuthenticateRequest  request = new SaslAuthenticateRequest
                     .Builder(ByteBuffer.wrap(saslAuthBytes))
