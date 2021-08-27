@@ -13,76 +13,30 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
-
 import com.google.common.collect.ImmutableMap;
-import io.kubernetes.client.util.credentials.TokenFileAuthentication;
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.configuration.PropertiesConfiguration;
-
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
-import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import lombok.Getter;
-import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.stats.NullStatsLogger;
-import org.apache.kafka.common.internals.Topic;
-import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.PulsarServerException;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
-import org.apache.pulsar.broker.protocol.ProtocolHandler;
-import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
-import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.common.naming.TopicName;
-import org.apache.pulsar.common.policies.data.ClusterData;
-import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.metadata.api.MetadataCache;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
+
+import java.net.InetSocketAddress;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
-import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -112,6 +66,8 @@ public class KafkaProtocolProxyMain {
                 .builder()
                 .authentication(authentication)
                 .serviceHttpUrl((String) conf.getProperties().getOrDefault("webServiceUrl", "http://localhost:8080"))
+                .allowTlsInsecureConnection(true) // TODO make this configurable
+                .enableTlsHostnameVerification(false) // TODO make this configurable
                 .build();
 
         // init config
@@ -189,7 +145,7 @@ public class KafkaProtocolProxyMain {
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
-                ImmutableMap.<InetSocketAddress, ChannelInitializer<SocketChannel>>builder();
+                ImmutableMap.builder();
 
             final Map<SecurityProtocol, EndPoint> advertisedEndpointMap =
                     EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners());

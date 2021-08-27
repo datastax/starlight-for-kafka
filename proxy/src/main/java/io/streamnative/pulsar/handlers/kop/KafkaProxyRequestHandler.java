@@ -264,7 +264,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     // Leverage pulsar admin to get partitioned topic metadata
     private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        System.out.println("getPartitionedTopicMetadataAsync "+topicName);
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
@@ -469,7 +468,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             completeOneTopic.run();
                                         }
                                     } else { // the topic already existed
-                                        System.out.println("response "+topic +" "+partitionedTopicMetadata);
                                         if (partitionedTopicMetadata.partitions > 0) {
                                             if (log.isDebugEnabled()) {
                                                 log.debug("Topic {} has {} partitions",
@@ -527,7 +525,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(finalResponse);
                 return;
             }
-
             pulsarTopics.forEach((topic, list) -> {
                 final int partitionsNumber = list.size();
                 AtomicInteger partitionsCompleted = new AtomicInteger(0);
@@ -595,6 +592,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             clusterName,
                                             controllerId,
                                             allTopicMetadata);
+                                    log.info("Metadata response {}", finalResponse);
                                     resultFuture.complete(finalResponse);
                                 }
                             }
@@ -1223,8 +1221,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                 // It's the `kafkaAdvertisedListeners` config that's written to ZK
                 final String listeners = stringOptional.get();
-                final EndPoint endPoint =
-                        (tlsEnabled ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners));
+                // here we always connect in pleintext to the Pulsar broker
+                final EndPoint endPoint = EndPoint.getPlainTextEndPoint(listeners);
                 final Node node = newNode(endPoint.getInetAddress());
 
                 if (log.isDebugEnabled()) {
@@ -1240,6 +1238,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
                 topicsLeaders.put(topic.toString(), node);
                 returnFuture.complete(newPartitionMetadata(topic, node));
+            }).exceptionally(error -> {
+                log.error("bad error", error);
+                return null;
             });
         return returnFuture;
     }
