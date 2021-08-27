@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -107,8 +108,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final PulsarAdmin admin;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
+    private final String authenticationToken;
 
-    private final Boolean tlsEnabled;
+    private final boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
     private final int defaultNumPartitions;
@@ -124,10 +126,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     public KafkaProxyRequestHandler(String id, PulsarAdmin pulsarAdmin,
                                AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
-                               Boolean tlsEnabled,
+                               boolean tlsEnabled,
                                EndPoint advertisedEndPoint) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
         this.id = id;
+        this.authenticationToken = kafkaConfig.getKafkaProxyAuthenticationToken();
 
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = Executors.newScheduledThreadPool(4);
@@ -162,7 +165,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void channelPrepare(ChannelHandlerContext ctx, ByteBuf requestBuf,
                                   BiConsumer<Long, Throwable> registerRequestParseLatency,
                                   BiConsumer<String, Long> registerRequestLatency) throws AuthenticationException {
-        log.info("channelPrepare {} {}", ctx.channel(), authenticator);
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
         }
@@ -742,7 +744,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                 final String fullPartitionName = KopTopic.toString(topicPartition);
                 // TODO: have a better way to find an unused correlation id
-                int dummyCorrelationId = new Random().nextInt();
+                int dummyCorrelationId = getDummyCorrelationId();
                 Map<TopicPartition, MemoryRecords> recordsCopy = new HashMap<>();
                 recordsCopy.put(topicPartition, records);
 
@@ -793,6 +795,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         });
             });
         }
+    }
+
+    private int getDummyCorrelationId() {
+        return new Random().nextInt();
     }
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
@@ -938,7 +944,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                 final String fullPartitionName = KopTopic.toString(topicPartition);
                 // TODO: have a better way to find an unused correlation id
-                int dummyCorrelationId = new Random().nextInt();
+                int dummyCorrelationId = getDummyCorrelationId();
                 Map<TopicPartition, FetchRequest.PartitionData> recordsCopy = new HashMap<>();
                 recordsCopy.put(topicPartition, partitionData);
 
@@ -1143,8 +1149,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
-    private CompletableFuture<Optional<String>>
-    getProtocolDataToAdvertise(String pulsarAddress,
+    private CompletableFuture<Optional<String>>  getProtocolDataToAdvertise(String pulsarAddress,
                                TopicName topic) {
 
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
@@ -1169,7 +1174,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 .replace("6652", "19093")
                 .replace("6653", "19094")
         ;
-        log.info("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
+        log.debug("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
                 topic, pulsarAddress, kafkaAddress);
 
         return CompletableFuture.completedFuture(Optional.of(kafkaAddress));
@@ -1452,14 +1457,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             RT request = (RT) kafkaHeaderAndRequest.getRequest();
 
             String transactionalId = keyExtractor.apply(request);
-            log.info("handleRequestWithCoordinator {} {} {}", request, transactionalId);
+            if (!isNoisyRequest(request)) {
+                log.info("handleRequestWithCoordinator {} {} {} {}", request.getClass().getSimpleName(), request, transactionalId);
+            }
 
             findCoordinator(coordinatorType, transactionalId)
                     .thenAccept(metadata -> {
                         grabConnectionToBroker(metadata.leader().host(), metadata.leader().port())
                                 .forwardRequest(kafkaHeaderAndRequest)
                                 .thenAccept(serverResponse -> {
-                                    log.info("Sending {}.", serverResponse);
+                                    if (!isNoisyRequest(request)) {
+                                        log.info("Sending {}.", serverResponse);
+                                    }
                                     resultFuture.complete(serverResponse);
                                 }).exceptionally(err -> {
                                     resultFuture.complete(errorBuilder.apply(request));
@@ -1474,6 +1483,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             log.error("Runtime error "+err, err);
             resultFuture.completeExceptionally(err);
         }
+    }
+
+    private <RT extends AbstractRequest> boolean isNoisyRequest(RT request) {
+        // Consumers send these packets very often
+        return (request instanceof HeartbeatRequest)
+                || (request instanceof OffsetCommitRequest);
     }
 
     @Override
@@ -1557,6 +1572,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         private InputStream in;
         private Socket socket;
         private Thread inputHandler;
+        private volatile boolean closed;
 
         private final ConcurrentHashMap<Integer, PendingAction> pendingRequests = new ConcurrentHashMap<>();
 
@@ -1592,7 +1608,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         throw new Exception("unknown correlationId " + header.correlationId());
                     }
                 }
-            } catch (Throwable t) {
+            } catch (SocketException t) {
+                if (!closed) {
+                    log.error("Network error {}", t);
+                    close();
+                }
+            }catch (Throwable t) {
                 log.error("bad error", t);
                 close();
             }
@@ -1603,12 +1624,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             {
                 if (socket == null)
                 {
-                    log.info("connecting to {} {}", brokerHost, brokerPort);
+                    log.info("Opening proxy connection to {} {}", brokerHost, brokerPort);
                     socket = new Socket(brokerHost, brokerPort);
                     in = socket.getInputStream();
                     out = new DataOutputStream(socket.getOutputStream());
                     inputHandler = new Thread(this,"client-"+KafkaProxyRequestHandler.this.id + "-" + connectionKey);
                     inputHandler.start();
+                    if (authenticator != null && authenticator.session() != null  && authenticationToken != null) {
+                        String originalPrincipal = authenticator.session().getPrincipal().getName();
+                        log.debug("Authenticating to KOP broker with {} identity", originalPrincipal);
+                        return saslHandshake() // send SASL mechanism
+                                .thenCompose( ___ -> authenticate()); // send Proxy Token, as Username we send the authenticated principal
+                    }
                 }
                 return CompletableFuture.completedFuture(socket);
             } catch (Exception err) {
@@ -1618,6 +1645,71 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             }
         }
 
+        private CompletableFuture<?> saslHandshake() {
+            int dummyCorrelationId = getDummyCorrelationId();
+            RequestHeader header = new RequestHeader(
+                    ApiKeys.SASL_HANDSHAKE,
+                    ApiKeys.SASL_HANDSHAKE.latestVersion(),
+                    "proxy",
+                    dummyCorrelationId
+            );
+            SaslHandshakeRequest  request = new SaslHandshakeRequest
+                    .Builder("PLAIN")
+                    .build();
+
+            ByteBuffer buffer = request.serialize(header);
+
+            KafkaHeaderAndRequest fullRequest = new KafkaHeaderAndRequest(
+                    header,
+                    request,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+            CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
+            sendRequestOnTheWire(fullRequest,result);
+            return result.thenAccept(response -> {
+                log.debug("SASL Handshake completed with success");
+            });
+        }
+
+        private CompletableFuture<?> authenticate() {
+            int dummyCorrelationId = getDummyCorrelationId();
+            RequestHeader header = new RequestHeader(
+                    ApiKeys.SASL_AUTHENTICATE,
+                    ApiKeys.SASL_AUTHENTICATE.latestVersion(),
+                    "proxy",
+                    dummyCorrelationId
+            );
+
+            // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
+            String usernamePassword = "PROXY\u0000"+authenticator.session().getPrincipal().getName() + "\u0000" + authenticationToken;
+            byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
+            SaslAuthenticateRequest  request = new SaslAuthenticateRequest
+                    .Builder(ByteBuffer.wrap(saslAuthBytes))
+                    .build();
+
+            ByteBuffer buffer = request.serialize(header);
+
+            KafkaHeaderAndRequest fullRequest = new KafkaHeaderAndRequest(
+                    header,
+                    request,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+            CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
+            sendRequestOnTheWire(fullRequest,result);
+            return result.thenAccept(response -> {
+                    SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
+                    if (saslResponse.error() != Errors.NONE) {
+                        log.error("Failed authentication against KOP broker {}{}", saslResponse.error(), saslResponse.errorMessage());
+                        close();
+                        throw new CompletionException(saslResponse.error().exception());
+                    } else {
+                        log.debug("Success step AUTH to KOP broker {} {} {}", saslResponse.error(), saslResponse.errorMessage(), saslResponse.saslAuthBytes());
+                    }
+            });
+        }
+
         public CompletableFuture<AbstractResponse> forwardRequest(KafkaHeaderAndRequest request) {
             CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
             ensureConnection().whenComplete( (a, error) -> {
@@ -1625,30 +1717,35 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     result.completeExceptionally(error);
                     return;
                 }
-                byte[] bytes = ByteBufUtil.getBytes(request.getBuffer());
-                // the Kafka client sends unique values for this correlationId
-                int correlationId = request.getHeader().correlationId();
-                log.debug("Sending request id {} {} apiVersion {}", correlationId, new String(bytes, StandardCharsets.US_ASCII), request.getHeader().apiVersion());
-                pendingRequests.put(correlationId, new PendingAction(result, request.getHeader().apiKey(), request.getHeader().apiVersion()));
-                synchronized (out)
-                {
-                    try
-                    {
-                        out.writeInt(bytes.length);
-                        out.write(bytes);
-                        out.flush();
-                    }
-                    catch (IOException err)
-                    {
-                        forgetMetadataForFailedBroker(brokerHost, brokerPort);
-                        throw new CompletionException(err);
-                    }
-                }
+                sendRequestOnTheWire(request, result);
             });
             return result;
         }
 
+        private void sendRequestOnTheWire(KafkaHeaderAndRequest request, CompletableFuture<AbstractResponse> result) {
+            byte[] bytes = ByteBufUtil.getBytes(request.getBuffer());
+            // the Kafka client sends unique values for this correlationId
+            int correlationId = request.getHeader().correlationId();
+            log.debug("Sending request id {} {} apiVersion {}", correlationId, new String(bytes, StandardCharsets.US_ASCII), request.getHeader().apiVersion());
+            pendingRequests.put(correlationId, new PendingAction(result, request.getHeader().apiKey(), request.getHeader().apiVersion()));
+            synchronized (out)
+            {
+                try
+                {
+                    out.writeInt(bytes.length);
+                    out.write(bytes);
+                    out.flush();
+                }
+                catch (IOException err)
+                {
+                    forgetMetadataForFailedBroker(brokerHost, brokerPort);
+                    throw new CompletionException(err);
+                }
+            }
+        }
+
         public void close() {
+            closed = true;
             connectionsToBrokers.remove(connectionKey);
             pendingRequests.values().forEach(r->{
                 r.response.completeExceptionally(new Exception("Connection closed by the client"));

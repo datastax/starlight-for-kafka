@@ -86,7 +86,6 @@ public class EndPoint {
     }
 
     public static EndPoint getPlainTextEndPoint(final String listeners) {
-        log.info("getPlainTextEndPoint {}", listeners);
         for (String listener : listeners.split(END_POINT_SEPARATOR)) {
             if (listener.startsWith(SecurityProtocol.PLAINTEXT.name())
                     || listener.startsWith(SecurityProtocol.SASL_PLAINTEXT.name())) {

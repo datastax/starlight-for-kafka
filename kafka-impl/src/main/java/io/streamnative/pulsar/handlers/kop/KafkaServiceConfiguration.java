@@ -310,6 +310,18 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Roles to be considered 'proxy', on the KOP broker"
+    )
+    private Set<String> proxyRoles = new HashSet<String>();
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Token (token:xxxx) to be used by the KOP proxy to authenticate to the KOP brokers"
+    )
+    private String kafkaProxyAuthenticationToken;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Maximum number of entries that are read from cursor once per time, default is 5"
     )
     private int maxReadEntriesNum = 5;
