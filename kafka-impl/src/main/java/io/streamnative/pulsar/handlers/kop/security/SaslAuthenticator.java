@@ -20,6 +20,7 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -69,7 +70,7 @@ public class SaslAuthenticator {
 
     @Getter
     private static volatile AuthenticationService authenticationService = null;
-    private final BrokerService brokerService;
+
     private final PulsarAdmin admin;
     private final Set<String> allowedMechanisms;
     private final AuthenticateCallbackHandler oauth2CallbackHandler;
@@ -109,8 +110,24 @@ public class SaslAuthenticator {
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        this.brokerService = pulsarService.getBrokerService();
+        if (SaslAuthenticator.authenticationService == null) {
+            SaslAuthenticator.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
+        }
         this.admin = pulsarService.getAdminClient();
+        this.allowedMechanisms = allowedMechanisms;
+        this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
+                ? createOauth2CallbackHandler(config) : null;
+        this.enableKafkaSaslAuthenticateHeaders = false;
+    }
+
+    public SaslAuthenticator(PulsarAdmin admin,
+                             AuthenticationService authenticationService,
+                             Set<String> allowedMechanisms,
+                             KafkaServiceConfiguration config) throws PulsarServerException {
+        if (SaslAuthenticator.authenticationService == null) {
+            SaslAuthenticator.authenticationService = authenticationService;
+        }
+        this.admin = admin;
         this.allowedMechanisms = allowedMechanisms;
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
                 ? createOauth2CallbackHandler(config) : null;
@@ -123,14 +140,9 @@ public class SaslAuthenticator {
                              BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException {
         checkArgument(requestBuf.readableBytes() > 0);
-
         if (saslServer != null && saslServer.isComplete()) {
             setState(State.COMPLETE);
             return;
-        }
-
-        if (authenticationService == null) {
-            authenticationService = brokerService.getAuthenticationService();
         }
         switch (state) {
             case HANDSHAKE_OR_VERSIONS_REQUEST:
@@ -400,6 +412,8 @@ public class SaslAuthenticator {
                     log.debug("Authenticate successfully for client, header {}, request {}, session {}",
                             header, saslAuthenticateRequest, session);
                 }
+                log.info("Authenticate successfully for client, header {}, request {}, session {}",
+                        header, saslAuthenticateRequest, session);
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 sendKafkaResponse(ctx,
@@ -411,6 +425,8 @@ public class SaslAuthenticator {
                     log.debug("Authenticate failed for client, header {}, request {}, reason {}",
                             header, saslAuthenticateRequest, e.getMessage());
                 }
+                log.error("Authenticate failed for client, header {}, request {}, reason {}",
+                        header, saslAuthenticateRequest, e.getMessage());
             }
         }
     }

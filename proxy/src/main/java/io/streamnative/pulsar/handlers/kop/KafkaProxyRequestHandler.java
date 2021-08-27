@@ -37,6 +37,7 @@ import javax.naming.AuthenticationException;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.NotImplementedException;
 
@@ -75,6 +76,7 @@ import org.apache.kafka.common.requests.*;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -110,12 +112,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
     private final int defaultNumPartitions;
-    public final int maxReadEntriesNum;
     private final String offsetsTopicName;
     private final String txnTopicName;
     private final Set<String> allowedNamespaces;
-    // store the group name for current connected client.
-    private final ConcurrentHashMap<String, String> currentConnectedGroup;
     private final String groupIdStoredPath;
     @Getter
     private final EntryFormatter entryFormatter;
@@ -123,6 +122,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
 
     public KafkaProxyRequestHandler(String id, PulsarAdmin pulsarAdmin,
+                               AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint) throws Exception {
@@ -132,15 +132,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = Executors.newScheduledThreadPool(4);
         this.admin = pulsarAdmin;
-        final boolean authenticationEnabled = false; // TODO
-        this.authenticator = null; // TODO
+        final boolean authenticationEnabled = kafkaConfig.isAuthenticationEnabled();
+        this.authenticator = authenticationEnabled
+                ? new SaslAuthenticator(pulsarAdmin, authenticationService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
+                : null;
         final boolean authorizationEnabled = false;
         this.authorizer = null;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
-        this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
         this.offsetsTopicName = new KopTopic(String.join("/",
                 kafkaConfig.getKafkaMetadataTenant(),
                 kafkaConfig.getKafkaMetadataNamespace(),
@@ -153,20 +154,30 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         ).getFullName();
         this.allowedNamespaces = kafkaConfig.getKopAllowedNamespaces();
         this.entryFormatter = EntryFormatterFactory.create(kafkaConfig.getEntryFormat());
-        this.currentConnectedGroup = new ConcurrentHashMap<>();
         this.groupIdStoredPath = kafkaConfig.getGroupIdZooKeeperPath();
+
+    }
+
+    @Override
+    protected void channelPrepare(ChannelHandlerContext ctx, ByteBuf requestBuf,
+                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
+                                  BiConsumer<String, Long> registerRequestLatency) throws AuthenticationException {
+        log.info("channelPrepare {} {}", ctx.channel(), authenticator);
+        if (authenticator != null) {
+            authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency);
+        }
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
-        log.info("channel active: {}", ctx.channel());
+        log.info("Client connected: {}", ctx.channel());
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
-        log.info("channel inactive {}", ctx.channel());
+        log.info("Client disconnected {}", ctx.channel());
         close();
     }
 
@@ -174,11 +185,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void close() {
         if (isActive.getAndSet(false)) {
             super.close();
-            String clientHost = ctx.channel().remoteAddress().toString();
-            if (currentConnectedGroup.containsKey(clientHost)){
-                log.info("currentConnectedGroup remove {}", clientHost);
-                currentConnectedGroup.remove(clientHost);
-            }
             connectionsToBrokers.values().forEach(c -> {
                 c.close();
             });
@@ -186,17 +192,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected boolean hasAuthenticated(KafkaHeaderAndRequest request) {
+    protected boolean hasAuthenticated() {
         return authenticator == null || authenticator.complete();
-    }
-
-    @Override
-    protected void authenticate(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                CompletableFuture<AbstractResponse> responseFuture) throws AuthenticationException {
-        if (authenticator != null) {
-            authenticator.authenticate(
-                    kafkaHeaderAndRequest.getHeader(), kafkaHeaderAndRequest.getRequest(), responseFuture);
-        }
     }
 
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
@@ -402,7 +399,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                 authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((authorized, ex) -> {
-                        System.out.println("authorize success");
                         if (ex != null) {
                             log.error("Describe topic authorize failed, topic - {}. {}",
                                     fullTopicName, ex.getMessage());
@@ -420,9 +416,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         // the topic will be created first.
                         getPartitionedTopicMetadataAsync(fullTopicName)
                                 .whenComplete((partitionedTopicMetadata, throwable) -> {
-                                    System.out.println("getPartitionedTopicMetadataAsync for "+fullTopicName+" -> "+partitionedTopicMetadata+" "+throwable);
+                                    log.info("getPartitionedTopicMetadataAsync for "+fullTopicName+" -> "+partitionedTopicMetadata, throwable);
                                     if (throwable != null) {
-                                        throwable.printStackTrace(System.out);
                                         if (throwable instanceof PulsarAdminException.NotFoundException) {
                                             if (kafkaConfig.isAllowAutoTopicCreation()
                                                     && metadataRequest.allowAutoTopicCreation()) {

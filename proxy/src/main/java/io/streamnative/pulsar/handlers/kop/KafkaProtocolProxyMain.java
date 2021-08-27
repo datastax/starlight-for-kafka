@@ -58,6 +58,7 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.namespace.NamespaceBundleOwnershipListener;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
@@ -95,8 +96,11 @@ public class KafkaProtocolProxyMain {
     private KafkaServiceConfiguration kafkaConfig;
 
     private PulsarAdmin pulsarAdmin;
+    private AuthenticationService authenticationService;
 
     public void initialize(ServiceConfiguration conf) throws Exception {
+
+        authenticationService = new AuthenticationService(conf);
 
         String auth = conf.getBrokerClientAuthenticationPlugin();
         String authParams = conf.getBrokerClientAuthenticationParameters();
@@ -122,6 +126,7 @@ public class KafkaProtocolProxyMain {
             kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
+
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
         // Validate the namespaces
@@ -133,6 +138,9 @@ public class KafkaProtocolProxyMain {
             }
             NamespaceName.validateNamespaceName(tokens[0], tokens[1]);
         }
+
+        log.info("AuthenticationEnabled:  {}", kafkaConfig.isAuthenticationEnabled());
+        log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());
     }
 
     public static void main(String ... args) throws Exception {
@@ -147,8 +155,9 @@ public class KafkaProtocolProxyMain {
         ServiceConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ServiceConfiguration.class);
         proxy.initialize(serviceConfiguration);
         proxy.start();
-        System.out.println("STARTED!");
+        log.info("Started");
         Thread.sleep(Integer.MAX_VALUE);
+        proxy.close();
     }
 
     public void start() {
@@ -192,12 +201,12 @@ public class KafkaProtocolProxyMain {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
-                                kafkaConfig, false,  advertisedEndPoint));
+                                authenticationService, kafkaConfig, false,  advertisedEndPoint));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
-                                kafkaConfig, true, advertisedEndPoint));
+                                authenticationService, kafkaConfig, true, advertisedEndPoint));
                         break;
                 }
             });

@@ -24,6 +24,7 @@ import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.metadata.api.MetadataCache;
@@ -42,6 +43,8 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     @Getter
     private final PulsarAdmin pulsarAdmin;
     @Getter
+    private final AuthenticationService authenticationService;
+    @Getter
     private final KafkaServiceConfiguration kafkaConfig;
 
     @Getter
@@ -54,10 +57,12 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
 
     public KafkaProxyChannelInitializer(
                                    PulsarAdmin pulsarAdmin,
+                                   AuthenticationService authenticationService,
                                    KafkaServiceConfiguration kafkaConfig,
                                    boolean enableTLS,
                                    EndPoint advertisedEndPoint) {
         super();
+        this.authenticationService = authenticationService;
         this.pulsarAdmin = pulsarAdmin;
         this.kafkaConfig = kafkaConfig;
         this.enableTls = enableTLS;
@@ -79,7 +84,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaProxyRequestHandler(id, pulsarAdmin, kafkaConfig,
+            new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
                     enableTls, advertisedEndPoint));
     }
 
