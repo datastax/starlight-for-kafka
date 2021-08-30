@@ -49,6 +49,18 @@
     <version>${pulsar.version}</version>
   </dependency>
 
+    <dependency>
+      <groupId>${pulsar.group.id}</groupId>
+      <artifactId>pulsar-proxy</artifactId>
+      <version>${pulsar.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
   <dependency>
     <groupId>${pulsar.group.id}</groupId>
     <artifactId>pulsar-client-original</artifactId>
@@ -73,6 +85,7 @@
 
   <plugin>
         <artifactId>maven-assembly-plugin</artifactId>
+    <version>3.3.0</version>
     <executions>
       <execution>
         <phase>package</phase>
@@ -90,7 +103,24 @@
           </descriptorRefs>
         </configuration>
       </plugin>
-
+      <plugin>
+        <groupId>org.apache.nifi</groupId>
+        <artifactId>nifi-nar-maven-plugin</artifactId>
+        <version>1.2.0</version>
+        <extensions>true</extensions>
+        <configuration>
+          <finalName>${project.artifactId}-${project.version}</finalName>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-nar</id>
+            <phase>package</phase>
+            <goals>
+              <goal>nar</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
 
   </build>

@@ -12,7 +12,6 @@
  * limitations under the License.
  */
 package io.streamnative.pulsar.handlers.kop;
-
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
@@ -24,8 +23,8 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
-import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
@@ -53,9 +52,9 @@ public class KafkaProtocolProxyMain {
     private PulsarAdmin pulsarAdmin;
     private AuthenticationService authenticationService;
 
-    public void initialize(ServiceConfiguration conf) throws Exception {
+    public void initialize(ProxyConfiguration conf) throws Exception {
 
-        authenticationService = new AuthenticationService(conf);
+        authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
 
         String auth = conf.getBrokerClientAuthenticationPlugin();
         String authParams = conf.getBrokerClientAuthenticationParameters();
@@ -71,18 +70,14 @@ public class KafkaProtocolProxyMain {
                 .build();
 
         // init config
-        if (conf instanceof KafkaServiceConfiguration) {
-            // in unit test, passed in conf will be KafkaServiceConfiguration
-            kafkaConfig = (KafkaServiceConfiguration) conf;
-        } else {
-            // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
-            kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
 
-            // some of the configs value in conf.properties may not updated.
-            // So need to get latest value from conf itself
-            kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
-            kafkaConfig.setBindAddress(conf.getBindAddress());
-        }
+        // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
+        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+
+        // some of the configs value in conf.properties may not updated.
+        // So need to get latest value from conf itself
+        kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
+        kafkaConfig.setBindAddress(conf.getBindAddress());
 
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
@@ -110,7 +105,7 @@ public class KafkaProtocolProxyMain {
         });
         String configFile = args.length > 0 ? args[0] : "conf/kop_proxy.conf";
         KafkaProtocolProxyMain proxy = new KafkaProtocolProxyMain();
-        ServiceConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ServiceConfiguration.class);
+        ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ProxyConfiguration.class);
         proxy.initialize(serviceConfiguration);
         proxy.start();
         log.info("Started");

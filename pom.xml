@@ -122,6 +122,13 @@
 
     <dependency>
       <groupId>${pulsar.group.id}</groupId>
+      <artifactId>pulsar-proxy</artifactId>
+      <version>${pulsar.version}</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>${pulsar.group.id}</groupId>
       <artifactId>pulsar-client-original</artifactId>
       <version>${pulsar.version}</version>
       <scope>provided</scope>
