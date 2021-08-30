@@ -82,27 +82,6 @@
 
   <build>
     <plugins>
-
-  <plugin>
-        <artifactId>maven-assembly-plugin</artifactId>
-    <version>3.3.0</version>
-    <executions>
-      <execution>
-        <phase>package</phase>
-        <goals><goal>single</goal></goals>
-      </execution>
-    </executions>
-        <configuration>
-          <archive>
-            <manifest>
-              <mainClass>io.streamnative.pulsar.handlers.kop.KafkaProtocolProxyMain</mainClass>
-            </manifest>
-          </archive>
-          <descriptorRefs>
-            <descriptorRef>jar-with-dependencies</descriptorRef>
-          </descriptorRefs>
-        </configuration>
-      </plugin>
       <plugin>
         <groupId>org.apache.nifi</groupId>
         <artifactId>nifi-nar-maven-plugin</artifactId>
@@ -121,6 +100,29 @@
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <artifactId>maven-assembly-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>single</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>io.streamnative.pulsar.handlers.kop.KafkaProtocolProxyMainainClass>
+            </manifest>
+          </archive>
+          <descriptorRefs>
+            <descriptorRef>jar-with-dependencies</descriptorRef>
+          </descriptorRefs>
+        </configuration>
+      </plugin>
+
     </plugins>
 
   </build>

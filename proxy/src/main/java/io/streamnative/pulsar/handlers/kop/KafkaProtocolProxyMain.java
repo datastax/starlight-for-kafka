@@ -33,7 +33,6 @@ import org.apache.pulsar.common.naming.NamespaceName;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -107,13 +106,22 @@ public class KafkaProtocolProxyMain {
         KafkaProtocolProxyMain proxy = new KafkaProtocolProxyMain();
         ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ProxyConfiguration.class);
         proxy.initialize(serviceConfiguration);
-        proxy.start();
+        proxy.startStandalone();
         log.info("Started");
         Thread.sleep(Integer.MAX_VALUE);
         proxy.close();
     }
 
     public void start() {
+        log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
+        log.info("Git Revision {}", KopVersion.getGitSha());
+        log.info("Built by {} on {} at {}",
+                KopVersion.getBuildUser(),
+                KopVersion.getBuildHost(),
+                KopVersion.getBuildTime());
+    }
+
+    public void startStandalone() {
 
         log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -133,6 +141,12 @@ public class KafkaProtocolProxyMain {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    public void close() throws Exception {
+        if (pulsarAdmin != null) {
+            pulsarAdmin.close();
+        }
     }
 
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -170,10 +184,5 @@ public class KafkaProtocolProxyMain {
             return null;
         }
     }
-
-    public void close() throws Exception {
-        pulsarAdmin.close();
-    }
-
 
 }

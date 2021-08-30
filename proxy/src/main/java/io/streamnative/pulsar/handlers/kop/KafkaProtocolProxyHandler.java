@@ -46,7 +46,7 @@ public class KafkaProtocolProxyHandler implements ProtocolHandler  {
      * @return true if the protocol handler can handle the given protocol, otherwise false.
      */
     public boolean accept(String protocol) {
-        return "kakfa".equals(protocol);
+        return protocolName().equals(protocol);
     }
 
     /**
