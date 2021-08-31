@@ -322,6 +322,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Mapping for Pulsar Broker ports to KOP ports, default is 6650=19092,6651=19093"
+    )
+    private String kafkaProxyBrokerPortToKopMapping;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Maximum number of entries that are read from cursor once per time, default is 5"
     )
     private int maxReadEntriesNum = 5;

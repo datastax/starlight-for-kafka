@@ -1164,18 +1164,29 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             returnFuture.complete(Optional.empty());
             return returnFuture;
         }
-
+        log.info("getProtocolDataToAdvertise {} KafkaProxyBrokerPortToKopMapping{}", pulsarAddress, kafkaConfig.getKafkaProxyBrokerPortToKopMapping());
         // the Mapping to the KOP port is done per-convention
         // this saves us from a Metadata lookup hop
         String kafkaAddress = pulsarAddress
                 .replace("pulsar://", "PLAINTEXT://")
-                .replace("pulsar+ssl://", "SSL://")
-                .replace("6650", "19092")
+                .replace("pulsar+ssl://", "SSL://");
+
+        kafkaAddress = kafkaAddress.replace("6650", "19092")
                 .replace("6651", "19093")
                 .replace("6652", "19093")
-                .replace("6653", "19094")
-        ;
-        log.debug("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
+                .replace("6653", "19094");
+
+        if (kafkaConfig.getKafkaProxyBrokerPortToKopMapping() != null) {
+            String[] split = kafkaConfig.getKafkaProxyBrokerPortToKopMapping().split(",");
+            for (String mapping : split) {
+                String[] mappingSplit = mapping.split("=");
+                if (mappingSplit.length == 2) {
+                    kafkaAddress = kafkaAddress.replace(mappingSplit[0].trim(), mappingSplit[1].trim());
+                }
+            }
+        }
+
+        log.info("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
                 topic, pulsarAddress, kafkaAddress);
 
         return CompletableFuture.completedFuture(Optional.of(kafkaAddress));

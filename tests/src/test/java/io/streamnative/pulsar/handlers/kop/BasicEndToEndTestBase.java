@@ -74,13 +74,21 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    private String bootstrapServers() {
+    protected String bootstrapServers() {
         return "localhost:" + getKafkaBrokerPort();
     }
 
+    protected String bootstrapServersUsingProxy() {
+        return "localhost:" + getKafkaProxyPort();
+    }
+
+
     protected KafkaProducer<String, String> newKafkaProducer() {
+        return newKafkaProducer(bootstrapServers());
+    }
+    protected KafkaProducer<String, String> newKafkaProducer(String boostrapServers) {
         final Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, boostrapServers);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         return new KafkaProducer<>(props);
@@ -91,8 +99,12 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     }
 
     protected KafkaConsumer<String, String> newKafkaConsumer(final String topic, final String group) {
+        return newKafkaConsumer(topic, group, bootstrapServers());
+    }
+
+    protected KafkaConsumer<String, String> newKafkaConsumer(final String topic, final String group, final String boostrapServers) {
         final Properties props =  new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,boostrapServers);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.GROUP_ID_CONFIG, (group == null) ? GROUP_ID : group);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
@@ -194,7 +206,7 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
     protected List<String> receiveMessages(final KafkaConsumer<String, String> consumer, int numMessages) {
         List<String> values = new ArrayList<>();
         while (numMessages > 0) {
-            for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(100))) {
+            for (ConsumerRecord<String, String> record : consumer.poll(Duration.ofMillis(1000))) {
                 if (log.isDebugEnabled()) {
                     log.debug("KafkaConsumer receive: {}", record.value());
                 }

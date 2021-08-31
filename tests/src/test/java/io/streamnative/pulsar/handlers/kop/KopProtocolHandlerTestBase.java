@@ -69,6 +69,8 @@ import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.policies.data.ClusterData;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
+import org.apache.pulsar.proxy.server.ProxyConfiguration;
+import org.apache.pulsar.proxy.server.ProxyService;
 import org.apache.pulsar.zookeeper.ZooKeeperClientFactory;
 import org.apache.pulsar.zookeeper.ZookeeperClientFactoryImpl;
 import org.apache.zookeeper.CreateMode;
@@ -84,18 +86,23 @@ import org.eclipse.jetty.server.Server;
 public abstract class KopProtocolHandlerTestBase {
 
     protected KafkaServiceConfiguration conf;
+    protected ProxyService pulsarProxy;
     protected PulsarService pulsar;
     protected PulsarAdmin admin;
     protected URL brokerUrl;
     protected URL brokerUrlTls;
     protected PulsarClient pulsarClient;
 
+    @Getter
     protected int brokerWebservicePort = PortManager.nextFreePort();
+    @Getter
     protected int brokerWebservicePortTls = PortManager.nextFreePort();
     @Getter
     protected int brokerPort = PortManager.nextFreePort();
     @Getter
     protected int kafkaBrokerPort = PortManager.nextFreePort();
+    @Getter
+    protected int kafkaProxyPort = PortManager.nextFreePort();
     @Getter
     protected int kafkaBrokerPortTls = PortManager.nextFreePort();
     @Getter
@@ -176,7 +183,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setGroupInitialRebalanceDelayMs(0);
 
         // set protocol related config
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
+        URL testHandlerUrl = this.getClass().getClassLoader().getResource("protocols/test-protocol-handler.nar");
         Path handlerPath;
         try {
             handlerPath = Paths.get(testHandlerUrl.toURI());
@@ -698,5 +705,32 @@ public abstract class KopProtocolHandlerTestBase {
         props.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return props;
+    }
+
+    protected void startProxy() throws Exception {
+        ProxyConfiguration proxyConfiguration = new ProxyConfiguration();
+        proxyConfiguration.getProperties().put("kafkaListeners", PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
+        proxyConfiguration.getProperties().put("webServiceUrl", "http://localhost:"+getBrokerWebservicePort());
+
+        // Map Pulsar port to KOP port
+        proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", getBrokerPort() + " = " + getKafkaBrokerPort());
+
+        URL testHandlerUrl = this.getClass().getClassLoader().getResource("proxyprotocols/test-protocol-proxy-handler.nar");
+        Path handlerPath = Paths.get(testHandlerUrl.toURI());
+
+        String protocolHandlerDir = handlerPath.toFile().getParent();
+
+        proxyConfiguration.setProxyProtocolHandlerDirectory(
+                protocolHandlerDir
+        );
+        proxyConfiguration.setProxyMessagingProtocols(Sets.newHashSet("kafka"));
+        pulsarProxy = new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService());
+        pulsarProxy.start();
+    }
+
+    protected void stopProxy() throws Exception{
+        if (pulsarProxy != null) {
+            pulsarProxy.close();
+        }
     }
 }
