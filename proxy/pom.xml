@@ -114,7 +114,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>io.streamnative.pulsar.handlers.kop.KafkaProtocolProxyMainainClass>
+              <mainClass>io.streamnative.pulsar.handlers.kop.KafkaProtocolProxyMain</mainClass>
             </manifest>
           </archive>
           <descriptorRefs>
