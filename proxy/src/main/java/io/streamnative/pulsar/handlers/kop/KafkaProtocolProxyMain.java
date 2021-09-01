@@ -20,19 +20,27 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.proxy.server.ProxyService;
 
 import java.net.InetSocketAddress;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -42,35 +50,78 @@ import static com.google.common.base.Preconditions.checkState;
 @Slf4j
 public class KafkaProtocolProxyMain {
 
-    public static final String PROTOCOL_NAME = "kafka";
-    public static final String TLS_HANDLER = "tls";
-
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
 
     private PulsarAdmin pulsarAdmin;
     private AuthenticationService authenticationService;
+    private Function<String, String> brokerAddressMapper;
 
-    public void initialize(ProxyConfiguration conf) throws Exception {
+    @AllArgsConstructor
+    private static final class BrokerAddressMapper implements Function<String, String> {
+        private final ProxyService proxyService;
+        private final ConcurrentHashMap<String, String> cache = new ConcurrentHashMap<>();
 
-        authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
+        @Override
+        public String apply(String s) {
+            return cache.computeIfAbsent(s, (address) -> {
+                try {
+                    List<? extends ServiceLookupData> availableBrokers = proxyService
+                            .getDiscoveryProvider()
+                            .getAvailableBrokers();
+                    String mapped = availableBrokers
+                            .stream()
+                            .filter(data -> data.getPulsarServiceUrl().equals(address))
+                            .map(data -> data.getProtocol("kafka"))
+                            .findFirst()
+                            .orElse(Optional.empty())
+                            .orElse(null);
+                    if (mapped != null) {
+                        return mapped;
+                    } else {
+                        log.error("Cannot find KOP handler for broker {}, discovery info {}", address, availableBrokers);
+                        throw new RuntimeException("Cannot find KOP handler for broker " + address);
+                    }
+                } catch (PulsarServerException err) {
+                    throw new RuntimeException("Cannot find KOP handler for broker " + address, err);
+                }
+            });
+
+        }
+    }
+
+    public void initialize(ProxyConfiguration conf, ProxyService proxyService) throws Exception {
+
+        if (proxyService != null) {
+            authenticationService = proxyService.getAuthenticationService();
+            if (proxyService.getDiscoveryProvider() != null) {
+                brokerAddressMapper = new BrokerAddressMapper(proxyService);
+                log.info("Using Proxy DiscoveryProvider");
+            } else {
+                brokerAddressMapper = null;
+                log.info("Using Broker address mapping by convention, because DiscoveryProvider is not configured (no zk configuration in the proxy)");
+            }
+
+        } else {
+            authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
+            brokerAddressMapper = null;
+            log.info("Using Broker address mapping by convention");
+        }
 
         String auth = conf.getBrokerClientAuthenticationPlugin();
         String authParams = conf.getBrokerClientAuthenticationParameters();
 
-       Authentication authentication = AuthenticationUtil.create(auth, authParams);
+        Authentication authentication = AuthenticationUtil.create(auth, authParams);
 
         pulsarAdmin = PulsarAdmin
                 .builder()
                 .authentication(authentication)
-                .serviceHttpUrl((String) conf.getProperties().getOrDefault("webServiceUrl", "http://localhost:8080"))
+                .serviceHttpUrl(conf.getBrokerWebServiceURL())
                 .allowTlsInsecureConnection(true) // TODO make this configurable
                 .enableTlsHostnameVerification(false) // TODO make this configurable
                 .build();
 
         // init config
-
-        // when loaded with PulsarService as NAR, `conf` will be type of ServiceConfiguration
         kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
 
         // some of the configs value in conf.properties may not updated.
@@ -105,7 +156,7 @@ public class KafkaProtocolProxyMain {
         String configFile = args.length > 0 ? args[0] : "conf/kop_proxy.conf";
         KafkaProtocolProxyMain proxy = new KafkaProtocolProxyMain();
         ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ProxyConfiguration.class);
-        proxy.initialize(serviceConfiguration);
+        proxy.initialize(serviceConfiguration, null);
         proxy.startStandalone();
         log.info("Started");
         Thread.sleep(Integer.MAX_VALUE);
@@ -168,12 +219,12 @@ public class KafkaProtocolProxyMain {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
-                                authenticationService, kafkaConfig, false,  advertisedEndPoint));
+                                authenticationService, kafkaConfig, false,  advertisedEndPoint, brokerAddressMapper));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
-                                authenticationService, kafkaConfig, true, advertisedEndPoint));
+                                authenticationService, kafkaConfig, true, advertisedEndPoint, brokerAddressMapper));
                         break;
                 }
             });

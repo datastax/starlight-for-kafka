@@ -31,6 +31,8 @@ import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
+import java.util.function.Function;
+
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 
 /**
@@ -54,14 +56,17 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     @Getter
     private final SslContextFactory.Server sslContextFactory;
 
+    private final Function<String, String> brokerAddressMapper;
 
     public KafkaProxyChannelInitializer(
-                                   PulsarAdmin pulsarAdmin,
-                                   AuthenticationService authenticationService,
-                                   KafkaServiceConfiguration kafkaConfig,
-                                   boolean enableTLS,
-                                   EndPoint advertisedEndPoint) {
+            PulsarAdmin pulsarAdmin,
+            AuthenticationService authenticationService,
+            KafkaServiceConfiguration kafkaConfig,
+            boolean enableTLS,
+            EndPoint advertisedEndPoint,
+            Function<String, String> brokerAddressMapper) {
         super();
+        this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
         this.pulsarAdmin = pulsarAdmin;
         this.kafkaConfig = kafkaConfig;
@@ -85,7 +90,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
-                    enableTls, advertisedEndPoint));
+                    enableTls, advertisedEndPoint, brokerAddressMapper));
     }
 
 }

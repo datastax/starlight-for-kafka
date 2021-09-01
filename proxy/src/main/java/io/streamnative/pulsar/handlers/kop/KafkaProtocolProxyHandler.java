@@ -26,6 +26,7 @@ import java.util.Map;
 public class KafkaProtocolProxyHandler implements ProtocolHandler  {
 
     private KafkaProtocolProxyMain protocolHandlerCore;
+    private ProxyConfiguration conf;
 
     public KafkaProtocolProxyHandler(){
         protocolHandlerCore = new KafkaProtocolProxyMain();
@@ -59,7 +60,7 @@ public class KafkaProtocolProxyHandler implements ProtocolHandler  {
      * @throws Exception when fail to initialize the protocol handler.
      */
     public void initialize(ProxyConfiguration conf) throws Exception {
-        protocolHandlerCore.initialize(conf);
+        this.conf = conf;
     }
 
     /**
@@ -71,7 +72,12 @@ public class KafkaProtocolProxyHandler implements ProtocolHandler  {
      * @param service the broker service to start with.
      */
     public void start(ProxyService service) {
-        protocolHandlerCore.start();
+        try {
+            protocolHandlerCore.initialize(conf, service);
+            protocolHandlerCore.start();
+        } catch (Exception err) {
+            throw new RuntimeException(err);
+        }
     }
 
     /**

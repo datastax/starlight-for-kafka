@@ -125,13 +125,42 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final EntryFormatter entryFormatter;
     private final Set<String> groupIds = new HashSet<>();
     private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
+    private final Function<String, String> brokerAddressMapper;
+
+    private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
+        // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
+        // This saves us from a Metadata lookup hop
+        String kafkaAddress = pulsarAddress
+                .replace("pulsar://", "PLAINTEXT://")
+                .replace("pulsar+ssl://", "SSL://");
+
+        if (kafkaConfig.getKafkaProxyBrokerPortToKopMapping() != null) {
+            String[] split = kafkaConfig.getKafkaProxyBrokerPortToKopMapping().split(",");
+            for (String mapping : split) {
+                String[] mappingSplit = mapping.split("=");
+                if (mappingSplit.length == 2) {
+                    kafkaAddress = kafkaAddress.replace(mappingSplit[0].trim(), mappingSplit[1].trim());
+                }
+            }
+        } else {
+
+            // standard mapping
+            kafkaAddress= kafkaAddress.replace("6650", "9092")
+                    .replace("6651", "9093")
+                    .replace("6652", "9094")
+                    .replace("6653", "9095");
+        }
+        return kafkaAddress;
+    });
 
     public KafkaProxyRequestHandler(String id, PulsarAdmin pulsarAdmin,
                                AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
                                boolean tlsEnabled,
-                               EndPoint advertisedEndPoint) throws Exception {
+                               EndPoint advertisedEndPoint,
+                               Function<String, String> brokerAddressMapper) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
+        this.brokerAddressMapper = brokerAddressMapper != null ? brokerAddressMapper : DEFAULT_BROKER_ADDRESS_MAPPER;
         this.id = id;
         this.authenticationToken = new AuthenticationToken(kafkaConfig.getKafkaProxyAuthenticationToken());
 
@@ -1164,29 +1193,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             returnFuture.complete(Optional.empty());
             return returnFuture;
         }
-        log.info("getProtocolDataToAdvertise {} KafkaProxyBrokerPortToKopMapping{}", pulsarAddress, kafkaConfig.getKafkaProxyBrokerPortToKopMapping());
+
         // the Mapping to the KOP port is done per-convention
         // this saves us from a Metadata lookup hop
-        String kafkaAddress = pulsarAddress
-                .replace("pulsar://", "PLAINTEXT://")
-                .replace("pulsar+ssl://", "SSL://");
+        String kafkaAddress = brokerAddressMapper.apply(pulsarAddress);
 
-        kafkaAddress = kafkaAddress.replace("6650", "19092")
-                .replace("6651", "19093")
-                .replace("6652", "19093")
-                .replace("6653", "19094");
-
-        if (kafkaConfig.getKafkaProxyBrokerPortToKopMapping() != null) {
-            String[] split = kafkaConfig.getKafkaProxyBrokerPortToKopMapping().split(",");
-            for (String mapping : split) {
-                String[] mappingSplit = mapping.split("=");
-                if (mappingSplit.length == 2) {
-                    kafkaAddress = kafkaAddress.replace(mappingSplit[0].trim(), mappingSplit[1].trim());
-                }
-            }
-        }
-
-        log.info("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
+        log.debug("Found broker for topic {} pulsarAddress: {} kafkaAddress {}",
                 topic, pulsarAddress, kafkaAddress);
 
         return CompletableFuture.completedFuture(Optional.of(kafkaAddress));
@@ -1577,8 +1589,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<AbstractResponse> response;
         ApiKeys apiKeys;
         short apiVersion;
-
     }
+
     private class ConnectionToBroker implements Runnable {
         final String connectionKey;
         final String brokerHost;

@@ -710,7 +710,7 @@ public abstract class KopProtocolHandlerTestBase {
     protected void startProxy() throws Exception {
         ProxyConfiguration proxyConfiguration = new ProxyConfiguration();
         proxyConfiguration.getProperties().put("kafkaListeners", PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
-        proxyConfiguration.getProperties().put("webServiceUrl", "http://localhost:"+getBrokerWebservicePort());
+        proxyConfiguration.setBrokerWebServiceURL("http://localhost:"+getBrokerWebservicePort());
 
         // Map Pulsar port to KOP port
         proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", getBrokerPort() + " = " + getKafkaBrokerPort());
