@@ -26,6 +26,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.client.api.AuthenticationDataProvider;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -35,10 +37,10 @@ import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.proxy.server.ProxyService;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
@@ -52,8 +54,9 @@ public class KafkaProtocolProxyMain {
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
+    private ProxyConfiguration proxyConfiguration;
 
-    private PulsarAdmin pulsarAdmin;
+    private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
 
@@ -91,7 +94,7 @@ public class KafkaProtocolProxyMain {
     }
 
     public void initialize(ProxyConfiguration conf, ProxyService proxyService) throws Exception {
-
+        this.proxyConfiguration = conf;
         if (proxyService != null) {
             authenticationService = proxyService.getAuthenticationService();
             if (proxyService.getDiscoveryProvider() != null) {
@@ -107,19 +110,6 @@ public class KafkaProtocolProxyMain {
             brokerAddressMapper = null;
             log.info("Using Broker address mapping by convention");
         }
-
-        String auth = conf.getBrokerClientAuthenticationPlugin();
-        String authParams = conf.getBrokerClientAuthenticationParameters();
-
-        Authentication authentication = AuthenticationUtil.create(auth, authParams);
-
-        pulsarAdmin = PulsarAdmin
-                .builder()
-                .authentication(authentication)
-                .serviceHttpUrl(conf.getBrokerWebServiceURL())
-                .allowTlsInsecureConnection(true) // TODO make this configurable
-                .enableTlsHostnameVerification(false) // TODO make this configurable
-                .build();
 
         // init config
         kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
@@ -195,9 +185,7 @@ public class KafkaProtocolProxyMain {
     }
 
     public void close() throws Exception {
-        if (pulsarAdmin != null) {
-            pulsarAdmin.close();
-        }
+        pulsarAdminProvider.close();
     }
 
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -218,12 +206,12 @@ public class KafkaProtocolProxyMain {
                 switch (protocol) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
-                        builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
+                        builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, false,  advertisedEndPoint, brokerAddressMapper));
                         break;
                     case SSL:
                     case SASL_SSL:
-                        builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdmin,
+                        builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, true, advertisedEndPoint, brokerAddressMapper));
                         break;
                 }
@@ -236,4 +224,116 @@ public class KafkaProtocolProxyMain {
         }
     }
 
+    public interface PulsarAdminProvider {
+        PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException;
+        void close();
+    }
+
+    private class AuthenticatedPulsarAdminProvider implements PulsarAdminProvider {
+
+        private final ConcurrentHashMap<String, PulsarAdmin> cache = new ConcurrentHashMap<>();
+
+        public void close() {
+            cache.values().forEach(admin -> {
+                admin.close();
+            });
+        }
+
+        @Override
+        public PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException {
+            if (originalPrincipal == null) {
+                originalPrincipal = "";
+            }
+            try {
+            return cache.computeIfAbsent(originalPrincipal, principal -> {
+                        try {
+                            String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
+                            String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
+
+                            Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
+                            Authentication authenticationWithPrincipal = new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
+
+                            return PulsarAdmin
+                                    .builder()
+                                    .authentication(authenticationWithPrincipal)
+                                    .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
+                                    .allowTlsInsecureConnection(proxyConfiguration.isTlsAllowInsecureConnection())
+                                    .enableTlsHostnameVerification(proxyConfiguration.isTlsHostnameVerificationEnabled())
+                                    .build();
+                        } catch (PulsarClientException err) {
+                            throw new RuntimeException(err);
+                        }
+                    }
+            );
+            } catch (RuntimeException err) {
+                if (err.getCause() instanceof PulsarClientException) {
+                    throw (PulsarClientException) err.getCause();
+                } else {
+                    throw new PulsarClientException(err);
+                }
+            }
+        }
+    }
+
+    private static class OriginalPrincipalAwareAuthentication implements Authentication {
+        private final Authentication authentication;
+        private final String originalPrincipal;
+
+        public OriginalPrincipalAwareAuthentication(Authentication authentication, String originalPrincipal) {
+            this.authentication = authentication;
+            this.originalPrincipal = originalPrincipal;
+        }
+
+        @Override
+        public String getAuthMethodName() {
+            return authentication.getAuthMethodName();
+        }
+
+        @Override
+        public void configure(Map<String, String> authParams) {
+            authentication.configure(authParams);
+        }
+
+        @Override
+        public void start() throws PulsarClientException {
+            authentication.start();
+        }
+
+        @Override
+        public void close() throws IOException {
+            authentication.close();
+        }
+
+        @Override
+        public AuthenticationDataProvider getAuthData() throws PulsarClientException {
+            return authentication.getAuthData();
+        }
+
+        @Override
+        public AuthenticationDataProvider getAuthData(String brokerHostName) throws PulsarClientException {
+            return authentication.getAuthData(brokerHostName);
+        }
+
+        @Override
+        public void authenticationStage(String requestUrl, AuthenticationDataProvider authData, Map<String, String> previousResHeaders, CompletableFuture<Map<String, String>> authFuture) {
+            log.info("authenticationStage {} {} {}", requestUrl, authData, previousResHeaders);
+            authentication.authenticationStage(requestUrl, authData, previousResHeaders, authFuture);
+        }
+
+        @Override
+        public Set<Map.Entry<String, String>> newRequestHeader(String hostName, AuthenticationDataProvider authData, Map<String, String> previousResHeaders) throws Exception {
+            Set<Map.Entry<String, String>> res =  authentication.newRequestHeader(hostName, authData, previousResHeaders);
+            log.info("newRequestHeader {} {} {} -> {}", hostName, authData, previousResHeaders, res);
+            if (originalPrincipal == null || originalPrincipal.isEmpty()) {
+                return res;
+            }
+            HashSet<Map.Entry<String, String>> resWithPrincipal = new HashSet<>();
+            if (res != null) {
+                resWithPrincipal.addAll(res);
+            }
+            resWithPrincipal.add(new AbstractMap.SimpleImmutableEntry("X-Original-Principal", originalPrincipal));
+            log.info("newRequestHeader Final {} {} {} -> {}", hostName, authData, previousResHeaders, resWithPrincipal);
+            return resWithPrincipal;
+        }
+    }
 }

@@ -80,7 +80,9 @@ import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -107,11 +109,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
-    private final PulsarAdmin admin;
+    private final KafkaProtocolProxyMain.PulsarAdminProvider admin;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     // this is for Proxy -> Broker authentication
-    private final AuthenticationToken authenticationToken;
+    private final Authentication authenticationToken;
 
     private final boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -153,7 +155,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         return kafkaAddress;
     });
 
-    public KafkaProxyRequestHandler(String id, PulsarAdmin pulsarAdmin,
+    public KafkaProxyRequestHandler(String id, KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
                                AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
                                boolean tlsEnabled,
@@ -162,14 +164,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
         this.brokerAddressMapper = brokerAddressMapper != null ? brokerAddressMapper : DEFAULT_BROKER_ADDRESS_MAPPER;
         this.id = id;
-        this.authenticationToken = new AuthenticationToken(kafkaConfig.getKafkaProxyAuthenticationToken());
+        String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
+        String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
+        this.authenticationToken = AuthenticationUtil.create(auth, authParams);
 
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = Executors.newScheduledThreadPool(4);
         this.admin = pulsarAdmin;
         final boolean authenticationEnabled = kafkaConfig.isAuthenticationEnabled();
         this.authenticator = authenticationEnabled
-                ? new SaslAuthenticator(pulsarAdmin, authenticationService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
+                ? new SaslAuthenticator(null, authenticationService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
                 : null;
         final boolean authorizationEnabled = false;
         this.authorizer = null;
@@ -293,7 +297,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     // Leverage pulsar admin to get partitioned topic metadata
     private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        return admin.topics().getPartitionedTopicMetadataAsync(topicName);
+        return getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicMetadataAsync(topicName));
     }
 
     private boolean isInternalTopic(final String fullTopicName) {
@@ -312,7 +316,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
 
         for (String namespace : allowedNamespaces) {
-            admin.topics().getPartitionedTopicListAsync(NamespaceName.get(namespace).getLocalName())
+            getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicListAsync(NamespaceName.get(namespace).getLocalName()))
                     .whenComplete((topics, e) -> {
                         if (e != null) {
                             log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
@@ -458,8 +462,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                                 + "auto create it with {} partitions",
                                                         ctx.channel(), metadataHar.getHeader(),
                                                         topic, defaultNumPartitions);
-                                                admin.topics().createPartitionedTopicAsync(
-                                                                fullTopicName, defaultNumPartitions)
+                                                getPulsarAdmin().thenCompose(admin -> admin.topics().createPartitionedTopicAsync(
+                                                                fullTopicName, defaultNumPartitions))
                                                         .whenComplete((ignored, e) -> {
                                                             if (e == null) {
                                                                 addTopicPartition.accept(topic, defaultNumPartitions);
@@ -1220,6 +1224,20 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         return topic != null && topic.contains(transactionTopic);
     }
 
+    private CompletableFuture<PulsarAdmin> getPulsarAdmin() {
+        try {
+            String principal;
+            if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
+                principal = authenticator.session().getPrincipal().getName();
+            } else {
+                principal = null;
+            }
+            return CompletableFuture.completedFuture(admin.getAdminForPrincipal(principal));
+        } catch (PulsarClientException err) {
+            return FutureUtil.failedFuture(err);
+        }
+    }
+
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
@@ -1231,7 +1249,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             returnFuture.complete(newPartitionMetadata(topic, cached));
             return returnFuture;
         }
-        admin.lookups().lookupTopicAsync(topic.toString())
+        getPulsarAdmin().thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString()))
             .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (!stringOptional.isPresent() || throwable != null) {
@@ -1677,7 +1695,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             RequestHeader header = new RequestHeader(
                     ApiKeys.SASL_HANDSHAKE,
                     ApiKeys.SASL_HANDSHAKE.latestVersion(),
-                    "proxy",
+                    "proxy", //ignored
                     dummyCorrelationId
             );
             SaslHandshakeRequest  request = new SaslHandshakeRequest
@@ -1704,11 +1722,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             RequestHeader header = new RequestHeader(
                     ApiKeys.SASL_AUTHENTICATE,
                     ApiKeys.SASL_AUTHENTICATE.latestVersion(),
-                    "proxy",
+                    "proxy", // ignored
                     dummyCorrelationId
             );
 
-            // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
             String actualAuthenticationToken;
             try {
                 // this can be token: or file://....
@@ -1717,7 +1734,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 log.info("Cannot read token for Proxy authentication", err);
                 return FutureUtil.failedFuture(err);
             }
-            String usernamePassword = "PROXY\u0000"+authenticator.session().getPrincipal().getName() + "\u0000" + actualAuthenticationToken;
+            if (actualAuthenticationToken == null) {
+                log.info("This proxy has not been configuration for token authentication");
+                return FutureUtil.failedFuture(new Exception("This proxy has not been configuration for token authentication"));
+            }
+
+            String originalPrincipal = authenticator.session().getPrincipal().getName();
+            String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
+            String password = "token:" + actualAuthenticationToken;
+            String usernamePassword = prefix +
+                    "\u0000" + originalPrincipal +
+                    "\u0000" + password;
             byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
             SaslAuthenticateRequest  request = new SaslAuthenticateRequest
                     .Builder(ByteBuffer.wrap(saslAuthBytes))

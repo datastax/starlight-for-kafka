@@ -43,7 +43,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     public static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
     @Getter
-    private final PulsarAdmin pulsarAdmin;
+    private final KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin;
     @Getter
     private final AuthenticationService authenticationService;
     @Getter
@@ -59,7 +59,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final Function<String, String> brokerAddressMapper;
 
     public KafkaProxyChannelInitializer(
-            PulsarAdmin pulsarAdmin,
+            KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
             AuthenticationService authenticationService,
             KafkaServiceConfiguration kafkaConfig,
             boolean enableTLS,
