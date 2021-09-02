@@ -1618,6 +1618,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         private Socket socket;
         private Thread inputHandler;
         private volatile boolean closed;
+        private CompletableFuture<?> connectionFuture;
 
         private final ConcurrentHashMap<Integer, PendingAction> pendingRequests = new ConcurrentHashMap<>();
 
@@ -1667,27 +1668,29 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         private synchronized CompletableFuture<?> ensureConnection() {
             try
             {
-                if (socket == null)
-                {
-                    log.info("Opening proxy connection to {} {}", brokerHost, brokerPort);
-                    socket = new Socket(brokerHost, brokerPort);
-                    in = socket.getInputStream();
-                    out = new DataOutputStream(socket.getOutputStream());
-                    inputHandler = new Thread(this,"client-"+KafkaProxyRequestHandler.this.id + "-" + connectionKey);
-                    inputHandler.start();
-                    if (authenticator != null && authenticator.session() != null) {
-                        String originalPrincipal = authenticator.session().getPrincipal().getName();
-                        log.debug("Authenticating to KOP broker with {} identity", originalPrincipal);
-                        return saslHandshake() // send SASL mechanism
-                                .thenCompose( ___ -> authenticate()); // send Proxy Token, as Username we send the authenticated principal
-                    }
+                if (connectionFuture != null) {
+                    return connectionFuture;
                 }
-                return CompletableFuture.completedFuture(socket);
+                log.info("Opening proxy connection to {} {}", brokerHost, brokerPort);
+                socket = new Socket(brokerHost, brokerPort);
+                in = socket.getInputStream();
+                out = new DataOutputStream(socket.getOutputStream());
+                inputHandler = new Thread(this,"client-"+KafkaProxyRequestHandler.this.id + "-" + connectionKey);
+                inputHandler.start();
+                if (authenticator != null && authenticator.session() != null) {
+                    String originalPrincipal = authenticator.session().getPrincipal().getName();
+                    log.debug("Authenticating to KOP broker {} with {} identity", brokerHost + ":" + brokerPort, originalPrincipal);
+                    connectionFuture = saslHandshake() // send SASL mechanism
+                            .thenCompose( ___ -> authenticate()); // send Proxy Token, as Username we send the authenticated principal
+                } else {
+                    connectionFuture = CompletableFuture.completedFuture(socket);
+                }
             } catch (Exception err) {
                 log.error("cannot connect to {}", brokerHost + ":" + brokerPort + ":" + err);
                 connectionsToBrokers.remove(connectionKey);
-                return FutureUtil.failedFuture(err);
+                connectionFuture = FutureUtil.failedFuture(err);
             }
+            return connectionFuture;
         }
 
         private CompletableFuture<?> saslHandshake() {
