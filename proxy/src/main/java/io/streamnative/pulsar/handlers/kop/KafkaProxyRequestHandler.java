@@ -295,10 +295,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         resultFuture.complete(apiResponse);
     }
 
-    // Leverage pulsar admin to get partitioned topic metadata
-    private CompletableFuture<PartitionedTopicMetadata> getPartitionedTopicMetadataAsync(String topicName) {
-        return getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicMetadataAsync(topicName));
-    }
 
     private boolean isInternalTopic(final String fullTopicName) {
         return fullTopicName.equals(offsetsTopicName) || fullTopicName.equals(txnTopicName);
@@ -451,10 +447,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         // get partition numbers for each topic.
                         // If topic doesn't exist and allowAutoTopicCreation is enabled,
                         // the topic will be created first.
-                        getPartitionedTopicMetadataAsync(fullTopicName)
+                        getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicMetadataAsync(fullTopicName))
                                 .whenComplete((partitionedTopicMetadata, throwable) -> {
                                     log.info("getPartitionedTopicMetadataAsync for "+fullTopicName+" -> "+partitionedTopicMetadata, throwable);
                                     if (throwable != null) {
+                                        if (throwable instanceof CompletionException
+                                                && throwable.getCause() != null) {
+                                            throwable = throwable.getCause();
+                                        }
                                         if (throwable instanceof PulsarAdminException.NotFoundException) {
                                             if (kafkaConfig.isAllowAutoTopicCreation()
                                                     && metadataRequest.allowAutoTopicCreation()) {
@@ -1249,7 +1249,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             returnFuture.complete(newPartitionMetadata(topic, cached));
             return returnFuture;
         }
-        getPulsarAdmin().thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString()))
+        getPulsarAdmin().thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString())
             .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (!stringOptional.isPresent() || throwable != null) {
@@ -1282,7 +1282,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             }).exceptionally(error -> {
                 log.error("bad error", error);
                 return null;
-            });
+            }));
         return returnFuture;
     }
 

@@ -42,6 +42,7 @@ public class BasicProxyTest extends BasicEndToEndTestBase {
     public void testProxy() throws Exception {
         final String topic = "test-proxy-works";
 
+        // please note that in this case the Proxy will auto create the topic, as it does not exist
         @Cleanup
         final KafkaProducer<String, String> kafkaProducer = newKafkaProducer(bootstrapServersUsingProxy());
         sendSingleMessages(kafkaProducer, topic, Arrays.asList(null, ""));
