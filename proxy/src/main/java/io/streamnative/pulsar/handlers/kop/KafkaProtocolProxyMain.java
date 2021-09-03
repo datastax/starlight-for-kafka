@@ -275,6 +275,10 @@ public class KafkaProtocolProxyMain {
         }
     }
 
+    /**
+     * This class allows the Proxy to inject the X-Original-Principal header.
+     * It works only for Token Authentication.
+     */
     private static class OriginalPrincipalAwareAuthentication implements Authentication {
         private final Authentication authentication;
         private final String originalPrincipal;
@@ -316,14 +320,12 @@ public class KafkaProtocolProxyMain {
 
         @Override
         public void authenticationStage(String requestUrl, AuthenticationDataProvider authData, Map<String, String> previousResHeaders, CompletableFuture<Map<String, String>> authFuture) {
-            log.info("authenticationStage {} {} {}", requestUrl, authData, previousResHeaders);
             authentication.authenticationStage(requestUrl, authData, previousResHeaders, authFuture);
         }
 
         @Override
         public Set<Map.Entry<String, String>> newRequestHeader(String hostName, AuthenticationDataProvider authData, Map<String, String> previousResHeaders) throws Exception {
             Set<Map.Entry<String, String>> res =  authentication.newRequestHeader(hostName, authData, previousResHeaders);
-            log.info("newRequestHeader {} {} {} -> {}", hostName, authData, previousResHeaders, res);
             if (originalPrincipal == null || originalPrincipal.isEmpty()) {
                 return res;
             }
@@ -332,7 +334,6 @@ public class KafkaProtocolProxyMain {
                 resWithPrincipal.addAll(res);
             }
             resWithPrincipal.add(new AbstractMap.SimpleImmutableEntry("X-Original-Principal", originalPrincipal));
-            log.info("newRequestHeader Final {} {} {} -> {}", hostName, authData, previousResHeaders, resWithPrincipal);
             return resWithPrincipal;
         }
     }

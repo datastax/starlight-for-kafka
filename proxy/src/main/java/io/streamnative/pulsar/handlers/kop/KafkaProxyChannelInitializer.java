@@ -17,20 +17,12 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
-import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
-import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import lombok.Getter;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.metadata.api.MetadataCache;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
-
+import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
+import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
 import java.util.function.Function;
 
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
@@ -53,15 +45,16 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
-    @Getter
-    private final SslContextFactory.Server sslContextFactory;
+    private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
+    private final NettyServerSslContextBuilder serverSslCtxRefresher;
+    private final boolean tlsEnabledWithKeyStore;
 
     private final Function<String, String> brokerAddressMapper;
 
     public KafkaProxyChannelInitializer(
             KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
             AuthenticationService authenticationService,
-            KafkaServiceConfiguration kafkaConfig,
+            KafkaServiceConfiguration serviceConfig,
             boolean enableTLS,
             EndPoint advertisedEndPoint,
             Function<String, String> brokerAddressMapper) {
@@ -69,20 +62,54 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
         this.pulsarAdmin = pulsarAdmin;
-        this.kafkaConfig = kafkaConfig;
+        this.kafkaConfig = serviceConfig;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.tlsEnabledWithKeyStore = serviceConfig.isTlsEnabledWithKeyStore();
+
+        // we are using Pulsar Proxy TLS configuration, not KOP
+        // this way we can use the same configuration of conf/proxy.conf
         if (enableTls) {
-            sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
+            if (tlsEnabledWithKeyStore) {
+                serverSSLContextAutoRefreshBuilder = new NettySSLContextAutoRefreshBuilder(
+                        serviceConfig.getTlsProvider(),
+                        serviceConfig.getTlsKeyStoreType(),
+                        serviceConfig.getTlsKeyStore(),
+                        serviceConfig.getTlsKeyStorePassword(),
+                        serviceConfig.isTlsAllowInsecureConnection(),
+                        serviceConfig.getTlsTrustStoreType(),
+                        serviceConfig.getTlsTrustStore(),
+                        serviceConfig.getTlsTrustStorePassword(),
+                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
+                        serviceConfig.getTlsCiphers(),
+                        serviceConfig.getTlsProtocols(),
+                        serviceConfig.getTlsCertRefreshCheckDurationSec());
+                serverSslCtxRefresher = null;
+            } else {
+                serverSSLContextAutoRefreshBuilder = null;
+                serverSslCtxRefresher = new NettyServerSslContextBuilder(serviceConfig.isTlsAllowInsecureConnection(),
+                        serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
+                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(), serviceConfig.getTlsProtocols(),
+                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
+                        serviceConfig.getTlsCertRefreshCheckDurationSec());
+            }
         } else {
-            sslContextFactory = null;
+            this.serverSslCtxRefresher = null;
         }
     }
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         if (this.enableTls) {
-            ch.pipeline().addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
+            if (serverSslCtxRefresher != null) {
+                SslContext sslContext = serverSslCtxRefresher.get();
+                if (sslContext != null) {
+                    ch.pipeline().addLast(TLS_HANDLER, sslContext.newHandler(ch.alloc()));
+                }
+            } else if (this.tlsEnabledWithKeyStore && serverSSLContextAutoRefreshBuilder != null) {
+                ch.pipeline().addLast(TLS_HANDLER,
+                        new SslHandler(serverSSLContextAutoRefreshBuilder.get().createSSLEngine()));
+            }
         }
         String id = ch.remoteAddress() + "";
         ch.pipeline().addLast(new LengthFieldPrepender(4));
