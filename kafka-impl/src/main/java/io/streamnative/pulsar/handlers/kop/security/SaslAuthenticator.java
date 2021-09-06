@@ -14,7 +14,9 @@
 package io.streamnative.pulsar.handlers.kop.security;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -27,7 +29,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import javax.naming.AuthenticationException;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
@@ -35,6 +36,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.MathUtils;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -240,6 +242,22 @@ public class SaslAuthenticator {
         }
     }
 
+    private static boolean isUnsupportedApiVersionsRequest(RequestHeader header) {
+        return header.apiKey() == API_VERSIONS && !API_VERSIONS.isVersionSupported(header.apiVersion());
+    }
+
+    private AbstractRequest parseRequest(RequestHeader header, ByteBuffer nioBuffer) {
+        if (isUnsupportedApiVersionsRequest(header)) {
+            return new ApiVersionsRequest((short) 0, header.apiVersion());
+        } else {
+            ApiKeys apiKey = header.apiKey();
+            short apiVersion = header.apiVersion();
+            Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
+            return AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        }
+
+    }
+
     // Parsing request, for here, only support ApiVersions and SaslHandshake request
     private void handleKafkaRequest(ChannelHandlerContext ctx,
                                     ByteBuf requestBuf,
@@ -251,9 +269,7 @@ public class SaslAuthenticator {
         RequestHeader header = RequestHeader.parse(nioBuffer);
         ApiKeys apiKey = header.apiKey();
 
-        short apiVersion = header.apiVersion();
-        Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
-        AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+        AbstractRequest body = parseRequest(header, nioBuffer);
         registerRequestParseLatency.accept(beforeParseTime, null);
 
         // Raise an error prior to parsing if the api cannot be handled at this layer. This avoids
@@ -325,12 +341,16 @@ public class SaslAuthenticator {
         });
     }
 
-    private static ByteBuf sizePrefixed(ByteBuffer buffer) {
+    @VisibleForTesting
+    public static ByteBuf sizePrefixed(ByteBuffer buffer) {
         ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
         sizeBuffer.putInt(0, buffer.remaining());
         ByteBuf byteBuf = Unpooled.buffer(sizeBuffer.capacity() + buffer.remaining());
+        // why we reset writer index? see https://github.com/streamnative/kop/issues/696
+        byteBuf.markWriterIndex();
         byteBuf.writeBytes(sizeBuffer);
         byteBuf.writeBytes(buffer);
+        byteBuf.resetWriterIndex();
         return byteBuf;
     }
 
@@ -354,14 +374,15 @@ public class SaslAuthenticator {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
                         } else {
-                            if (log.isDebugEnabled()) {
-                                log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully",
-                                        ctx.channel());
-                            }
                             // This session is required for authorization.
                             this.session = new Session(
                                     new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID()),
                                     "old-clientId");
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Send sasl response to SASL_HANDSHAKE v0 old client {} successfully, "
+                                        + "session {}", ctx.channel(), session);
+                            }
                         }
                     });
                 }
