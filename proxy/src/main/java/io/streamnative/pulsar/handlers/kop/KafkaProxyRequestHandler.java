@@ -34,10 +34,10 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import javax.naming.AuthenticationException;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.apache.commons.lang3.NotImplementedException;
@@ -63,6 +63,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.internals.Topic;
@@ -362,6 +363,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         //   2. topics provided, get provided topics.
         CompletableFuture<Map<String, List<TopicName>>> pulsarTopicsFuture;
 
+        // Map for <partition-zero, non-partitioned-topic>, use for findBroker
+        // e.g. <persistent://public/default/topic1-partition-0, persistent://public/default/topic1>
+        final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
+
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
             KafkaTopicManager.clearTopicManagerCache();
@@ -392,7 +397,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         } else {
             pulsarTopicsFuture = new CompletableFuture<>();
             // get only the provided topics
-            final Map<String, List<TopicName>> pulsarTopics = new ConcurrentHashMap<>();
+            final Map<String, List<TopicName>> pulsarTopics = Maps.newConcurrentMap();
 
             List<String> requestTopics = metadataRequest.topics();
             final int topicsNumber = requestTopics.size();
@@ -508,14 +513,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             }
                                             addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
                                         } else {
-                                            log.error("Topic {} is a non-partitioned topic", topic);
-                                            allTopicMetadata.add(
-                                                    new TopicMetadata(
-                                                            Errors.INVALID_TOPIC_EXCEPTION,
-                                                            topic,
-                                                            isInternalTopic(fullTopicName),
-                                                            Collections.emptyList()));
-                                            completeOneTopic.run();
+                                            // In case non-partitioned topic, treat as a one partitioned topic.
+                                            nonPartitionedTopicMap.put(TopicName
+                                                            .get(fullTopicName)
+                                                            .getPartition(0)
+                                                            .toString(),
+                                                    TopicName.get(fullTopicName)
+                                            );
+                                            addTopicPartition.accept(topic, 1);
                                         }
                                     }
                                 });
@@ -564,9 +569,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 List<PartitionMetadata> partitionMetadatas = Collections
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
 
-                list.forEach(topicName ->
-                    findBroker(topicName)
-                        .whenComplete(((partitionMetadata, throwable) -> {
+                list.forEach(topicName -> {
+                    // For non-partitioned topic.
+                    TopicName realTopicName = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
+                    findBroker(realTopicName)
+                        .whenComplete((partitionMetadata, throwable) -> {
                             if (throwable != null || partitionMetadata == null) {
                                 log.warn("[{}] Request {}: Exception while find Broker metadata",
                                     ctx.channel(), metadataHar.getHeader(), throwable);
@@ -629,7 +636,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     resultFuture.complete(finalResponse);
                                 }
                             }
-                        })));
+                        });
+                });
             });
         });
     }
@@ -1252,7 +1260,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         getPulsarAdmin().thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString())
             .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
-                if (!stringOptional.isPresent() || throwable != null) {
+                if (throwable != null || stringOptional == null || !stringOptional.isPresent()) {
                     log.error("Not get advertise data for Kafka topic:{}. throwable",
                         topic, throwable);
                     KafkaTopicManager.removeTopicManagerCache(topic.toString());
