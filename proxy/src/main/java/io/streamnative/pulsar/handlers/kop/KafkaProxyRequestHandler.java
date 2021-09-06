@@ -729,7 +729,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         });
                         resultFuture.complete(response);
                     }).exceptionally(error -> {
-                        log.error("bad error", error);
+                        log.error("Full Produce failed", error);
+                        // REQUEST_TIMED_OUT triggers a new trials on the client
                         Map<TopicPartition, PartitionResponse> errorsMap =
                                 produceRequest.partitionRecordsOrFail()
                                         .keySet()
@@ -745,7 +746,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             // we could group requests per broker
 
             Runnable complete = () -> {
-                log.debug("complete produde {}", produceHar);
+                log.debug("complete produce {}", produceHar);
                 topicPartitionNum.set(0);
                 if (resultFuture.isDone()) {
                     // It may be triggered again in DelayedProduceAndFetch
@@ -1033,6 +1034,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     private CompletableFuture<PartitionMetadata> findCoordinator(FindCoordinatorRequest.CoordinatorType type, String key) {
+        String pulsarTopicName = computePulsarTopicName(type, key);
+        log.info("findCoordinator for {} {} -> topic {}", type, key, pulsarTopicName);
+        return findBroker(TopicName.get(pulsarTopicName));
+    }
+
+    private String computePulsarTopicName(FindCoordinatorRequest.CoordinatorType type, String key) {
         String pulsarTopicName;
         int partition;
 
@@ -1051,8 +1058,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         } else {
             throw new NotImplementedException("FindCoordinatorRequest not support TRANSACTION type " + type);
         }
-
-        return findBroker(TopicName.get(pulsarTopicName));
+        return pulsarTopicName;
     }
 
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
@@ -1520,7 +1526,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 .forwardRequest(kafkaHeaderAndRequest)
                                 .thenAccept(serverResponse -> {
                                     if (!isNoisyRequest(request)) {
-                                        log.info("Sending {}.", serverResponse);
+                                        log.info("Sending {} {} errors {}.", serverResponse, serverResponse.getClass(), serverResponse.errorCounts());
+                                    }
+                                    if (serverResponse.errorCounts() != null) {
+                                        for (Errors error : serverResponse.errorCounts().keySet()) {
+                                            if (error == Errors.NOT_COORDINATOR) {
+                                                forgetMetadataForFailedBroker(metadata.leader().host(), metadata.leader().port());
+                                            }
+                                        }
                                     }
                                     resultFuture.complete(serverResponse);
                                 }).exceptionally(err -> {
@@ -1695,6 +1708,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             } catch (Exception err) {
                 log.error("cannot connect to {}", brokerHost + ":" + brokerPort + ":" + err);
+                forgetMetadataForFailedBroker(brokerHost, brokerPort);
                 connectionsToBrokers.remove(connectionKey);
                 connectionFuture = FutureUtil.failedFuture(err);
             }
@@ -1774,6 +1788,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return result.thenAccept(response -> {
                     SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
                     if (saslResponse.error() != Errors.NONE) {
+                        forgetMetadataForFailedBroker(brokerHost, brokerPort);
                         log.error("Failed authentication against KOP broker {}{}", saslResponse.error(), saslResponse.errorMessage());
                         close();
                         throw new CompletionException(saslResponse.error().exception());
@@ -1787,6 +1802,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
             ensureConnection().whenComplete( (a, error) -> {
                 if (error != null) {
+                    forgetMetadataForFailedBroker(brokerHost, brokerPort);
                     result.completeExceptionally(error);
                     return;
                 }

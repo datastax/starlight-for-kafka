@@ -54,8 +54,8 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String DEFAULT_TENANT = "default-tenant";
-    private static final String DEFAULT_NAMESPACE = "default-ns";
+    protected static final String DEFAULT_TENANT = "default-tenant";
+    protected static final String DEFAULT_NAMESPACE = "default-ns";
     private static final String ANOTHER_TENANT = "my-tenant";
     private static final String ANOTHER_NAMESPACE = "my-ns";
     private static final String NOT_ALLOWED_TENANT = "non-kop-tenant";
@@ -120,7 +120,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         final String messagePrefix = topic + "-msg-";
 
         @Cleanup
-        KProducer kProducer = new KProducer(topic, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topic, false, getClientPort());
         for (int i = 0; i < numMessages; i++) {
             final int key = i;
             kProducer.getProducer().send(new ProducerRecord<>(topic, key, messagePrefix + key),
@@ -135,7 +135,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         }
 
         @Cleanup
-        KConsumer kConsumer = new KConsumer(topic, getKafkaBrokerPort(), true);
+        KConsumer kConsumer = new KConsumer(topic, getClientPort(), true);
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
         int i = 0;
@@ -162,7 +162,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         conf.setKopAllowedNamespaces(Sets.newHashSet(defaultNamespace, nonexistentNamespace));
 
         final Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         @Cleanup
         final AdminClient kafkaAdmin = AdminClient.create(props);
 
@@ -193,7 +193,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         );
 
         final Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         @Cleanup
         final AdminClient kafkaAdmin = AdminClient.create(props);
 
@@ -231,13 +231,13 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         final String messagePrefix = topic + "-msg-";
 
         @Cleanup
-        KProducer kProducer = new KProducer(topic, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topic, false, getClientPort());
         for (int i = 0; i < numMessages; i++) {
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messagePrefix + i));
         }
 
         // disable auto commit
-        KConsumer kConsumer1 = new KConsumer(topic, getKafkaBrokerPort(), true);
+        KConsumer kConsumer1 = new KConsumer(topic, getClientPort(), true);
         kConsumer1.getConsumer().subscribe(Collections.singleton(topic));
 
         int numMessagesReceived = 0;
@@ -255,7 +255,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         kConsumer1.close();
 
         // disable auto commit
-        KConsumer kConsumer2 = new KConsumer(topic, getKafkaBrokerPort(), false);
+        KConsumer kConsumer2 = new KConsumer(topic, getClientPort(), false);
         kConsumer2.getConsumer().subscribe(Collections.singleton(topic));
         while (numMessagesReceived < numMessages) {
             ConsumerRecords<Integer, String> records = kConsumer2.getConsumer().poll(Duration.ofSeconds(1));
@@ -271,7 +271,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         kConsumer2.close();
 
         @Cleanup
-        KConsumer kConsumer3 = new KConsumer(topic, getKafkaBrokerPort(), false);
+        KConsumer kConsumer3 = new KConsumer(topic, getClientPort(), false);
         kConsumer3.getConsumer().subscribe(Collections.singleton(topic));
         // the offset is the latest message now, so no records would be received
         ConsumerRecords<Integer, String> records = kConsumer3.getConsumer().poll(Duration.ofSeconds(5));

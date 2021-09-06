@@ -23,6 +23,7 @@ import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryConfig;
 import io.confluent.kafka.schemaregistry.rest.SchemaRegistryRestApplication;
 import io.netty.channel.EventLoopGroup;
+import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -30,16 +31,12 @@ import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -142,6 +139,15 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected EndPoint getPlainEndPoint() {
         return new EndPoint(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort);
+    }
+
+    /**
+     * Port to be used by clients.
+     * It can be overridden with a different port, in order to pass via the proxy
+     * @return the port
+     */
+    protected int getClientPort() {
+        return getKafkaBrokerPort();
     }
 
     protected void resetConfig() {
@@ -472,7 +478,7 @@ public abstract class KopProtocolHandlerTestBase {
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducer");
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, keySer);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, valueSer);
-            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 10000);
+            props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
 
             if (retry) {
                 props.put(ProducerConfig.RETRIES_CONFIG, 3);
@@ -707,13 +713,33 @@ public abstract class KopProtocolHandlerTestBase {
         return props;
     }
 
+    protected String computeKafkaProxyBrokerPortToKopMapping() {
+        // Map Pulsar port to KOP port
+        return getBrokerPort() + " = " + getKafkaBrokerPort();
+    }
+
     protected void startProxy() throws Exception {
-        ProxyConfiguration proxyConfiguration = new ProxyConfiguration();
+
+
+        Properties config = new Properties();
+        config.put("kafkaMetadataNamespace", conf.getKafkaMetadataNamespace());
+        config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
+        config.put("kafkaTenant", conf.getKafkaTenant());
+        config.put("kafkaNamespace", conf.getKafkaNamespace());
+        config.put("entryFormat", conf.getEntryFormat());
+        config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));
+
+        config.put("offsetsTopicNumPartitions", conf.getOffsetsTopicNumPartitions() + "");
+
+        log.info("Initial Proxy configuration {}", config);
+        // copy system configuration
+        ProxyConfiguration proxyConfiguration = ConfigurationUtils.create(config, ProxyConfiguration.class);
+
         proxyConfiguration.getProperties().put("kafkaListeners", PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
         proxyConfiguration.setBrokerWebServiceURL("http://localhost:"+getBrokerWebservicePort());
 
         // Map Pulsar port to KOP port
-        proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", getBrokerPort() + " = " + getKafkaBrokerPort());
+        proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", computeKafkaProxyBrokerPortToKopMapping());
 
         URL testHandlerUrl = this.getClass().getClassLoader().getResource("proxyprotocols/test-protocol-proxy-handler.nar");
         Path handlerPath = Paths.get(testHandlerUrl.toURI());
