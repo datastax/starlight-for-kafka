@@ -59,7 +59,6 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
 /**
@@ -110,12 +109,16 @@ public class SaslAuthenticator {
         }
     }
 
+    private static void setCurrentAuthenticationService(AuthenticationService authenticationService) {
+        if (SaslAuthenticator.authenticationService == null) {
+            SaslAuthenticator.authenticationService = authenticationService;
+        }
+    }
+
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        if (SaslAuthenticator.authenticationService == null) {
-            SaslAuthenticator.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
-        }
+        setCurrentAuthenticationService(pulsarService.getBrokerService().getAuthenticationService());
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
         this.proxyRoles = config.getProxyRoles();
@@ -124,13 +127,19 @@ public class SaslAuthenticator {
         this.enableKafkaSaslAuthenticateHeaders = false;
     }
 
+    /**
+     * Used by external usages like KOP Proxy.
+     * @param admin
+     * @param authenticationService
+     * @param allowedMechanisms
+     * @param config
+     * @throws PulsarServerException
+     */
     public SaslAuthenticator(PulsarAdmin admin,
                              AuthenticationService authenticationService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        if (SaslAuthenticator.authenticationService == null) {
-            SaslAuthenticator.authenticationService = authenticationService;
-        }
+        setCurrentAuthenticationService(authenticationService);
         this.proxyRoles = config.getProxyRoles();
         this.admin = admin;
         this.allowedMechanisms = allowedMechanisms;
