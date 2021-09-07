@@ -40,6 +40,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState;
 import org.apache.commons.lang3.NotImplementedException;
 
 import io.netty.buffer.ByteBufUtil;
@@ -312,7 +314,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
         final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
         for (String namespace : allowedNamespaces) {
-            getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicListAsync(namespace))
+            // we are using getListAsync as it returns all the partitions
+            getPulsarAdmin().thenCompose(admin -> admin.topics().getListAsync(namespace))
                     .whenComplete((topics, e) -> {
                         while (e instanceof CompletionException) {
                             e = e.getCause();
@@ -348,10 +351,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
 
         MetadataRequest metadataRequest = (MetadataRequest) metadataHar.getRequest();
-        System.out.println("handleTopicMetadataRequest "+metadataRequest.topics());
-        log.info("[{}] Request {}: for topic {} ",
-                ctx.channel(), metadataHar.getHeader(), metadataRequest.topics());
-
+        log.debug("handleTopicMetadataRequest for topics {} ", metadataHar.getHeader(), metadataRequest.topics());
 
         // Command response for all topics
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
@@ -1138,9 +1138,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup,
+    protected void handleDescribeGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                               CompletableFuture<AbstractResponse> resultFuture) {
-        resultFuture.completeExceptionally(new UnsupportedOperationException("not a proxy operation"));
+        // forward to the coordinator of the first group
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, DescribeGroupsRequest.class,
+                (DescribeGroupsRequest r) -> r.groupIds().get(0),
+                (DescribeGroupsRequest request) -> {
+                    Map<String, DescribeGroupsResponse.GroupMetadata> errors = request.groupIds().stream().collect(Collectors.toMap(Function.identity(), gid -> {
+                        return new DescribeGroupsResponse.GroupMetadata(Errors.BROKER_NOT_AVAILABLE, null,  null,  null, Collections.emptyList());
+                    }));
+                    DescribeGroupsResponse res =  new DescribeGroupsResponse(errors);
+                    return res;
+                });
     }
 
     @Override
@@ -1486,27 +1495,64 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
-        log.info("handleListOffsetRequest {}", request.partitionTimestamps().entrySet());
-        Map.Entry<TopicPartition, Long> first = request.partitionTimestamps().entrySet().iterator().next();
-        final String fullPartitionName = KopTopic.toString(first.getKey());
+        Map<TopicPartition, ListOffsetResponse.PartitionData> map = new ConcurrentHashMap<>();
+        AtomicInteger expectedCount = new AtomicInteger(request.partitionTimestamps().size());
 
-        findBroker(TopicName.get(fullPartitionName))
-                .thenAccept(brokerAddress -> {
-                    grabConnectionToBroker(brokerAddress.leader().host(), brokerAddress.leader().port())
-                            .forwardRequest(listOffset)
-                            .thenAccept(response -> {
-                                log.info("Forwarding ListOffSet response {}", response);
-                                resultFuture.complete(response);
-                            }).exceptionally(err -> {
-                                AbstractResponse response = new ListOffsetResponse(new HashMap<>());
-                                resultFuture.complete(response);
-                                return null;
-                            });
-                }).exceptionally(err -> {
-                    AbstractResponse response = new ListOffsetResponse(new HashMap<>());
+        BiConsumer<String, ListOffsetResponse> onResponse = (topic, topicResponse) -> {
+            topicResponse.responseData().forEach( (tp, data) -> {
+                map.put(tp, data);
+                if (expectedCount.decrementAndGet() == 0) {
+                    ListOffsetResponse response = new ListOffsetResponse(map);
                     resultFuture.complete(response);
-                    return null;
-                });
+                }
+            });
+        };
+
+        for (Map.Entry<TopicPartition, Long> entry: request.partitionTimestamps().entrySet()) {
+            final String fullPartitionName = KopTopic.toString(entry.getKey());
+
+            int dummyCorrelationId = getDummyCorrelationId();
+            RequestHeader header = new RequestHeader(
+                    listOffset.getHeader().apiKey(),
+                    listOffset.getHeader().apiVersion(),
+                    listOffset.getHeader().clientId(),
+                    dummyCorrelationId
+            );
+
+            Map<TopicPartition, Long> tsData = new HashMap<>();
+            tsData.put(entry.getKey(), entry.getValue());
+            ListOffsetRequest requestForSinglePartition = ListOffsetRequest.Builder
+                    .forConsumer(false, request.isolationLevel())
+                    .setTargetTimes(tsData)
+                    .build(request.version());
+            ByteBuffer buffer = requestForSinglePartition.serialize(header);
+
+            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                    header,
+                    requestForSinglePartition,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+
+            findBroker(TopicName.get(fullPartitionName))
+                    .thenAccept(brokerAddress -> {
+                        grabConnectionToBroker(brokerAddress.leader().host(), brokerAddress.leader().port())
+                                .forwardRequest(singlePartitionRequest)
+                                .thenAccept(theResponse -> {
+                                    onResponse.accept(fullPartitionName, (ListOffsetResponse) theResponse);
+                                }).exceptionally(err -> {
+                                    ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                                    dummyResponse.responseData().put(entry.getKey(), new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE, 0, 0));
+                                    onResponse.accept(fullPartitionName, dummyResponse);
+                                    return null;
+                                });
+                    }).exceptionally(err -> {
+                        ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                        dummyResponse.responseData().put(entry.getKey(), new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE, 0, 0));
+                        onResponse.accept(fullPartitionName, dummyResponse);
+                        return null;
+                    });
+        }
     }
 
     @Override
