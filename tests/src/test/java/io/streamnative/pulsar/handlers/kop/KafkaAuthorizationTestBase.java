@@ -59,18 +59,20 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String TENANT = "KafkaAuthorizationTest";
-    private static final String NAMESPACE = "ns1";
+    protected static final String TENANT = "KafkaAuthorizationTest";
+    protected static final String NAMESPACE = "ns1";
     private static final String SHORT_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
 
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String ANOTHER_USER = "death_eater_user";
-    private static final String ADMIN_USER = "admin_user";
+    protected static final String SIMPLE_USER = "muggle_user";
+    protected static final String ANOTHER_USER = "death_eater_user";
+    protected static final String ADMIN_USER = "admin_user";
+    private static final String PROXY_USER = "proxy_user";
 
     private String adminToken;
     private String userToken;
     private String anotherToken;
+    protected String proxyToken;
 
     public KafkaAuthorizationTestBase(final String entryFormat) {
         super(entryFormat);
@@ -92,8 +94,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
+        proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         super.resetConfig();
+        conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
         conf.setKafkaMetadataNamespace("__kafka");
@@ -104,7 +108,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationAllowWildcardsMatching(true);
-        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
+        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER, PROXY_USER));
         conf.setAuthenticationProviders(
                 Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
@@ -145,11 +149,12 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             admin.namespaces().createNamespace(newTenant + "/" + NAMESPACE);
             admin.topics().createPartitionedTopic(testTopic, 1);
             @Cleanup
-            KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(testTopic, false, "localhost", getClientPort(),
                     TENANT + "/" + NAMESPACE, "token:" + userToken);
             kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
             fail("should have failed");
         } catch (Exception e) {
+            log.info("the error", e);
             assertTrue(e.getMessage().contains("TopicAuthorizationException"));
         } finally {
             // Cleanup
@@ -163,7 +168,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     void testAuthorizationSuccess() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
-        KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(topic, false, "localhost", getClientPort(),
                 TENANT + "/" + NAMESPACE, "token:" + userToken);
         int totalMsgs = 10;
         String messageStrPrefix = topic + "_message_";
@@ -172,7 +177,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             String messageStr = messageStrPrefix + i;
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
-        KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(topic, "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
@@ -207,7 +212,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessByAdminTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
-        KProducer kProducer = new KProducer(topic, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(topic, false, "localhost", getClientPort(),
                 TENANT + "/" + NAMESPACE, "token:" + adminToken);
         int totalMsgs = 10;
         String messageStrPrefix = topic + "_message_";
@@ -216,7 +221,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             String messageStr = messageStrPrefix + i;
             kProducer.getProducer().send(new ProducerRecord<>(topic, i, messageStr));
         }
-        KConsumer kConsumer = new KConsumer(topic, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(topic, "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(topic));
 
@@ -252,7 +257,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
-        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
         assertEquals(result.size(), 1);
@@ -273,7 +278,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // Check AdminClient use specific user to list topic
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
                 + "required username=\"%s\" password=\"%s\";";
         String jaasCfg = String.format(jaasTemplate, TENANT + "/" + NAMESPACE, "token:" + anotherToken);
@@ -283,8 +288,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         AdminClient adminClient = AdminClient.create(props);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
-        assertEquals(topics.size(), 1);
-        assertTrue(topics.contains(newTopic));
+        if (isProxyStarted()) {
+            // https://github.com/apache/pulsar/issues/11945
+            assertEquals(topics.size(), 0);
+        } else {
+            assertEquals(topics.size(), 1);
+            assertTrue(topics.contains(newTopic));
+        }
 
         // Cleanup
         kConsumer.close();
@@ -309,7 +319,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
             // Admin must have produce permissions
             @Cleanup
-            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getClientPort(),
                     newTenant + "/" + NAMESPACE, "token:" + adminToken);
             int totalMsgs = 10;
             String messageStrPrefix = testTopic + "_message_";
@@ -321,7 +331,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
             // Ensure can consume message.
             @Cleanup
-            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getClientPort(), false,
                     newTenant + "/" + NAMESPACE, "token:" + adminToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
 
@@ -342,7 +352,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
             // User can't produce, because don't have produce action.
             @Cleanup
-            KProducer kProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(testTopic, false, "localhost", getClientPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             try {
                 kProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "")).get();
@@ -376,14 +386,14 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
             // SIMPLE_USER can produce
             @Cleanup
-            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getKafkaBrokerPort(),
+            KProducer adminProducer = new KProducer(testTopic, false, "localhost", getClientPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             adminProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "message")).get();
 
 
             // Consume should be failed.
             @Cleanup
-            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getKafkaBrokerPort(), false,
+            KConsumer kConsumer = new KConsumer(testTopic, "localhost", getClientPort(), false,
                     newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
             try {

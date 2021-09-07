@@ -311,14 +311,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
         final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
-
         for (String namespace : allowedNamespaces) {
-            getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicListAsync(NamespaceName.get(namespace).getLocalName()))
+            getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicListAsync(namespace))
                     .whenComplete((topics, e) -> {
+                        while (e instanceof CompletionException) {
+                            e = e.getCause();
+                        }
                         if (e != null) {
-                            log.error("Failed to getListOfPersistentTopic of {}", namespace, e);
-                            topicMapFuture.completeExceptionally(e);
-                            return;
+                            if (e instanceof PulsarAdminException.NotAuthorizedException) {
+                                topics = Collections.emptyList();
+                            } else {
+                                topicMapFuture.completeExceptionally(e);
+                            }
                         }
                         if (topicMapFuture.isCompletedExceptionally()) {
                             return;
@@ -433,7 +437,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
             requestTopics.forEach(topic -> {
                 final String fullTopicName = new KopTopic(topic).getFullName();
-                System.out.println("fullTopicName "+fullTopicName);
 
                 authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((authorized, ex) -> {
@@ -454,11 +457,25 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         // the topic will be created first.
                         getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicMetadataAsync(fullTopicName))
                                 .whenComplete((partitionedTopicMetadata, throwable) -> {
-                                    log.info("getPartitionedTopicMetadataAsync for "+fullTopicName+" -> "+partitionedTopicMetadata, throwable);
                                     if (throwable != null) {
                                         if (throwable instanceof CompletionException
                                                 && throwable.getCause() != null) {
                                             throwable = throwable.getCause();
+                                        }
+                                        if (throwable instanceof PulsarAdminException.NotAuthorizedException) {
+                                            // Failed get partitions due to authorization errors
+                                            allTopicMetadata.add(
+                                                    new TopicMetadata(
+                                                            Errors.TOPIC_AUTHORIZATION_FAILED,
+                                                            topic,
+                                                            isInternalTopic(fullTopicName),
+                                                            Collections.emptyList()));
+                                            log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
+                                                            + "metadata: {}",
+                                                    ctx.channel(), metadataHar.getHeader(),
+                                                    fullTopicName, throwable.getMessage());
+                                            completeOneTopic.run();
+                                            return;
                                         }
                                         if (throwable instanceof PulsarAdminException.NotFoundException) {
                                             if (kafkaConfig.isAllowAutoTopicCreation()
@@ -568,7 +585,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 AtomicInteger partitionsCompleted = new AtomicInteger(0);
                 List<PartitionMetadata> partitionMetadatas = Collections
                     .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
-
                 list.forEach(topicName -> {
                     // For non-partitioned topic.
                     TopicName realTopicName = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
@@ -581,8 +597,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             } else {
                                 // cache the current owner
                                 Node newNode = partitionMetadata.leader();
-                                log.info("{} For topic {} the leader is {} topicsLeaders {}", this, topicName, newNode, topicsLeaders);
-
+                                log.info("{} For topic {} the leader is {}", this, topicName, newNode);
 
                                 // answer that we are the owner and that there is only one replice
                                 Node newNodeAnswer = newSelfNode();
@@ -632,7 +647,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             clusterName,
                                             controllerId,
                                             allTopicMetadata);
-                                    log.info("Metadata response {}", finalResponse);
                                     resultFuture.complete(finalResponse);
                                 }
                             }
@@ -1036,7 +1050,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<PartitionMetadata> findCoordinator(FindCoordinatorRequest.CoordinatorType type, String key) {
         String pulsarTopicName = computePulsarTopicName(type, key);
         log.info("findCoordinator for {} {} -> topic {}", type, key, pulsarTopicName);
-        return findBroker(TopicName.get(pulsarTopicName));
+        return findBroker(TopicName.get(pulsarTopicName), true);
     }
 
     private String computePulsarTopicName(FindCoordinatorRequest.CoordinatorType type, String key) {
@@ -1239,12 +1253,22 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     private CompletableFuture<PulsarAdmin> getPulsarAdmin() {
+        return getPulsarAdmin(false);
+    }
+
+    private CompletableFuture<PulsarAdmin> getPulsarAdmin(boolean system) {
         try {
-            String principal;
+            final String principal;
             if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
-                principal = authenticator.session().getPrincipal().getName();
-            } else {
-                principal = null;
+                if (system && !kafkaConfig.getSuperUserRoles().isEmpty()) {
+                    // sometimes we need a super user to perform some system operations,
+                    // like for finding coordinators
+                    principal = kafkaConfig.getSuperUserRoles().iterator().next();
+                } else {
+                    principal = authenticator.session().getPrincipal().getName();
+                }
+            } else{
+                    principal = null;
             }
             return CompletableFuture.completedFuture(admin.getAdminForPrincipal(principal));
         } catch (PulsarClientException err) {
@@ -1253,6 +1277,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
+        return findBroker(topic, false);
+    }
+
+    public CompletableFuture<PartitionMetadata> findBroker(TopicName topic, boolean system) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
@@ -1263,7 +1291,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             returnFuture.complete(newPartitionMetadata(topic, cached));
             return returnFuture;
         }
-        getPulsarAdmin().thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString())
+        getPulsarAdmin(system).thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString())
             .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
             .whenComplete((stringOptional, throwable) -> {
                 if (throwable != null || stringOptional == null || !stringOptional.isPresent()) {

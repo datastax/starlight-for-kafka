@@ -82,6 +82,7 @@ import org.eclipse.jetty.server.Server;
 @Slf4j
 public abstract class KopProtocolHandlerTestBase {
 
+    protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "protocols/test-protocol-handler.nar";
     protected KafkaServiceConfiguration conf;
     protected ProxyService pulsarProxy;
     protected PulsarService pulsar;
@@ -189,7 +190,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setGroupInitialRebalanceDelayMs(0);
 
         // set protocol related config
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource("protocols/test-protocol-handler.nar");
+        URL testHandlerUrl = this.getClass().getClassLoader().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
         Path handlerPath;
         try {
             handlerPath = Paths.get(testHandlerUrl.toURI());
@@ -718,19 +719,26 @@ public abstract class KopProtocolHandlerTestBase {
         return getBrokerPort() + " = " + getKafkaBrokerPort();
     }
 
+    protected void overrideProxyConfiguration(Properties config) throws Exception {
+
+    }
+
+    protected boolean isProxyStarted() {
+        return pulsarProxy != null;
+    }
+
     protected void startProxy() throws Exception {
-
-
         Properties config = new Properties();
         config.put("kafkaMetadataNamespace", conf.getKafkaMetadataNamespace());
         config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
         config.put("kafkaTenant", conf.getKafkaTenant());
         config.put("kafkaNamespace", conf.getKafkaNamespace());
         config.put("entryFormat", conf.getEntryFormat());
+        config.put("saslAllowedMechanisms", "PLAIN");
         config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));
 
         config.put("offsetsTopicNumPartitions", conf.getOffsetsTopicNumPartitions() + "");
-
+        overrideProxyConfiguration(config);
         log.info("Initial Proxy configuration {}", config);
         // copy system configuration
         ProxyConfiguration proxyConfiguration = ConfigurationUtils.create(config, ProxyConfiguration.class);
@@ -746,9 +754,7 @@ public abstract class KopProtocolHandlerTestBase {
 
         String protocolHandlerDir = handlerPath.toFile().getParent();
 
-        proxyConfiguration.setProxyProtocolHandlerDirectory(
-                protocolHandlerDir
-        );
+        proxyConfiguration.setProxyProtocolHandlerDirectory(protocolHandlerDir);
         proxyConfiguration.setProxyMessagingProtocols(Sets.newHashSet("kafka"));
         pulsarProxy = new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService());
         pulsarProxy.start();

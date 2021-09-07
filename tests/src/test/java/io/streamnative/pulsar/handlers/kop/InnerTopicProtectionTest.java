@@ -66,7 +66,7 @@ public class InnerTopicProtectionTest extends KopProtocolHandlerTestBase {
         kConfig.setBrokerShutdownTimeoutMs(0);
 
         // set protocol related config
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource("test-protocol-handler.nar");
+        URL testHandlerUrl = this.getClass().getClassLoader().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
         Path handlerPath;
         try {
             handlerPath = Paths.get(testHandlerUrl.toURI());

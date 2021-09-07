@@ -233,7 +233,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         //    use kafka producer to produce 10 messages.
         //    use pulsar consumer to get message offset.
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topicName, false, getClientPort());
         int totalMsgs = 10;
         String messageStrPrefix = topicName + "_message_";
 
@@ -284,7 +284,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         //    use kafka producer to produce 10 messages.
         //    use pulsar consumer to get message offset.
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topicName, false, getClientPort());
         int totalMsgs = 10;
         String messageStrPrefix = topicName + "_message_";
 
@@ -372,7 +372,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         // 1. prepare topic:
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, getKafkaBrokerPort());
+        KProducer kProducer = new KProducer(topicName, false, getClientPort());
         int totalMsgs = 10;
         String messageStrPrefix = topicName + "_message_";
 
@@ -587,7 +587,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
     private KafkaProducer<String, String> createKafkaProducer() {
         Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getClientPort());
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "FetchRequestTestProducer");
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
@@ -598,7 +598,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     private KafkaConsumer<String, String> createKafkaConsumer(int maxWait, int minBytes) {
         final Properties props = new Properties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "test_client");
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getClientPort());
         props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWait);
         props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);

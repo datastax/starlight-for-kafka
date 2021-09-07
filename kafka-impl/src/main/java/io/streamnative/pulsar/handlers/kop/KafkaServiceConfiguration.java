@@ -310,12 +310,6 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Roles to be considered 'proxy', on the KOP broker"
-    )
-    private Set<String> proxyRoles = new HashSet<String>();
-
-    @FieldContext(
-            category = CATEGORY_KOP,
             doc = "Mapping for Pulsar Broker ports to KOP ports, default is 6650=9092,6651=9093, useful when the proxy is not configured with ZookKeeper addresses"
     )
     private String kafkaProxyBrokerPortToKopMapping;
