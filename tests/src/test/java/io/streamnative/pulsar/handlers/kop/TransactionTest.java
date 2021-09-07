@@ -77,7 +77,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicProduceAndConsumeTest(String topicName,
                                            String transactionalId,
                                            String isolation) throws Exception {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+        String kafkaServer = "localhost:" + getClientPort();
 
         Properties producerProps = new Properties();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
@@ -126,7 +126,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                                    int totalMessageCount,
                                    String lastMessage,
                                    String isolation) throws InterruptedException {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+        String kafkaServer = "localhost:" + getClientPort();
 
         Properties consumerProps = new Properties();
         consumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
@@ -184,7 +184,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     public void txnOffsetTest(String topic, int messageCnt, boolean isCommit) throws Exception {
-        String kafkaServer = "localhost:" + getKafkaBrokerPort();
+        String kafkaServer = "localhost:" + getClientPort();
         String groupId = "my-group-id";
 
         List<String> sendMsgs = prepareData(topic, kafkaServer, "first send message - ", messageCnt);
