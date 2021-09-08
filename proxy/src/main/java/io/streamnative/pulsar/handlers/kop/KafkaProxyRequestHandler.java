@@ -223,6 +223,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
+    protected void maybeDelayCloseOnAuthenticationFailure() {
+
+    }
+
+    @Override
+    protected void completeCloseOnAuthenticationFailure() {
+
+    }
+
+    @Override
     protected void close() {
         if (isActive.getAndSet(false)) {
             super.close();
