@@ -23,11 +23,11 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
     @Override
     public void setup() throws Exception {
         super.setup();
-
         startProxy();
     }
 
     protected void beforeStartingProxy(ProxyConfiguration proxyConfiguration) throws Exception {
+        // we have to give the addresses of all the brokers, because in some tests we are stopping one of them
         proxyConfiguration.setBrokerWebServiceURL("http://"
                 + "localhost:" + primaryBrokerWebservicePort + ";"
                 + "localhost:" + secondaryBrokerWebservicePort);
@@ -49,7 +49,14 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
                 secondaryBrokerPort + "=" + secondaryKafkaBrokerPort;
     }
 
+    @Test(timeOut = 180000, priority = -1)
+    @Override
+    public void testMultiBrokerUnloadReload() throws Exception {
+        super.testMultiBrokerUnloadReload();
+    }
+
     @Test(timeOut = 180000)
+    @Override
     public void testOneBrokerShutdown() throws Exception {
         super.testOneBrokerShutdown();
     }

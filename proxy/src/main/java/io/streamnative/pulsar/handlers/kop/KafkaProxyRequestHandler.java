@@ -620,8 +620,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                             // whether completed this topic's partitions list.
                             int finishedPartitions = partitionsCompleted.incrementAndGet();
-                            if (log.isDebugEnabled()) {
-                                log.debug("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
+                            if (log.isTraceEnabled()) {
+                                log.trace("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
                                     ctx.channel(), metadataHar.getHeader(),
                                     topic, finishedPartitions, partitionsNumber);
                             }
@@ -637,14 +637,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                                 // whether completed all the topics requests.
                                 int finishedTopics = topicsCompleted.incrementAndGet();
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Request {}: Completed findBroker for topic {}, "
+                                if (log.isTraceEnabled()) {
+                                    log.trace("[{}] Request {}: Completed findBroker for topic {}, "
                                             + "partitions found/all: {}/{}. \n dump All Metadata:",
                                         ctx.channel(), metadataHar.getHeader(), topic,
                                         finishedTopics, topicsNumber);
 
                                     allTopicMetadata.stream()
-                                        .forEach(data -> log.debug("TopicMetadata response: {}", data.toString()));
+                                        .forEach(data -> log.trace("TopicMetadata response: {}", data.toString()));
                                 }
                                 if (finishedTopics == topicsNumber) {
                                     // TODO: confirm right value for controller_id
@@ -1040,6 +1040,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             FetchResponse<?> resp = (FetchResponse) response;
                             resp.responseData()
                                     .forEach( (part, partitionResponse) -> {
+                                        if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
+                                            String fullTopicName = KopTopic.toString(topicPartition);
+                                            log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
+                                            topicsLeaders.remove(fullTopicName);
+                                        }
                                 log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker, partitionResponse);
                                 resultConsumer.accept(partitionResponse);
                             });
@@ -1295,8 +1300,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic, boolean system) {
-        if (log.isDebugEnabled()) {
-            log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
+        if (log.isTraceEnabled()) {
+            log.trace("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
@@ -1322,8 +1327,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 final EndPoint endPoint = EndPoint.getPlainTextEndPoint(listeners);
                 final Node node = newNode(endPoint.getInetAddress());
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Found broker localListeners: {} for topicName: {}, "
+                if (log.isTraceEnabled()) {
+                    log.trace("Found broker localListeners: {} for topicName: {}, "
                             + "localListeners: {}, found Listeners: {}",
                         listeners, topic, advertisedListeners, listeners);
                 }
@@ -1343,8 +1348,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     static Node newNode(InetSocketAddress address) {
-        if (log.isDebugEnabled()) {
-            log.debug("Return Broker Node of {}. {}:{}", address, address.getHostString(), address.getPort());
+        if (log.isTraceEnabled()) {
+            log.trace("Return Broker Node of {}. {}:{}", address, address.getHostString(), address.getPort());
         }
         return new Node(
             Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
@@ -1360,8 +1365,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         int pulsarPartitionIndex = topicName.getPartitionIndex();
         int kafkaPartitionIndex = pulsarPartitionIndex == -1 ? 0 : pulsarPartitionIndex;
 
-        if (log.isDebugEnabled()) {
-            log.debug("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
+        if (log.isTraceEnabled()) {
+            log.trace("Return PartitionMetadata node: {}, topicName: {}", node, topicName);
         }
 
         return new PartitionMetadata(
