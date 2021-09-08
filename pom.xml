@@ -35,7 +35,7 @@
 
   <properties>
     <javac.target>1.8</javac.target>
-    <redirectTestOutputToFile>true</redirectTestOutputToFile>
+    <redirectTestOutputToFile>false</redirectTestOutputToFile>
 
     <!-- dependencies -->
     <commons-lang3.version>3.11</commons-lang3.version>
