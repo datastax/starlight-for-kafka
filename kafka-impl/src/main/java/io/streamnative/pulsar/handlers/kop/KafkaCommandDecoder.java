@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.timeout.IdleStateEvent;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import java.io.Closeable;
 import java.net.SocketAddress;
@@ -76,6 +77,21 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         this.remoteAddress = ctx.channel().remoteAddress();
         this.ctx = ctx;
         isActive.set(true);
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        // Handle idle connection closing
+        if (evt instanceof IdleStateEvent) {
+            if (log.isDebugEnabled()) {
+                log.debug("About to close the idle connection from {} due to being idle for {} millis",
+                        this.getRemoteAddress(), kafkaConfig.getConnectionMaxIdleMs());
+            }
+            this.close();
+        } else {
+            super.userEventTriggered(ctx, evt);
+        }
+
     }
 
     @Override
@@ -184,12 +200,11 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         // execute channelPrepare to complete authentication
         if (isActive.get() && !channelReady()) {
             try {
-
                 channelPrepare(ctx, buffer, registerRequestParseLatency, registerRequestLatency);
                 return;
             } catch (AuthenticationException e) {
-                log.error("unexpected error in authenticate:", e);
-                close();
+                log.error("Failed authentication with [{}] ({})", this.remoteAddress, e.getMessage());
+                maybeDelayCloseOnAuthenticationFailure();
                 return;
             } finally {
                 buffer.release();
@@ -444,6 +459,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                                            BiConsumer<Long, Throwable> registerRequestParseLatency,
                                            BiConsumer<String, Long> registerRequestLatency)
             throws AuthenticationException;
+
+    protected abstract void maybeDelayCloseOnAuthenticationFailure();
+
+    protected abstract void completeCloseOnAuthenticationFailure();
 
     protected abstract void
     handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
