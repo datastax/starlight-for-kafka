@@ -13,8 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
 
 public class DistributedClusterProxyTest extends DistributedClusterTest {
     @BeforeMethod
@@ -23,6 +25,12 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
         super.setup();
 
         startProxy();
+    }
+
+    protected void beforeStartingProxy(ProxyConfiguration proxyConfiguration) throws Exception {
+        proxyConfiguration.setBrokerWebServiceURL("http://"
+                + "localhost:" + primaryBrokerWebservicePort + ";"
+                + "localhost:" + secondaryBrokerWebservicePort);
     }
 
     @AfterMethod(timeOut = 30000, alwaysRun = true)
@@ -39,5 +47,10 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
     protected String computeKafkaProxyBrokerPortToKopMapping() {
         return primaryBrokerPort + "=" + primaryKafkaBrokerPort + "," +
                 secondaryBrokerPort + "=" + secondaryKafkaBrokerPort;
+    }
+
+    @Test(timeOut = 180000)
+    public void testOneBrokerShutdown() throws Exception {
+        super.testOneBrokerShutdown();
     }
 }

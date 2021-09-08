@@ -584,7 +584,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
     }
 
-    @Test(timeOut = 60000)
+    @Test(timeOut = 120000)
     public void testOneBrokerShutdown() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopOneBrokerShutdown" + partitionNumber;

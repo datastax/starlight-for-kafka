@@ -72,10 +72,7 @@ import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.record.InvalidRecordException;
-import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.kafka.common.record.MutableRecordBatch;
-import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.*;
 import org.apache.kafka.common.requests.*;
 import org.apache.kafka.common.requests.MetadataResponse.PartitionMetadata;
 import org.apache.kafka.common.requests.MetadataResponse.TopicMetadata;
@@ -806,8 +803,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         topicPartition, new PartitionResponse(Errors.NONE, offset, -1L, -1L));
                 final Consumer<Errors> errorsConsumer =
                         errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
-                final Consumer<Throwable> exceptionConsumer =
-                        e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
 
                 final String fullPartitionName = KopTopic.toString(topicPartition);
                 // TODO: have a better way to find an unused correlation id
@@ -898,7 +893,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 .stream()
                                 .collect(Collectors.toMap(Function.identity(),
                                         p -> new FetchResponse.PartitionData(Errors.INVALID_TOPIC_EXCEPTION,
-                                                0,0, 0, null, null)));
+                                                0,0, 0, null, MemoryRecords.EMPTY)));
                 resultFuture.complete(new FetchResponse(Errors.INVALID_TOPIC_EXCEPTION,
                         new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                 return;
@@ -922,9 +917,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     .keySet()
                                     .stream()
                                     .collect(Collectors.toMap(Function.identity(),
-                                            p -> new FetchResponse.PartitionData(Errors.REQUEST_TIMED_OUT,
-                                                    0,0, 0, null, null)));
-                    resultFuture.complete(new FetchResponse(Errors.REQUEST_TIMED_OUT,
+                                            p -> new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
+                                                    0,0, 0, null, MemoryRecords.EMPTY)));
+                    resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
                             new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                     return null;
                 })
@@ -957,9 +952,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         .keySet()
                                         .stream()
                                         .collect(Collectors.toMap(Function.identity(),
-                                                p -> new FetchResponse.PartitionData(Errors.REQUEST_TIMED_OUT,
-                                                        0,0, 0, null, null)));
-                        resultFuture.complete(new FetchResponse(Errors.REQUEST_TIMED_OUT,
+                                                p -> new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
+                                                        0,0, 0, null, MemoryRecords.EMPTY)));
+                        resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
                                 new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                         return null;
                     });
@@ -979,8 +974,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 // add the topicPartition with timeout error if it's not existed in responseMap
                 fetchRequest.fetchData().keySet().forEach(topicPartition -> {
                     if (!responseMap.containsKey(topicPartition)) {
-                        responseMap.put(topicPartition, new FetchResponse.PartitionData(Errors.REQUEST_TIMED_OUT,
-                                0,0, 0, null, null));
+                        responseMap.put(topicPartition, new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
+                                0,0, 0, null, MemoryRecords.EMPTY));
                     }
                 });
                 if (log.isDebugEnabled()) {
@@ -989,12 +984,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(new FetchResponse(Errors.NONE,
                         responseMapRaw, 0, fetchRequest.metadata().sessionId()));
             };
-            BiConsumer<TopicPartition, FetchResponse.PartitionData> addPartitionResponse = (topicPartition, response) -> {
+            BiConsumer<TopicPartition, FetchResponse.PartitionData> addFetchPartitionResponse = (topicPartition, response) -> {
 
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-                log.debug("addPartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response, restTopicPartitionNum);
+                log.debug("addFetchPartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response, restTopicPartitionNum);
                 if (restTopicPartitionNum < 0) {
                     return;
                 }
@@ -1004,10 +999,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             };
 
             fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
-                final Consumer<FetchResponse.PartitionData> resultConsumer = data -> addPartitionResponse.accept(
+                final Consumer<FetchResponse.PartitionData> resultConsumer = data -> addFetchPartitionResponse.accept(
                         topicPartition, data);
                 final Consumer<Errors> errorsConsumer =
-                        errors -> addPartitionResponse.accept(topicPartition, new FetchResponse.PartitionData(errors, 0,0, 0, null, null));
+                        errors -> addFetchPartitionResponse.accept(topicPartition, new FetchResponse.PartitionData(errors, 0, 0, 0, null, MemoryRecords.EMPTY));
 
                 final String fullPartitionName = KopTopic.toString(topicPartition);
                 // TODO: have a better way to find an unused correlation id
@@ -1050,7 +1045,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             });
                         }).exceptionally(error -> {
                             log.error("bad error", error);
-                            errorsConsumer.accept(Errors.BROKER_NOT_AVAILABLE);
+                            errorsConsumer.accept(Errors.UNKNOWN_SERVER_ERROR);
                             return null;
                         });
             });

@@ -719,8 +719,10 @@ public abstract class KopProtocolHandlerTestBase {
         return getBrokerPort() + " = " + getKafkaBrokerPort();
     }
 
-    protected void overrideProxyConfiguration(Properties config) throws Exception {
+    protected void prepareProxyConfiguration(Properties config) throws Exception {
+    }
 
+    protected void beforeStartingProxy(ProxyConfiguration proxyConfiguration) throws Exception {
     }
 
     protected boolean isProxyStarted() {
@@ -738,7 +740,7 @@ public abstract class KopProtocolHandlerTestBase {
         config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));
 
         config.put("offsetsTopicNumPartitions", conf.getOffsetsTopicNumPartitions() + "");
-        overrideProxyConfiguration(config);
+        prepareProxyConfiguration(config);
         log.info("Initial Proxy configuration {}", config);
         // copy system configuration
         ProxyConfiguration proxyConfiguration = ConfigurationUtils.create(config, ProxyConfiguration.class);
@@ -756,6 +758,7 @@ public abstract class KopProtocolHandlerTestBase {
 
         proxyConfiguration.setProxyProtocolHandlerDirectory(protocolHandlerDir);
         proxyConfiguration.setProxyMessagingProtocols(Sets.newHashSet("kafka"));
+        beforeStartingProxy(proxyConfiguration);
         pulsarProxy = new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService());
         pulsarProxy.start();
     }

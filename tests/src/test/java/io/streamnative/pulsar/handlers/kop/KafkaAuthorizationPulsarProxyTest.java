@@ -44,7 +44,7 @@ public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBas
     }
 
     @Override
-    protected void overrideProxyConfiguration(Properties conf) throws Exception {
+    protected void prepareProxyConfiguration(Properties conf) throws Exception {
         conf.put("authorizationEnabled", "true");
         conf.put("authenticationEnabled", "true");
         conf.put("superUserRoles", ADMIN_USER);
