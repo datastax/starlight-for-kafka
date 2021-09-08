@@ -93,17 +93,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setBrokerShutdownTimeoutMs(0);
 
         // set protocol related config
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
-        Path handlerPath;
-        try {
-            handlerPath = Paths.get(testHandlerUrl.toURI());
-        } catch (Exception e) {
-            log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);
-            return null;
-        }
-
-        String protocolHandlerDir = handlerPath.toFile().getParent();
-
+        String protocolHandlerDir = getProtocolHandlerDir();
         kConfig.setProtocolHandlerDirectory(
             protocolHandlerDir
         );

@@ -82,7 +82,8 @@ import org.eclipse.jetty.server.Server;
 @Slf4j
 public abstract class KopProtocolHandlerTestBase {
 
-    protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "protocols/test-protocol-handler.nar";
+    protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/protocols/test-protocol-handler.nar";
+    protected static final String PROXYROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/proxyprotocols/test-protocol-proxy-handler.nar";
     protected KafkaServiceConfiguration conf;
     protected ProxyService pulsarProxy;
     protected PulsarService pulsar;
@@ -190,16 +191,7 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setGroupInitialRebalanceDelayMs(0);
 
         // set protocol related config
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
-        Path handlerPath;
-        try {
-            handlerPath = Paths.get(testHandlerUrl.toURI());
-        } catch (Exception e) {
-            log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);
-            return;
-        }
-
-        String protocolHandlerDir = handlerPath.toFile().getParent();
+        String protocolHandlerDir = getProtocolHandlerDir();
 
         kafkaConfig.setProtocolHandlerDirectory(
             protocolHandlerDir
@@ -207,6 +199,20 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
 
         this.conf = kafkaConfig;
+    }
+
+    protected String getProtocolHandlerDir() {
+        URL testHandlerUrl = this.getClass().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
+        Path handlerPath;
+        try {
+            handlerPath = Paths.get(testHandlerUrl.toURI());
+        } catch (Exception e) {
+            log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);
+            throw new RuntimeException(e);
+        }
+
+        String protocolHandlerDir = handlerPath.toFile().getParent();
+        return protocolHandlerDir;
     }
 
     protected final void internalSetup() throws Exception {
@@ -751,7 +757,7 @@ public abstract class KopProtocolHandlerTestBase {
         // Map Pulsar port to KOP port
         proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", computeKafkaProxyBrokerPortToKopMapping());
 
-        URL testHandlerUrl = this.getClass().getClassLoader().getResource("proxyprotocols/test-protocol-proxy-handler.nar");
+        URL testHandlerUrl = this.getClass().getResource(PROXYROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
         Path handlerPath = Paths.get(testHandlerUrl.toURI());
 
         String protocolHandlerDir = handlerPath.toFile().getParent();
