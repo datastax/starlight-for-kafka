@@ -743,6 +743,7 @@ public abstract class KopProtocolHandlerTestBase {
         config.put("kafkaNamespace", conf.getKafkaNamespace());
         config.put("entryFormat", conf.getEntryFormat());
         config.put("saslAllowedMechanisms", "PLAIN");
+        config.put("defaultNumPartitions", conf.getDefaultNumPartitions() + "");
         config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));
 
         config.put("offsetsTopicNumPartitions", conf.getOffsetsTopicNumPartitions() + "");

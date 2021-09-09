@@ -337,7 +337,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testCreateAndDeleteTopics() throws Exception {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
@@ -358,7 +358,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testCreateInvalidTopics() {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
 
         @Cleanup
@@ -384,7 +384,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testCreateExistedTopic() {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
 
         @Cleanup
@@ -409,7 +409,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testCreateTopicWithDefaultPartitions() throws Exception {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
 
         final String topic = "testCreatedTopicWithDefaultPartitions";
@@ -426,7 +426,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testDeleteNotExistedTopics() throws Exception {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
@@ -443,7 +443,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 10000)
     public void testDescribeTopics() throws Exception {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 5000);
 
         @Cleanup
@@ -479,7 +479,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic(topic, 1);
 
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
@@ -519,7 +519,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic(topic, 1);
 
         final Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
 

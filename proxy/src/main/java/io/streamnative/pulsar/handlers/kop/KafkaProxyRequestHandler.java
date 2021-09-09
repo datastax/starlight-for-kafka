@@ -65,6 +65,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -1255,7 +1256,27 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
 
-        throw new UnsupportedOperationException();
+        getPulsarAdmin().thenCompose(admin -> {
+            AdminManager adminManager = new AdminManager(admin, kafkaConfig);
+            return adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
+                    .collect(Collectors.toMap(
+                            resource -> resource,
+                            resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
+                    ))
+            ).thenApply(configResourceConfigMap -> {
+                resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                return null;
+            });
+        }).exceptionally(error -> {
+            Map<ConfigResource, DescribeConfigsResponse.Config> errors = request
+                    .resources()
+                    .stream()
+                    .collect(Collectors.toMap(Function.identity(), r -> {
+                        return new DescribeConfigsResponse.Config(ApiError.fromThrowable(error), Collections.emptyList());
+                    }));
+            resultFuture.complete(new DescribeConfigsResponse(0, errors));
+            return null;
+        });;
     }
 
     @Override
@@ -1264,13 +1285,25 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
-        throw new UnsupportedOperationException();
+        getPulsarAdmin(false).thenApply(admin -> {
+            AdminManager adminManager = new AdminManager(admin, kafkaConfig);
+            resultFuture.complete(new DeleteTopicsResponse(adminManager.deleteTopics(topicsToDelete)));
+            return null;
+        }).exceptionally(error -> {
+            Map<String, Errors> errors = request
+                    .topics()
+                    .stream()
+                    .collect(Collectors.toMap(Function.identity(), (a) -> Errors.forException(error)));
+            resultFuture.complete(new DeleteTopicsResponse(errors));
+            return null;
+        });
+
     }
 
 
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
-        ctx.close();
+        this.close();
     }
 
     private CompletableFuture<Optional<String>>  getProtocolDataToAdvertise(String pulsarAddress,
@@ -1445,64 +1478,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
         return requestHar.getRequest().getErrorResponse(((Integer) THROTTLE_TIME_MS.defaultValue), e);
     }
-
-    // whether a ServiceLookupData contains wanted address.
-    static boolean lookupDataContainsAddress(ServiceLookupData data, String hostAndPort) {
-        return (data.getPulsarServiceUrl() != null && data.getPulsarServiceUrl().contains(hostAndPort))
-            || (data.getPulsarServiceUrlTls() != null && data.getPulsarServiceUrlTls().contains(hostAndPort))
-            || (data.getWebServiceUrl() != null && data.getWebServiceUrl().contains(hostAndPort))
-            || (data.getWebServiceUrlTls() != null && data.getWebServiceUrlTls().contains(hostAndPort));
-    }
-
-    private static MemoryRecords validateRecords(short version, TopicPartition topicPartition, MemoryRecords records) {
-        if (version >= 3) {
-            Iterator<MutableRecordBatch> iterator = records.batches().iterator();
-            if (!iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " must have at least "
-                    + "one record batch");
-            }
-
-            MutableRecordBatch entry = iterator.next();
-            if (entry.magic() != RecordBatch.MAGIC_VALUE_V2) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain record batches with magic version 2");
-            }
-
-            if (iterator.hasNext()) {
-                throw new InvalidRecordException("Produce requests with version " + version + " are only allowed to "
-                    + "contain exactly one record batch");
-            }
-        }
-
-        int validBytesCount = 0;
-        for (RecordBatch batch : records.batches()) {
-            if (batch.magic() >= RecordBatch.MAGIC_VALUE_V2 && batch.baseOffset() != 0) {
-                throw new InvalidRecordException("The baseOffset of the record batch in the append to "
-                    + topicPartition + " should be 0, but it is " + batch.baseOffset());
-            }
-
-            batch.ensureValid();
-            validBytesCount += batch.sizeInBytes();
-        }
-
-        if (validBytesCount < 0) {
-            throw new CorruptRecordException("Cannot append record batch with illegal length "
-                + validBytesCount + " to log for " + topicPartition
-                + ". A possible cause is corrupted produce request.");
-        }
-
-        MemoryRecords validRecords;
-        if (validBytesCount == records.sizeInBytes()) {
-            validRecords = records;
-        } else {
-            ByteBuffer validByteBuffer = records.buffer().duplicate();
-            validByteBuffer.limit(validBytesCount);
-            validRecords = MemoryRecords.readableRecords(validByteBuffer);
-        }
-
-        return validRecords;
-    }
-
 
     @VisibleForTesting
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource) {
