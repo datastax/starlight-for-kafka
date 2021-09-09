@@ -439,6 +439,7 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
 
     }
 
+    @Test
     public void shouldCountSessionWindows() throws Exception {
         final long sessionGap = 5 * 60 * 1000L;
         final long maintainMillis = sessionGap * 3;

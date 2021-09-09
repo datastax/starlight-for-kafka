@@ -1203,8 +1203,51 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(createTopics.getRequest() instanceof CreateTopicsRequest);
         CreateTopicsRequest request = (CreateTopicsRequest) createTopics.getRequest();
+        if (request.validateOnly()) {
+            Map<String, ApiError> errors = request
+                    .topics()
+                    .keySet()
+                    .stream()
+                    .collect(Collectors.toMap(Function.identity(), (a) -> ApiError.fromThrowable(new UnsupportedOperationException())));
+            resultFuture.complete(new CreateTopicsResponse(errors));
+            return;
+        }
 
-        throw new UnsupportedOperationException();
+        final Map<String, ApiError> result = new HashMap<>();
+        final Map<String, CreateTopicsRequest.TopicDetails> validTopics = new HashMap<>();
+        final Set<String> duplicateTopics = request.duplicateTopics();
+
+        request.topics().forEach((topic, details) -> {
+            if (!duplicateTopics.contains(topic)) {
+                validTopics.put(topic, details);
+            } else {
+                final String errorMessage = "Create topics request from client `" + createTopics.getHeader().clientId()
+                        + "` contains multiple entries for the following topics: " + duplicateTopics;
+                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+            }
+        });
+
+        if (validTopics.isEmpty()) {
+            resultFuture.complete(new CreateTopicsResponse(result));
+        } else {
+            // we are using a PulsarAdmin with the user identity, so Pulsar will handle authorization
+            getPulsarAdmin().thenCompose(admin -> {
+                AdminManager adminManager = new AdminManager(admin, kafkaConfig);
+                return adminManager.createTopicsAsync(validTopics, request.timeout()).thenApply(validResult -> {
+                    result.putAll(validResult);
+                    resultFuture.complete(new CreateTopicsResponse(result));
+                    return null;
+                });
+            }).exceptionally(error -> {
+                Map<String, ApiError> errors = request
+                        .topics()
+                        .keySet()
+                        .stream()
+                        .collect(Collectors.toMap(Function.identity(), (a) -> ApiError.fromThrowable(error)));
+                resultFuture.complete(new CreateTopicsResponse(errors));
+                return null;
+            });
+        }
     }
 
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
