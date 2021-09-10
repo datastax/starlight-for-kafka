@@ -248,7 +248,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
-        System.out.println("handleApiVersionsRequest");
         if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
             // Notify Client that API_VERSION is UNSUPPORTED.
             AbstractResponse apiResponse = overloadDefaultApiVersionsResponse(true);
