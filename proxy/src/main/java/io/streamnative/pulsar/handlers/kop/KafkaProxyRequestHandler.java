@@ -331,6 +331,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         }
                         if (e != null) {
                             if (e instanceof PulsarAdminException.NotAuthorizedException) {
+                                log.debug("User {} is not allowed to list topics in namespace {}", currentUser(), namespace);
                                 topics = Collections.emptyList();
                             } else {
                                 topicMapFuture.completeExceptionally(e);
@@ -1352,18 +1353,24 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         return getPulsarAdmin(false);
     }
 
+    private String currentUser() {
+        if (authenticator != null
+                && authenticator.session() != null
+                && authenticator.session().getPrincipal() != null) {
+            return authenticator.session().getPrincipal().getName();
+        } else {
+            return null;
+        }
+    }
+
     private CompletableFuture<PulsarAdmin> getPulsarAdmin(boolean system) {
         try {
-            String principal = null;
-            if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
-                if (system && !StringUtils.isBlank(kafkaConfig.getKafkaProxySuperUserRole())) {
-                    // sometimes we need a super user to perform some system operations,
-                    // like for finding coordinators
-                    principal = kafkaConfig.getKafkaProxySuperUserRole();
-                }
-                if (principal == null) {
-                    principal = authenticator.session().getPrincipal().getName();
-                }
+            String principal = currentUser();
+            if (principal != null && system && !StringUtils.isBlank(kafkaConfig.getKafkaProxySuperUserRole())) {
+                // sometimes we need a super user to perform some system operations,
+                // like for finding coordinators
+                // but if you are not authenticated (principal = null) then we do not use this power in any case
+                principal = kafkaConfig.getKafkaProxySuperUserRole();
             }
             return CompletableFuture.completedFuture(admin.getAdminForPrincipal(principal));
         } catch (PulsarClientException err) {
@@ -1800,8 +1807,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 out = new DataOutputStream(socket.getOutputStream());
                 inputHandler = new Thread(this,"client-"+KafkaProxyRequestHandler.this.id + "-" + connectionKey);
                 inputHandler.start();
-                if (authenticator != null && authenticator.session() != null) {
-                    String originalPrincipal = authenticator.session().getPrincipal().getName();
+                String originalPrincipal = currentUser();
+                if (originalPrincipal != null) {
                     log.debug("Authenticating to KOP broker {} with {} identity", brokerHost + ":" + brokerPort, originalPrincipal);
                     connectionFuture = saslHandshake() // send SASL mechanism
                             .thenCompose( ___ -> authenticate()); // send Proxy Token, as Username we send the authenticated principal
@@ -1866,7 +1873,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 return FutureUtil.failedFuture(new Exception("This proxy has not been configuration for token authentication"));
             }
 
-            String originalPrincipal = authenticator.session().getPrincipal().getName();
+            String originalPrincipal = currentUser();
             String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
             String password = "token:" + actualAuthenticationToken;
             String usernamePassword = prefix +
