@@ -26,6 +26,7 @@ import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
@@ -205,6 +206,9 @@ public abstract class KopProtocolHandlerTestBase {
         URL testHandlerUrl = this.getClass().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
         Path handlerPath;
         try {
+            if (testHandlerUrl == null) {
+                throw new RuntimeException("Cannot find " + PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
+            }
             handlerPath = Paths.get(testHandlerUrl.toURI());
         } catch (Exception e) {
             log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);

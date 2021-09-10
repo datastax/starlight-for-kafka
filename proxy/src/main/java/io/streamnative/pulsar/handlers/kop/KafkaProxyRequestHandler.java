@@ -42,6 +42,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupState;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.NotImplementedException;
 
 import io.netty.buffer.ByteBufUtil;
@@ -1060,7 +1061,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<PartitionMetadata> findCoordinator(FindCoordinatorRequest.CoordinatorType type, String key) {
         String pulsarTopicName = computePulsarTopicName(type, key);
-        log.info("findCoordinator for {} {} -> topic {}", type, key, pulsarTopicName);
+        log.debug("findCoordinator for {} {} -> topic {}", type, key, pulsarTopicName);
         return findBroker(TopicName.get(pulsarTopicName), true);
     }
 
@@ -1353,17 +1354,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     private CompletableFuture<PulsarAdmin> getPulsarAdmin(boolean system) {
         try {
-            final String principal;
+            String principal = null;
             if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
-                if (system && !kafkaConfig.getSuperUserRoles().isEmpty()) {
+                if (system && !StringUtils.isBlank(kafkaConfig.getKafkaProxySuperUserRole())) {
                     // sometimes we need a super user to perform some system operations,
                     // like for finding coordinators
-                    principal = kafkaConfig.getSuperUserRoles().iterator().next();
-                } else {
+                    principal = kafkaConfig.getKafkaProxySuperUserRole();
+                }
+                if (principal == null) {
                     principal = authenticator.session().getPrincipal().getName();
                 }
-            } else{
-                    principal = null;
             }
             return CompletableFuture.completedFuture(admin.getAdminForPrincipal(principal));
         } catch (PulsarClientException err) {

@@ -123,13 +123,13 @@
             <configuration>
               <tasks>
                 <echo>copy protocol handler</echo>
-                <mkdir dir="${basedir}/src/test/resources/protocols"/>
+                <mkdir dir="${project.build.outputDirectory}/protocols"/>
                 <copy file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar"
-                      tofile="${basedir}/src/test/resources/protocols/test-protocol-handler.nar"/>
+                      tofile="${project.build.outputDirectory}/protocols/test-protocol-handler.nar"/>
                 <echo>copy proxy protocol handler</echo>
-                <mkdir dir="${basedir}/src/test/resources/proxyprotocols"/>
+                <mkdir dir="${project.build.outputDirectory}/proxyprotocols"/>
                 <copy file="${basedir}/../proxy/target/pulsar-kafka-proxy-${project.version}.nar"
-                      tofile="${basedir}/src/test/resources/proxyprotocols/test-protocol-proxy-handler.nar"/>
+                      tofile="${project.build.outputDirectory}/proxyprotocols/test-protocol-proxy-handler.nar"/>
               </tasks>
             </configuration>
           </execution>

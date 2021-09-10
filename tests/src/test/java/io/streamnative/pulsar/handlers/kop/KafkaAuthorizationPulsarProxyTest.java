@@ -47,7 +47,8 @@ public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBas
     protected void prepareProxyConfiguration(Properties conf) throws Exception {
         conf.put("authorizationEnabled", "true");
         conf.put("authenticationEnabled", "true");
-        conf.put("superUserRoles", ADMIN_USER);
+        conf.put("kafkaProxySuperUserRole", ADMIN_USER);
+
         conf.put("authenticationProviders", AuthenticationProviderToken.class.getName());
 
         // the Proxy myst use a proxy token

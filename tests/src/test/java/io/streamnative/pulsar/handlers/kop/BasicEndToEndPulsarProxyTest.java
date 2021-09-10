@@ -31,7 +31,7 @@ import java.util.stream.IntStream;
 import static org.testng.Assert.assertEquals;
 
 /**
- * Basic end-to-end test with `entryFormat=pulsar`.
+ * Basic end-to-end test for Proxy
  */
 public class BasicEndToEndPulsarProxyTest extends BasicEndToEndPulsarTest {
 
