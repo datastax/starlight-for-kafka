@@ -131,32 +131,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
     private final Function<String, String> brokerAddressMapper;
 
-    private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
-        // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
-        // This saves us from a Metadata lookup hop
-        String kafkaAddress = pulsarAddress
-                .replace("pulsar://", "PLAINTEXT://")
-                .replace("pulsar+ssl://", "SSL://");
-
-        if (kafkaConfig.getKafkaProxyBrokerPortToKopMapping() != null) {
-            String[] split = kafkaConfig.getKafkaProxyBrokerPortToKopMapping().split(",");
-            for (String mapping : split) {
-                String[] mappingSplit = mapping.split("=");
-                if (mappingSplit.length == 2) {
-                    kafkaAddress = kafkaAddress.replace(mappingSplit[0].trim(), mappingSplit[1].trim());
-                }
-            }
-        } else {
-
-            // standard mapping
-            kafkaAddress= kafkaAddress.replace("6650", "9092")
-                    .replace("6651", "9093")
-                    .replace("6652", "9094")
-                    .replace("6653", "9095");
-        }
-        return kafkaAddress;
-    });
-
     public KafkaProxyRequestHandler(String id, KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
                                AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
@@ -164,7 +138,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                EndPoint advertisedEndPoint,
                                Function<String, String> brokerAddressMapper) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
-        this.brokerAddressMapper = brokerAddressMapper != null ? brokerAddressMapper : DEFAULT_BROKER_ADDRESS_MAPPER;
+        this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;
         String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
         String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();

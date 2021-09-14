@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
@@ -60,8 +61,33 @@ public class KafkaProtocolProxyMain {
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
 
+    private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
+        // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
+        String kafkaAddress = pulsarAddress
+                .replace("pulsar://", "PLAINTEXT://")
+                .replace("pulsar+ssl://", "SSL://");
+
+        if (!StringUtils.isBlank(kafkaConfig.getKafkaProxyBrokerPortToKopMapping())) {
+            String[] split = kafkaConfig.getKafkaProxyBrokerPortToKopMapping().split(",");
+            for (String mapping : split) {
+                String[] mappingSplit = mapping.split("=");
+                if (mappingSplit.length == 2) {
+                    kafkaAddress = kafkaAddress.replace(mappingSplit[0].trim(), mappingSplit[1].trim());
+                }
+            }
+        } else {
+            // standard mapping
+            kafkaAddress= kafkaAddress
+                    .replace("6650", "9092") // this is the standard case
+                    .replace("6651", "9093")
+                    .replace("6652", "9094")
+                    .replace("6653", "9095");
+        }
+        return kafkaAddress;
+    });
+
     @AllArgsConstructor
-    private static final class BrokerAddressMapper implements Function<String, String> {
+    private final class BrokerAddressMapper implements Function<String, String> {
         private final ProxyService proxyService;
         private final ConcurrentHashMap<String, String> cache = new ConcurrentHashMap<>();
 
@@ -82,8 +108,8 @@ public class KafkaProtocolProxyMain {
                     if (mapped != null) {
                         return mapped;
                     } else {
-                        log.error("Cannot find KOP handler for broker {}, discovery info {}", address, availableBrokers);
-                        throw new RuntimeException("Cannot find KOP handler for broker " + address);
+                        log.error("Cannot find KOP handler for broker {}, discovery info {}, using default mapping", address, availableBrokers);
+                        return DEFAULT_BROKER_ADDRESS_MAPPER.apply(address);
                     }
                 } catch (PulsarServerException err) {
                     throw new RuntimeException("Cannot find KOP handler for broker " + address, err);
@@ -101,13 +127,13 @@ public class KafkaProtocolProxyMain {
                 brokerAddressMapper = new BrokerAddressMapper(proxyService);
                 log.info("Using Proxy DiscoveryProvider");
             } else {
-                brokerAddressMapper = null;
+                brokerAddressMapper = DEFAULT_BROKER_ADDRESS_MAPPER;
                 log.info("Using Broker address mapping by convention, because DiscoveryProvider is not configured (no zk configuration in the proxy)");
             }
 
         } else {
             authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
-            brokerAddressMapper = null;
+            brokerAddressMapper = DEFAULT_BROKER_ADDRESS_MAPPER;
             log.info("Using Broker address mapping by convention");
         }
 
