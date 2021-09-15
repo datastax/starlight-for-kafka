@@ -33,6 +33,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.EventLoopGroup;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.NotImplementedException;
 
@@ -114,14 +115,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final Set<String> groupIds = new HashSet<>();
     private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
     private final Function<String, String> brokerAddressMapper;
+    final EventLoopGroup workerGroup;
 
     public KafkaProxyRequestHandler(String id, KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
                                AuthenticationService authenticationService,
                                KafkaServiceConfiguration kafkaConfig,
                                boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
-                               Function<String, String> brokerAddressMapper) throws Exception {
+                               Function<String, String> brokerAddressMapper,
+                                    EventLoopGroup workerGroup) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
+        this.workerGroup = workerGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;
         String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
@@ -819,8 +823,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    private AtomicInteger dummyCorrelationIdGenerator = new AtomicInteger(-1);
     int getDummyCorrelationId() {
-        return new Random().nextInt();
+        return dummyCorrelationIdGenerator.decrementAndGet();
     }
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
@@ -835,8 +840,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
 
 
-        final LinkedHashMap<TopicPartition, FetchResponse.PartitionData<?>> responseMapRaw = new LinkedHashMap<>();
-        Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = Collections.synchronizedMap(responseMapRaw);
+
+        Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = new ConcurrentHashMap<>();
         final AtomicInteger topicPartitionNum = new AtomicInteger(fetchRequest.fetchData().size());
 
         // validate system topics
@@ -941,6 +946,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Complete handle fetch.", ctx.channel(), fetch.toString());
                 }
+                final LinkedHashMap<TopicPartition, FetchResponse.PartitionData<?>> responseMapRaw = new LinkedHashMap<>(responseMap);
                 resultFuture.complete(new FetchResponse(Errors.NONE,
                         responseMapRaw, 0, fetchRequest.metadata().sessionId()));
             };
