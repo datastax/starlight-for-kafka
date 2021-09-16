@@ -55,7 +55,7 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
         super.testMultiBrokerUnloadReload();
     }
 
-    @Test(timeOut = 180000)
+    @Test(timeOut = 240000)
     @Override
     public void testOneBrokerShutdown() throws Exception {
         super.testOneBrokerShutdown();

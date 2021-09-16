@@ -281,7 +281,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
-                                        .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                                        .bootstrapServers("localhost:" + getClientPort())
                                         .keySerializer(version.getStringSerializer())
                                         .valueSerializer(version.getStringSerializer())
                                         .maxBlockMs(Integer.toString(metadataTimeoutMs))
@@ -334,7 +334,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
             try {
                 @Cleanup final Producer<String, String> producer = kafkaClientFactories.get(version)
                         .createProducer(ProducerConfiguration.builder()
-                                .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                                .bootstrapServers("localhost:" + getClientPort())
                                 .keySerializer(version.getStringSerializer())
                                 .valueSerializer(version.getStringSerializer())
                                 .maxBlockMs(Integer.toString(metadataTimeoutMs))
@@ -358,7 +358,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                                                                        String username,
                                                                        String password) {
         return ProducerConfiguration.builder()
-                .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                .bootstrapServers("localhost:" + getClientPort())
                 .keySerializer(version.getStringSerializer())
                 .valueSerializer(version.getStringSerializer())
                 .securityProtocol("SASL_PLAINTEXT")
@@ -372,7 +372,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                                                                        String username,
                                                                        String password) {
         return ConsumerConfiguration.builder()
-                .bootstrapServers("localhost:" + getKafkaBrokerPort())
+                .bootstrapServers("localhost:" + getClientPort())
                 .groupId("group-" + version.name())
                 .keyDeserializer(version.getStringDeserializer())
                 .valueDeserializer(version.getStringDeserializer())

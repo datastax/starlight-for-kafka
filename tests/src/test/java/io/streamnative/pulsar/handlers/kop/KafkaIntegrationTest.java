@@ -71,6 +71,7 @@ import org.testng.annotations.Test;
  * * how many message to produce/consume,
  */
 @Slf4j
+@Test(enabled=false)
 public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
 
     public KafkaIntegrationTest(final String entryFormat) {
