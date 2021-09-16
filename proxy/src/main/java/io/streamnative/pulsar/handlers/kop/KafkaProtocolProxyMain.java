@@ -12,6 +12,7 @@
  * limitations under the License.
  */
 package io.streamnative.pulsar.handlers.kop;
+
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
@@ -27,15 +28,15 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
-import org.apache.pulsar.client.api.AuthenticationDataProvider;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
-import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Authentication;
+import org.apache.pulsar.client.api.AuthenticationDataProvider;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
+import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.proxy.server.ProxyService;
 
 import java.io.IOException;
@@ -77,7 +78,7 @@ public class KafkaProtocolProxyMain {
             }
         } else {
             // standard mapping
-            kafkaAddress= kafkaAddress
+            kafkaAddress = kafkaAddress
                     .replace("6650", "9092") // this is the standard case
                     .replace("6651", "9093")
                     .replace("6652", "9094")
@@ -108,7 +109,8 @@ public class KafkaProtocolProxyMain {
                     if (mapped != null) {
                         return mapped;
                     } else {
-                        log.error("Cannot find KOP handler for broker {}, discovery info {}, using default mapping", address, availableBrokers);
+                        log.error("Cannot find KOP handler for broker {}, discovery info {}, using default mapping",
+                                address, availableBrokers);
                         return DEFAULT_BROKER_ADDRESS_MAPPER.apply(address);
                     }
                 } catch (PulsarServerException err) {
@@ -128,7 +130,8 @@ public class KafkaProtocolProxyMain {
                 log.info("Using Proxy DiscoveryProvider");
             } else {
                 brokerAddressMapper = DEFAULT_BROKER_ADDRESS_MAPPER;
-                log.info("Using Broker address mapping by convention, because DiscoveryProvider is not configured (no zk configuration in the proxy)");
+                log.info("Using Broker address mapping by convention, " +
+                        "because DiscoveryProvider is not configured (no zk configuration in the proxy)");
             }
 
         } else {
@@ -162,16 +165,17 @@ public class KafkaProtocolProxyMain {
         log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());
     }
 
-    public static void main(String ... args) throws Exception {
+    public static void main(String... args) throws Exception {
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             @Override
             public void uncaughtException(Thread t, Throwable e) {
-                log.info("uncaughtException in thread {}",t, e);
+                log.info("uncaughtException in thread {}", t, e);
             }
         });
         String configFile = args.length > 0 ? args[0] : "conf/kop_proxy.conf";
         KafkaProtocolProxyMain proxy = new KafkaProtocolProxyMain();
-        ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile, ProxyConfiguration.class);
+        ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile,
+                ProxyConfiguration.class);
         proxy.initialize(serviceConfiguration, null);
         proxy.startStandalone();
         log.info("Started");
@@ -193,11 +197,11 @@ public class KafkaProtocolProxyMain {
         log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
         log.info("Built by {} on {} at {}",
-            KopVersion.getBuildUser(),
-            KopVersion.getBuildHost(),
-            KopVersion.getBuildTime());
-        newChannelInitializers().forEach( (address, initializer) ->{
-            System.out.println("Starting protocol at "+address);
+                KopVersion.getBuildUser(),
+                KopVersion.getBuildHost(),
+                KopVersion.getBuildTime());
+        newChannelInitializers().forEach((address, initializer) -> {
+            System.out.println("Starting protocol at " + address);
             ServerBootstrap bootstrap = new ServerBootstrap()
                     .group(new NioEventLoopGroup())
                     .channel(NioServerSocketChannel.class);
@@ -219,7 +223,7 @@ public class KafkaProtocolProxyMain {
 
         try {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
-                ImmutableMap.builder();
+                    ImmutableMap.builder();
 
             final Map<SecurityProtocol, EndPoint> advertisedEndpointMap =
                     EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners());
@@ -233,18 +237,20 @@ public class KafkaProtocolProxyMain {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, kafkaConfig, false,  advertisedEndPoint, brokerAddressMapper));
+                                authenticationService, kafkaConfig, false,
+                                advertisedEndPoint, brokerAddressMapper));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, kafkaConfig, true, advertisedEndPoint, brokerAddressMapper));
+                                authenticationService, kafkaConfig, true,
+                                advertisedEndPoint, brokerAddressMapper));
                         break;
                 }
             });
 
             return builder.build();
-        } catch (Exception e){
+        } catch (Exception e) {
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
             return null;
         }
@@ -252,6 +258,7 @@ public class KafkaProtocolProxyMain {
 
     public interface PulsarAdminProvider {
         PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException;
+
         void close();
     }
 
@@ -271,26 +278,27 @@ public class KafkaProtocolProxyMain {
                 originalPrincipal = "";
             }
             try {
-            return cache.computeIfAbsent(originalPrincipal, principal -> {
-                        try {
-                            String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
-                            String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
+                return cache.computeIfAbsent(originalPrincipal, principal -> {
+                try {
+                    String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
+                    String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
 
-                            Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
-                            Authentication authenticationWithPrincipal = new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
+                    Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
+                    Authentication authenticationWithPrincipal =
+                            new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
 
-                            return PulsarAdmin
-                                    .builder()
-                                    .authentication(authenticationWithPrincipal)
-                                    .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
-                                    .allowTlsInsecureConnection(proxyConfiguration.isTlsAllowInsecureConnection())
-                                    .enableTlsHostnameVerification(proxyConfiguration.isTlsHostnameVerificationEnabled())
-                                    .build();
-                        } catch (PulsarClientException err) {
-                            throw new RuntimeException(err);
-                        }
-                    }
-            );
+                    return PulsarAdmin
+                            .builder()
+                            .authentication(authenticationWithPrincipal)
+                            .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
+                            .allowTlsInsecureConnection(proxyConfiguration.isTlsAllowInsecureConnection())
+                            .enableTlsHostnameVerification(proxyConfiguration.isTlsHostnameVerificationEnabled())
+                            .build();
+                } catch (PulsarClientException err) {
+                    throw new RuntimeException(err);
+                }
+            }
+                );
             } catch (RuntimeException err) {
                 if (err.getCause() instanceof PulsarClientException) {
                     throw (PulsarClientException) err.getCause();
@@ -345,13 +353,18 @@ public class KafkaProtocolProxyMain {
         }
 
         @Override
-        public void authenticationStage(String requestUrl, AuthenticationDataProvider authData, Map<String, String> previousResHeaders, CompletableFuture<Map<String, String>> authFuture) {
+        public void authenticationStage(String requestUrl, AuthenticationDataProvider authData,
+                                        Map<String, String> previousResHeaders,
+                                        CompletableFuture<Map<String, String>> authFuture) {
             authentication.authenticationStage(requestUrl, authData, previousResHeaders, authFuture);
         }
 
         @Override
-        public Set<Map.Entry<String, String>> newRequestHeader(String hostName, AuthenticationDataProvider authData, Map<String, String> previousResHeaders) throws Exception {
-            Set<Map.Entry<String, String>> res =  authentication.newRequestHeader(hostName, authData, previousResHeaders);
+        public Set<Map.Entry<String, String>> newRequestHeader(String hostName, AuthenticationDataProvider authData,
+                                                               Map<String, String> previousResHeaders)
+                throws Exception {
+            Set<Map.Entry<String, String>> res = authentication.newRequestHeader(hostName,
+                    authData, previousResHeaders);
             if (originalPrincipal == null || originalPrincipal.isEmpty()) {
                 return res;
             }

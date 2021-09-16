@@ -22,7 +22,6 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -477,17 +476,11 @@ public class SaslAuthenticator {
                     log.debug("Authenticate successfully for client, header {}, request {}, session {}",
                             header, saslAuthenticateRequest, session);
                 }
-                log.info("Authenticate successfully for client, header {}, request {}, session {} saslServerComplete {}",
-                        header, saslAuthenticateRequest, session, saslServer.isComplete());
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey.name, startProcessTime);
                 buildResponseOnAuthenticateFailure(header, request,
                         new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), null);
                 sendAuthenticationFailureResponse();
-                if (log.isDebugEnabled()) {
-                    log.debug("Authenticate failed for client, header {}, request {}, reason {}",
-                            header, saslAuthenticateRequest, e.getMessage());
-                }
                 log.error("Authenticate failed for client, header {}, request {}, reason {}",
                         header, saslAuthenticateRequest, e.getMessage());
             }

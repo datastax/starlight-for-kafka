@@ -1,16 +1,12 @@
 package io.streamnative.pulsar.handlers.kop;
 
-import com.google.common.util.concurrent.MoreExecutors;
-import io.grpc.netty.shaded.io.netty.channel.ChannelOption;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
-import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
-import io.netty.handler.codec.FixedLengthFrameDecoder;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import lombok.AllArgsConstructor;
@@ -18,15 +14,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;
-import org.apache.kafka.common.requests.*;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.RequestHeader;
+import org.apache.kafka.common.requests.ResponseHeader;
+import org.apache.kafka.common.requests.SaslAuthenticateRequest;
+import org.apache.kafka.common.requests.SaslAuthenticateResponse;
+import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.util.FutureUtil;
 
-import java.io.DataInputStream;
 import java.io.IOException;
-import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -41,11 +39,13 @@ class ConnectionToBroker {
     final int brokerPort;
     private volatile boolean closed;
     private CompletableFuture<Channel> connectionFuture;
-    private final BlockingQueue<Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>>> writeQueue = new LinkedBlockingQueue<>();
+    private final BlockingQueue<Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest,
+            CompletableFuture<AbstractResponse>>> writeQueue = new LinkedBlockingQueue<>();
 
     private final ConcurrentHashMap<Integer, PendingAction> pendingRequests = new ConcurrentHashMap<>();
 
-    ConnectionToBroker(KafkaProxyRequestHandler kafkaProxyRequestHandler, String connectionKey, String brokerHost, int brokerPort) {
+    ConnectionToBroker(KafkaProxyRequestHandler kafkaProxyRequestHandler, String connectionKey, String brokerHost,
+                       int brokerPort) {
         this.kafkaProxyRequestHandler = kafkaProxyRequestHandler;
         this.connectionKey = connectionKey;
         this.brokerHost = brokerHost;
@@ -86,11 +86,13 @@ class ConnectionToBroker {
                     kafkaProxyRequestHandler.discardConnectionToBroker(ConnectionToBroker.this);
                     rawConnectFuture.completeExceptionally(channelFuture.cause());
                 }
-            }});
+            }
+        });
 
         String originalPrincipal = kafkaProxyRequestHandler.currentUser();
         if (originalPrincipal != null) {
-            log.debug("Authenticating to KOP broker {} with {} identity", brokerHost + ":" + brokerPort, originalPrincipal);
+            log.debug("Authenticating to KOP broker {} with {} identity", brokerHost + ":" + brokerPort,
+                    originalPrincipal);
             connectionFuture = rawConnectFuture
                     .thenCompose(this::saslHandshake) // send SASL mechanism
                     .thenCompose(this::authenticate); // send Proxy Token, as Username we send the authenticated principal
@@ -147,65 +149,69 @@ class ConnectionToBroker {
     }
 
     private CompletableFuture<Channel> authenticateInternal(Channel channel) {
-            int dummyCorrelationId = kafkaProxyRequestHandler.getDummyCorrelationId();
-            RequestHeader header = new RequestHeader(
-                    ApiKeys.SASL_AUTHENTICATE,
-                    ApiKeys.SASL_AUTHENTICATE.latestVersion(),
-                    "proxy", // ignored
-                    dummyCorrelationId
-            );
+        int dummyCorrelationId = kafkaProxyRequestHandler.getDummyCorrelationId();
+        RequestHeader header = new RequestHeader(
+                ApiKeys.SASL_AUTHENTICATE,
+                ApiKeys.SASL_AUTHENTICATE.latestVersion(),
+                "proxy", // ignored
+                dummyCorrelationId
+        );
 
-            String actualAuthenticationToken;
-            try {
-                // this can be token: or file://....
-                actualAuthenticationToken = kafkaProxyRequestHandler.getClientToken();
-            } catch (PulsarClientException err) {
-                log.info("Cannot read token for Proxy authentication", err);
-                return FutureUtil.failedFuture(err);
+        String actualAuthenticationToken;
+        try {
+            // this can be token: or file://....
+            actualAuthenticationToken = kafkaProxyRequestHandler.getClientToken();
+        } catch (PulsarClientException err) {
+            log.info("Cannot read token for Proxy authentication", err);
+            return FutureUtil.failedFuture(err);
+        }
+        if (actualAuthenticationToken == null) {
+            log.info("This proxy has not been configuration for token authentication");
+            return FutureUtil.failedFuture(
+                    new Exception("This proxy has not been configuration for token authentication"));
+        }
+
+        String originalPrincipal = kafkaProxyRequestHandler.currentUser();
+        String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
+        String password = "token:" + actualAuthenticationToken;
+        String usernamePassword = prefix
+                + "\u0000" + originalPrincipal
+                + "\u0000" + password;
+        byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
+        SaslAuthenticateRequest request = new SaslAuthenticateRequest
+                .Builder(ByteBuffer.wrap(saslAuthBytes))
+                .build();
+
+        ByteBuffer buffer = request.serialize(header);
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
+                header,
+                request,
+                Unpooled.wrappedBuffer(buffer),
+                null
+        );
+        CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
+        sendRequestOnTheWire(channel, fullRequest, result);
+        return result.thenApply(response -> {
+            SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
+            if (saslResponse.error() != Errors.NONE) {
+                kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
+                log.error("Failed authentication against KOP broker {}{}", saslResponse.error(),
+                        saslResponse.errorMessage());
+                close();
+                throw new CompletionException(saslResponse.error().exception());
+            } else {
+                log.debug("Success step AUTH to KOP broker {} {} {}", saslResponse.error(),
+                        saslResponse.errorMessage(), saslResponse.saslAuthBytes());
             }
-            if (actualAuthenticationToken == null) {
-                log.info("This proxy has not been configuration for token authentication");
-                return FutureUtil.failedFuture(new Exception("This proxy has not been configuration for token authentication"));
-            }
-
-            String originalPrincipal = kafkaProxyRequestHandler.currentUser();
-            String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
-            String password = "token:" + actualAuthenticationToken;
-            String usernamePassword = prefix +
-                    "\u0000" + originalPrincipal +
-                    "\u0000" + password;
-            byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
-            SaslAuthenticateRequest request = new SaslAuthenticateRequest
-                    .Builder(ByteBuffer.wrap(saslAuthBytes))
-                    .build();
-
-            ByteBuffer buffer = request.serialize(header);
-
-            KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
-                    header,
-                    request,
-                    Unpooled.wrappedBuffer(buffer),
-                    null
-            );
-            CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
-            sendRequestOnTheWire(channel, fullRequest, result);
-            return result.thenApply(response -> {
-                SaslAuthenticateResponse saslResponse = (SaslAuthenticateResponse) response;
-                if (saslResponse.error() != Errors.NONE) {
-                    kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
-                    log.error("Failed authentication against KOP broker {}{}", saslResponse.error(), saslResponse.errorMessage());
-                    close();
-                    throw new CompletionException(saslResponse.error().exception());
-                } else {
-                    log.debug("Success step AUTH to KOP broker {} {} {}", saslResponse.error(), saslResponse.errorMessage(), saslResponse.saslAuthBytes());
-                }
-                return channel;
-            });
+            return channel;
+        });
     }
 
     private void processWriteQueue(Channel channel, Throwable error) {
 
-        Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> entry = writeQueue.poll();
+        Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> entry =
+                writeQueue.poll();
         if (entry == null) {
             // this should not happen
             log.error("processWriteQueue failed");
@@ -221,6 +227,7 @@ class ConnectionToBroker {
         }
         sendRequestOnTheWire(channel, request, result);
     }
+
     public CompletableFuture<AbstractResponse> forwardRequest(KafkaCommandDecoder.KafkaHeaderAndRequest request) {
         CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
         writeQueue.add(new AbstractMap.SimpleImmutableEntry<>(request, result));
@@ -234,7 +241,8 @@ class ConnectionToBroker {
         return result;
     }
 
-    private void sendRequestOnTheWire(Channel channel, KafkaCommandDecoder.KafkaHeaderAndRequest request, CompletableFuture<AbstractResponse> result) {
+    private void sendRequestOnTheWire(Channel channel, KafkaCommandDecoder.KafkaHeaderAndRequest request,
+                                      CompletableFuture<AbstractResponse> result) {
         if (closed) {
             result.completeExceptionally(new IOException("connection closed"));
             return;
@@ -243,19 +251,21 @@ class ConnectionToBroker {
         // the Kafka client sends unique values for this correlationId
         int correlationId = request.getHeader().correlationId();
         if (log.isDebugEnabled()) {
-            log.debug("{} Sending request id {} apiVersion {} request {}", System.identityHashCode(this), correlationId, request.getHeader().apiVersion(), request);
+            log.debug("{} Sending request id {} apiVersion {} request {}", System.identityHashCode(this),
+                    correlationId, request.getHeader().apiVersion(), request);
         }
-        PendingAction existing = pendingRequests.put(correlationId, new PendingAction(result, request.getHeader().apiKey(), request.getHeader().apiVersion()));
+        PendingAction existing = pendingRequests.put(correlationId, new PendingAction(result,
+                request.getHeader().apiKey(), request.getHeader().apiVersion()));
         if (existing != null) {
             result.completeExceptionally(new IOException("correlationId " + correlationId + " already inflight"));
             return;
         }
         channel.writeAndFlush(Unpooled.wrappedBuffer(bytes)).addListener(writeFuture -> {
-           if (!writeFuture.isSuccess()) {
-               pendingRequests.remove(correlationId);
-               kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
-               result.completeExceptionally(writeFuture.cause());
-           }
+            if (!writeFuture.isSuccess()) {
+                pendingRequests.remove(correlationId);
+                kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
+                result.completeExceptionally(writeFuture.cause());
+            }
         });
     }
 
@@ -269,10 +279,10 @@ class ConnectionToBroker {
             r.response.completeExceptionally(new Exception("Connection closed by the client"));
         });
         if (connectionFuture != null) {
-            connectionFuture.whenComplete((c,er) -> {
-               if (er == null) {
-                   c.close();
-               }
+            connectionFuture.whenComplete((c, er) -> {
+                if (er == null) {
+                    c.close();
+                }
             });
         }
     }
@@ -301,7 +311,7 @@ class ConnectionToBroker {
                 result.response.complete(response);
             } else {
                 log.error("correlationId {} is unknown", header.correlationId());
-                ctx.fireExceptionCaught(new Exception("Correlation ID "+header.correlationId()+" is unknown"));
+                ctx.fireExceptionCaught(new Exception("Correlation ID " + header.correlationId() + " is unknown"));
             }
         }
 

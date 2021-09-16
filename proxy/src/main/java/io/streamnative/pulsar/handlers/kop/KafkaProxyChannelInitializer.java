@@ -13,8 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.netty.channel.ChannelInitializer;
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
+
+import java.util.function.Function;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.ChannelInitializer;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslContext;
@@ -23,9 +26,6 @@ import lombok.Getter;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
-import java.util.function.Function;
-
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.

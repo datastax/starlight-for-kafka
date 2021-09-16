@@ -325,7 +325,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "Mapping for Pulsar Broker ports to KOP ports, default is 6650=9092,6651=9093, useful when the proxy is not configured with ZookKeeper addresses"
+            doc = "Mapping for Pulsar Broker ports to KOP ports, default is 6650=9092,6651=9093, "
+                    + "useful when the proxy is not configured with ZookKeeper addresses"
     )
     private String kafkaProxyBrokerPortToKopMapping;
 

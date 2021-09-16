@@ -51,7 +51,6 @@ import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.Node;
@@ -118,11 +117,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     final EventLoopGroup workerGroup;
 
     public KafkaProxyRequestHandler(String id, KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
-                               AuthenticationService authenticationService,
-                               KafkaServiceConfiguration kafkaConfig,
-                               boolean tlsEnabled,
-                               EndPoint advertisedEndPoint,
-                               Function<String, String> brokerAddressMapper,
+                                    AuthenticationService authenticationService,
+                                    KafkaServiceConfiguration kafkaConfig,
+                                    boolean tlsEnabled,
+                                    EndPoint advertisedEndPoint,
+                                    Function<String, String> brokerAddressMapper,
                                     EventLoopGroup workerGroup) throws Exception {
         super(NullStatsLogger.INSTANCE, kafkaConfig);
         this.workerGroup = workerGroup;
@@ -137,7 +136,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         this.admin = pulsarAdmin;
         final boolean authenticationEnabled = kafkaConfig.isAuthenticationEnabled();
         this.authenticator = authenticationEnabled
-                ? new SaslAuthenticator(null, authenticationService, kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
+                ? new SaslAuthenticator(null, authenticationService,
+                kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
                 : null;
         final boolean authorizationEnabled = false;
         this.authorizer = null;
@@ -222,7 +222,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     protected ApiVersionsResponse overloadDefaultApiVersionsResponse(boolean unsupportedApiVersion) {
         List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
-        if (unsupportedApiVersion){
+        if (unsupportedApiVersion) {
             return new ApiVersionsResponse(0, Errors.UNSUPPORTED_VERSION, versionList);
         } else {
             for (ApiKeys apiKey : ApiKeys.values()) {
@@ -250,11 +250,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                CompletableFuture<AbstractResponse> resultFuture) {
         String err = String.format("Kafka API (%s) Not supported by kop server.",
-            kafkaHeaderAndRequest.getHeader().apiKey());
+                kafkaHeaderAndRequest.getHeader().apiKey());
         log.error(err);
 
         AbstractResponse apiResponse = kafkaHeaderAndRequest.getRequest()
-            .getErrorResponse(new UnsupportedOperationException(err));
+                .getErrorResponse(new UnsupportedOperationException(err));
         resultFuture.complete(apiResponse);
     }
 
@@ -292,7 +292,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         }
                         if (e != null) {
                             if (e instanceof PulsarAdminException.NotAuthorizedException) {
-                                log.debug("User {} is not allowed to list topics in namespace {}", currentUser(), namespace);
+                                log.debug("User {} is not allowed to list topics in namespace {}",
+                                        currentUser(), namespace);
                                 topics = Collections.emptyList();
                             } else {
                                 topicMapFuture.completeExceptionally(e);
@@ -349,22 +350,22 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             pulsarTopicsFuture = getAllTopicsAsync().thenApply((allTopicMap) -> {
                 final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
                 allTopicMap.forEach((topic, list) -> {
-                   list.forEach((topicName ->
-                           authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
-                           .whenComplete((authorized, ex) -> {
-                               if (ex != null || !authorized) {
-                                   allTopicMetadata.add(new TopicMetadata(
-                                           Errors.TOPIC_AUTHORIZATION_FAILED,
-                                           topic,
-                                           isInternalTopic(topicName.toString()),
-                                           Collections.emptyList()));
-                                   return;
-                               }
-                               topicMap.computeIfAbsent(
-                                       topic,
-                                       ignored -> Collections.synchronizedList(new ArrayList<>())
-                               ).add(topicName);
-                           })));
+                    list.forEach((topicName ->
+                            authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, topicName.toString()))
+                                    .whenComplete((authorized, ex) -> {
+                                        if (ex != null || !authorized) {
+                                            allTopicMetadata.add(new TopicMetadata(
+                                                    Errors.TOPIC_AUTHORIZATION_FAILED,
+                                                    topic,
+                                                    isInternalTopic(topicName.toString()),
+                                                    Collections.emptyList()));
+                                            return;
+                                        }
+                                        topicMap.computeIfAbsent(
+                                                topic,
+                                                ignored -> Collections.synchronizedList(new ArrayList<>())
+                                        ).add(topicName);
+                                    })));
                 });
 
                 return topicMap;
@@ -410,111 +411,115 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 final String fullTopicName = new KopTopic(topic).getFullName();
 
                 authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((authorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Describe topic authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            // Authentication failed
-                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                            return;
-                        }
-                        if (!authorized) {
-                            // Permission denied
-                            completeOneAuthFailedTopic.accept(topic, fullTopicName);
-                            return;
-                        }
-                        // get partition numbers for each topic.
-                        // If topic doesn't exist and allowAutoTopicCreation is enabled,
-                        // the topic will be created first.
-                        getPulsarAdmin().thenCompose(admin -> admin.topics().getPartitionedTopicMetadataAsync(fullTopicName))
-                                .whenComplete((partitionedTopicMetadata, throwable) -> {
-                                    if (throwable != null) {
-                                        if (throwable instanceof CompletionException
-                                                && throwable.getCause() != null) {
-                                            throwable = throwable.getCause();
-                                        }
-                                        if (throwable instanceof PulsarAdminException.NotAuthorizedException) {
-                                            // Failed get partitions due to authorization errors
-                                            allTopicMetadata.add(
-                                                    new TopicMetadata(
-                                                            Errors.TOPIC_AUTHORIZATION_FAILED,
-                                                            topic,
-                                                            isInternalTopic(fullTopicName),
-                                                            Collections.emptyList()));
-                                            log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
-                                                            + "metadata: {}",
-                                                    ctx.channel(), metadataHar.getHeader(),
-                                                    fullTopicName, throwable.getMessage());
-                                            completeOneTopic.run();
-                                            return;
-                                        }
-                                        if (throwable instanceof PulsarAdminException.NotFoundException) {
-                                            if (kafkaConfig.isAllowAutoTopicCreation()
-                                                    && metadataRequest.allowAutoTopicCreation()) {
-                                                log.info("[{}] Request {}: Topic {} doesn't exist, "
-                                                                + "auto create it with {} partitions",
+                        .whenComplete((authorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Describe topic authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                // Authentication failed
+                                completeOneAuthFailedTopic.accept(topic, fullTopicName);
+                                return;
+                            }
+                            if (!authorized) {
+                                // Permission denied
+                                completeOneAuthFailedTopic.accept(topic, fullTopicName);
+                                return;
+                            }
+                            // get partition numbers for each topic.
+                            // If topic doesn't exist and allowAutoTopicCreation is enabled,
+                            // the topic will be created first.
+                            getPulsarAdmin().thenCompose(admin -> admin
+                                            .topics().getPartitionedTopicMetadataAsync(fullTopicName))
+                                    .whenComplete((partitionedTopicMetadata, throwable) -> {
+                                        if (throwable != null) {
+                                            if (throwable instanceof CompletionException
+                                                    && throwable.getCause() != null) {
+                                                throwable = throwable.getCause();
+                                            }
+                                            if (throwable instanceof PulsarAdminException.NotAuthorizedException) {
+                                                // Failed get partitions due to authorization errors
+                                                allTopicMetadata.add(
+                                                        new TopicMetadata(
+                                                                Errors.TOPIC_AUTHORIZATION_FAILED,
+                                                                topic,
+                                                                isInternalTopic(fullTopicName),
+                                                                Collections.emptyList()));
+                                                log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
+                                                                + "metadata: {}",
                                                         ctx.channel(), metadataHar.getHeader(),
-                                                        topic, defaultNumPartitions);
-                                                getPulsarAdmin().thenCompose(admin -> admin.topics().createPartitionedTopicAsync(
-                                                                fullTopicName, defaultNumPartitions))
-                                                        .whenComplete((ignored, e) -> {
-                                                            if (e == null) {
-                                                                addTopicPartition.accept(topic, defaultNumPartitions);
-                                                            } else {
-                                                                log.error("[{}] Failed to create partitioned topic {}",
-                                                                        ctx.channel(), topic, e);
-                                                                completeOneTopic.run();
-                                                            }
-                                                        });
+                                                        fullTopicName, throwable.getMessage());
+                                                completeOneTopic.run();
+                                                return;
+                                            }
+                                            if (throwable instanceof PulsarAdminException.NotFoundException) {
+                                                if (kafkaConfig.isAllowAutoTopicCreation()
+                                                        && metadataRequest.allowAutoTopicCreation()) {
+                                                    log.info("[{}] Request {}: Topic {} doesn't exist, "
+                                                                    + "auto create it with {} partitions",
+                                                            ctx.channel(), metadataHar.getHeader(),
+                                                            topic, defaultNumPartitions);
+                                                    getPulsarAdmin().thenCompose(admin -> admin
+                                                                    .topics().createPartitionedTopicAsync(
+                                                                    fullTopicName, defaultNumPartitions))
+                                                            .whenComplete((ignored, e) -> {
+                                                                if (e == null) {
+                                                                    addTopicPartition.accept(topic,
+                                                                            defaultNumPartitions);
+                                                                } else {
+                                                                    log.error("[{}] Failed to create " +
+                                                                                    "partitioned topic {}",
+                                                                            ctx.channel(), topic, e);
+                                                                    completeOneTopic.run();
+                                                                }
+                                                            });
+                                                } else {
+                                                    log.error("[{}] Request {}: Topic {} doesn't exist and it's "
+                                                                    + "not allowed to auto create partitioned topic",
+                                                            ctx.channel(), metadataHar.getHeader(), topic);
+                                                    // not allow to auto create topic, return unknown topic
+                                                    allTopicMetadata.add(
+                                                            new TopicMetadata(
+                                                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                                                    topic,
+                                                                    isInternalTopic(fullTopicName),
+                                                                    Collections.emptyList()));
+                                                    completeOneTopic.run();
+                                                }
                                             } else {
-                                                log.error("[{}] Request {}: Topic {} doesn't exist and it's "
-                                                                + "not allowed to auto create partitioned topic",
-                                                        ctx.channel(), metadataHar.getHeader(), topic);
-                                                // not allow to auto create topic, return unknown topic
+                                                // Failed get partitions.
                                                 allTopicMetadata.add(
                                                         new TopicMetadata(
                                                                 Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                                 topic,
                                                                 isInternalTopic(fullTopicName),
                                                                 Collections.emptyList()));
+                                                log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
+                                                                + "metadata: {}",
+                                                        ctx.channel(), metadataHar.getHeader(),
+                                                        fullTopicName, throwable.getMessage());
                                                 completeOneTopic.run();
                                             }
-                                        } else {
-                                            // Failed get partitions.
-                                            allTopicMetadata.add(
-                                                    new TopicMetadata(
-                                                            Errors.UNKNOWN_TOPIC_OR_PARTITION,
-                                                            topic,
-                                                            isInternalTopic(fullTopicName),
-                                                            Collections.emptyList()));
-                                            log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
-                                                            + "metadata: {}",
-                                                    ctx.channel(), metadataHar.getHeader(),
-                                                    fullTopicName, throwable.getMessage());
-                                            completeOneTopic.run();
-                                        }
-                                    } else { // the topic already existed
-                                        if (partitionedTopicMetadata.partitions > 0) {
-                                            if (log.isDebugEnabled()) {
-                                                log.debug("Topic {} has {} partitions",
-                                                        topic, partitionedTopicMetadata.partitions);
+                                        } else { // the topic already existed
+                                            if (partitionedTopicMetadata.partitions > 0) {
+                                                if (log.isDebugEnabled()) {
+                                                    log.debug("Topic {} has {} partitions",
+                                                            topic, partitionedTopicMetadata.partitions);
+                                                }
+                                                addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
+                                            } else {
+                                                // In case non-partitioned topic, treat as a one partitioned topic.
+                                                nonPartitionedTopicMap.put(TopicName
+                                                                .get(fullTopicName)
+                                                                .getPartition(0)
+                                                                .toString(),
+                                                        TopicName.get(fullTopicName)
+                                                );
+                                                addTopicPartition.accept(topic, 1);
                                             }
-                                            addTopicPartition.accept(topic, partitionedTopicMetadata.partitions);
-                                        } else {
-                                            // In case non-partitioned topic, treat as a one partitioned topic.
-                                            nonPartitionedTopicMap.put(TopicName
-                                                            .get(fullTopicName)
-                                                            .getPartition(0)
-                                                            .toString(),
-                                                    TopicName.get(fullTopicName)
-                                            );
-                                            addTopicPartition.accept(topic, 1);
                                         }
-                                    }
-                                });
-                    });
+                                    });
+                        });
 
-                });
+            });
         }
 
         // 2. After get all topics, for each topic, get the service Broker for it, and add to response
@@ -525,14 +530,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
-                    ctx.channel(), metadataHar.getHeader(), e);
+                        ctx.channel(), metadataHar.getHeader(), e);
                 allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        Collections.emptyList());
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                Collections.emptyList());
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -543,11 +548,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 // no topic partitions added, return now.
                 allNodes.add(newSelfNode());
                 MetadataResponse finalResponse =
-                    new MetadataResponse(
-                        allNodes,
-                        clusterName,
-                        controllerId,
-                        allTopicMetadata);
+                        new MetadataResponse(
+                                allNodes,
+                                clusterName,
+                                controllerId,
+                                allTopicMetadata);
                 resultFuture.complete(finalResponse);
                 return;
             }
@@ -555,73 +560,77 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 final int partitionsNumber = list.size();
                 AtomicInteger partitionsCompleted = new AtomicInteger(0);
                 List<PartitionMetadata> partitionMetadatas = Collections
-                    .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
+                        .synchronizedList(Lists.newArrayListWithExpectedSize(partitionsNumber));
                 list.forEach(topicName -> {
                     // For non-partitioned topic.
                     TopicName realTopicName = nonPartitionedTopicMap.getOrDefault(topicName.toString(), topicName);
                     findBroker(realTopicName)
-                        .whenComplete((partitionMetadata, throwable) -> {
-                            if (throwable != null || partitionMetadata == null) {
-                                log.warn("[{}] Request {}: Exception while find Broker metadata",
-                                    ctx.channel(), metadataHar.getHeader(), throwable);
-                                partitionMetadatas.add(newFailedPartitionMetadata(topicName));
-                            } else {
-                                // cache the current owner
-                                Node newNode = partitionMetadata.leader();
-                                log.info("{} For topic {} the leader is {}", this, topicName, newNode);
+                            .whenComplete((partitionMetadata, throwable) -> {
+                                if (throwable != null || partitionMetadata == null) {
+                                    log.warn("[{}] Request {}: Exception while find Broker metadata",
+                                            ctx.channel(), metadataHar.getHeader(), throwable);
+                                    partitionMetadatas.add(newFailedPartitionMetadata(topicName));
+                                } else {
+                                    // cache the current owner
+                                    Node newNode = partitionMetadata.leader();
+                                    log.info("{} For topic {} the leader is {}", this, topicName, newNode);
 
-                                // answer that we are the owner and that there is only one replice
-                                Node newNodeAnswer = newSelfNode();
-                                partitionMetadata = new PartitionMetadata(Errors.NONE,  partitionMetadata.partition(), newNodeAnswer, Arrays.asList(newNodeAnswer), Arrays.asList(newNodeAnswer), Collections.emptyList());
+                                    // answer that we are the owner and that there is only one replice
+                                    Node newNodeAnswer = newSelfNode();
+                                    partitionMetadata = new PartitionMetadata(Errors.NONE,
+                                            partitionMetadata.partition(), newNodeAnswer, Arrays.asList(newNodeAnswer),
+                                            Arrays.asList(newNodeAnswer), Collections.emptyList());
 
-                                synchronized (allNodes) {
-                                    if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNodeAnswer))) {
-                                        allNodes.add(newNodeAnswer);
+                                    synchronized (allNodes) {
+                                        if (!allNodes.stream().anyMatch(node1 -> node1.equals(newNodeAnswer))) {
+                                            allNodes.add(newNodeAnswer);
+                                        }
+                                    }
+                                    partitionMetadatas.add(partitionMetadata);
+                                }
+
+                                // whether completed this topic's partitions list.
+                                int finishedPartitions = partitionsCompleted.incrementAndGet();
+                                if (log.isTraceEnabled()) {
+                                    log.trace("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
+                                            ctx.channel(), metadataHar.getHeader(),
+                                            topic, finishedPartitions, partitionsNumber);
+                                }
+                                if (finishedPartitions == partitionsNumber) {
+                                    // new TopicMetadata for this topic
+                                    allTopicMetadata.add(
+                                            new TopicMetadata(
+                                                    Errors.NONE,
+                                                    // The topic returned to Kafka clients should
+                                                    // be the same with what it sent
+                                                    topic,
+                                                    isInternalTopic(new KopTopic(topic).getFullName()),
+                                                    partitionMetadatas));
+
+                                    // whether completed all the topics requests.
+                                    int finishedTopics = topicsCompleted.incrementAndGet();
+                                    if (log.isTraceEnabled()) {
+                                        log.trace("[{}] Request {}: Completed findBroker for topic {}, "
+                                                        + "partitions found/all: {}/{}. \n dump All Metadata:",
+                                                ctx.channel(), metadataHar.getHeader(), topic,
+                                                finishedTopics, topicsNumber);
+
+                                        allTopicMetadata.stream()
+                                                .forEach(data ->
+                                                        log.trace("TopicMetadata response: {}", data.toString()));
+                                    }
+                                    if (finishedTopics == topicsNumber) {
+                                        // TODO: confirm right value for controller_id
+                                        MetadataResponse finalResponse =
+                                                new MetadataResponse(
+                                                        allNodes,
+                                                        clusterName,
+                                                        controllerId,
+                                                        allTopicMetadata);
+                                        resultFuture.complete(finalResponse);
                                     }
                                 }
-                                partitionMetadatas.add(partitionMetadata);
-                            }
-
-                            // whether completed this topic's partitions list.
-                            int finishedPartitions = partitionsCompleted.incrementAndGet();
-                            if (log.isTraceEnabled()) {
-                                log.trace("[{}] Request {}: FindBroker for topic {}, partitions found/all: {}/{}.",
-                                    ctx.channel(), metadataHar.getHeader(),
-                                    topic, finishedPartitions, partitionsNumber);
-                            }
-                            if (finishedPartitions == partitionsNumber) {
-                                // new TopicMetadata for this topic
-                                allTopicMetadata.add(
-                                    new TopicMetadata(
-                                        Errors.NONE,
-                                        // The topic returned to Kafka clients should be the same with what it sent
-                                        topic,
-                                        isInternalTopic(new KopTopic(topic).getFullName()),
-                                        partitionMetadatas));
-
-                                // whether completed all the topics requests.
-                                int finishedTopics = topicsCompleted.incrementAndGet();
-                                if (log.isTraceEnabled()) {
-                                    log.trace("[{}] Request {}: Completed findBroker for topic {}, "
-                                            + "partitions found/all: {}/{}. \n dump All Metadata:",
-                                        ctx.channel(), metadataHar.getHeader(), topic,
-                                        finishedTopics, topicsNumber);
-
-                                    allTopicMetadata.stream()
-                                        .forEach(data -> log.trace("TopicMetadata response: {}", data.toString()));
-                                }
-                                if (finishedTopics == topicsNumber) {
-                                    // TODO: confirm right value for controller_id
-                                    MetadataResponse finalResponse =
-                                        new MetadataResponse(
-                                            allNodes,
-                                            clusterName,
-                                            controllerId,
-                                            allTopicMetadata);
-                                    resultFuture.complete(finalResponse);
-                                }
-                            }
-                        });
+                            });
                 });
             });
         });
@@ -647,15 +656,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         for (TopicPartition topicPartition : produceRequest.partitionRecordsOrFail().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition);
             // check KOP inner topic
-            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName))
-            {
+            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                         ctx.channel(), produceHar.getHeader(), topicPartition);
                 Map<TopicPartition, PartitionResponse> errorsMap =
                         produceRequest.partitionRecordsOrFail()
                                 .keySet()
                                 .stream()
-                                .collect(Collectors.toMap(Function.identity(), p -> new PartitionResponse(Errors.INVALID_TOPIC_EXCEPTION)));
+                                .collect(Collectors.toMap(Function.identity(),
+                                        p -> new PartitionResponse(Errors.INVALID_TOPIC_EXCEPTION)));
                 resultFuture.complete(new ProduceResponse(errorsMap));
                 return;
             }
@@ -677,7 +686,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             produceRequest.partitionRecordsOrFail()
                                     .keySet()
                                     .stream()
-                                    .collect(Collectors.toMap(Function.identity(), p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
+                                    .collect(Collectors.toMap(Function.identity(),
+                                            p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
 
                     resultFuture.complete(new ProduceResponse(errorsMap));
                     return null;
@@ -705,7 +715,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     forwardRequest(produceHar)
                     .thenAccept(response -> {
                         ProduceResponse resp = (ProduceResponse) response;
-                        resp.responses().forEach( (topicPartition, topicResp) -> {
+                        resp.responses().forEach((topicPartition, topicResp) -> {
                             if (topicResp.error == Errors.NOT_LEADER_FOR_PARTITION) {
                                 String fullTopicName = KopTopic.toString(topicPartition);
                                 log.info("Broker {} is no more the leader for {}", broker.leader(), fullTopicName);
@@ -720,7 +730,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 produceRequest.partitionRecordsOrFail()
                                         .keySet()
                                         .stream()
-                                        .collect(Collectors.toMap(Function.identity(), p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
+                                        .collect(Collectors.toMap(Function.identity(),
+                                                p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
                         resultFuture.complete(new ProduceResponse(errorsMap));
                         return null;
                     });
@@ -753,7 +764,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-                log.debug("addPartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response, restTopicPartitionNum);
+                log.debug("addPartitionResponse {} {} restTopicPartitionNum {}", topicPartition,
+                        response, restTopicPartitionNum);
                 if (restTopicPartitionNum < 0) {
                     return;
                 }
@@ -804,7 +816,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             ProduceResponse resp = (ProduceResponse) response;
                             resp.responses().values().forEach(partitionResponse -> {
                                 if (partitionResponse.error == Errors.NONE) {
-                                    log.debug("result produce for {} to {} {}", fullPartitionName, kopBroker, partitionResponse);
+                                    log.debug("result produce for {} to {} {}", fullPartitionName,
+                                            kopBroker, partitionResponse);
                                     offsetConsumer.accept(partitionResponse.baseOffset);
                                 } else {
                                     if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
@@ -824,21 +837,22 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     private AtomicInteger dummyCorrelationIdGenerator = new AtomicInteger(-1);
+
     int getDummyCorrelationId() {
         return dummyCorrelationIdGenerator.decrementAndGet();
     }
 
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
-                                        CompletableFuture<AbstractResponse> resultFuture) {
+                                      CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest fetchRequest = (FetchRequest) fetch.getRequest();
 
         final int numPartitions = fetchRequest.fetchData().size();
         if (numPartitions == 0) {
-            resultFuture.complete(new FetchResponse(Errors.NONE, new LinkedHashMap<>(), 0, fetchRequest.metadata().sessionId()));
+            resultFuture.complete(new FetchResponse(Errors.NONE, new LinkedHashMap<>(), 0,
+                    fetchRequest.metadata().sessionId()));
             return;
         }
-
 
 
         Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = new ConcurrentHashMap<>();
@@ -848,8 +862,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         for (TopicPartition topicPartition : fetchRequest.fetchData().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition);
             // check KOP inner topic
-            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName))
-            {
+            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support fetch message to inner topic. topic: {}",
                         ctx.channel(), fetch.getHeader(), topicPartition);
                 Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
@@ -858,7 +871,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 .stream()
                                 .collect(Collectors.toMap(Function.identity(),
                                         p -> new FetchResponse.PartitionData(Errors.INVALID_TOPIC_EXCEPTION,
-                                                0,0, 0, null, MemoryRecords.EMPTY)));
+                                                0, 0, 0,
+                                                null, MemoryRecords.EMPTY)));
                 resultFuture.complete(new FetchResponse(Errors.INVALID_TOPIC_EXCEPTION,
                         new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                 return;
@@ -883,7 +897,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     .stream()
                                     .collect(Collectors.toMap(Function.identity(),
                                             p -> new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
-                                                    0,0, 0, null, MemoryRecords.EMPTY)));
+                                                    0, 0, 0,
+                                                    null, MemoryRecords.EMPTY)));
                     resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
                             new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                     return null;
@@ -918,7 +933,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         .stream()
                                         .collect(Collectors.toMap(Function.identity(),
                                                 p -> new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
-                                                        0,0, 0, null, MemoryRecords.EMPTY)));
+                                                        0, 0, 0,
+                                                        null, MemoryRecords.EMPTY)));
                         resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
                                 new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
                         return null;
@@ -939,23 +955,28 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 // add the topicPartition with timeout error if it's not existed in responseMap
                 fetchRequest.fetchData().keySet().forEach(topicPartition -> {
                     if (!responseMap.containsKey(topicPartition)) {
-                        responseMap.put(topicPartition, new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
-                                0,0, 0, null, MemoryRecords.EMPTY));
+                        responseMap.put(topicPartition,
+                                new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
+                                0, 0, 0,
+                                        null, MemoryRecords.EMPTY));
                     }
                 });
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Request {}: Complete handle fetch.", ctx.channel(), fetch.toString());
                 }
-                final LinkedHashMap<TopicPartition, FetchResponse.PartitionData<?>> responseMapRaw = new LinkedHashMap<>(responseMap);
+                final LinkedHashMap<TopicPartition, FetchResponse.PartitionData<?>> responseMapRaw =
+                        new LinkedHashMap<>(responseMap);
                 resultFuture.complete(new FetchResponse(Errors.NONE,
                         responseMapRaw, 0, fetchRequest.metadata().sessionId()));
             };
-            BiConsumer<TopicPartition, FetchResponse.PartitionData> addFetchPartitionResponse = (topicPartition, response) -> {
+            BiConsumer<TopicPartition, FetchResponse.PartitionData> addFetchPartitionResponse
+                    = (topicPartition, response) -> {
 
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-                log.debug("addFetchPartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response, restTopicPartitionNum);
+                log.debug("addFetchPartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response,
+                        restTopicPartitionNum);
                 if (restTopicPartitionNum < 0) {
                     return;
                 }
@@ -968,7 +989,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 final Consumer<FetchResponse.PartitionData> resultConsumer = data -> addFetchPartitionResponse.accept(
                         topicPartition, data);
                 final Consumer<Errors> errorsConsumer =
-                        errors -> addFetchPartitionResponse.accept(topicPartition, new FetchResponse.PartitionData(errors, 0, 0, 0, null, MemoryRecords.EMPTY));
+                        errors -> addFetchPartitionResponse.accept(topicPartition,
+                                new FetchResponse.PartitionData(errors, 0, 0, 0,
+                                        null, MemoryRecords.EMPTY));
 
                 final String fullPartitionName = KopTopic.toString(topicPartition);
                 // TODO: have a better way to find an unused correlation id
@@ -983,8 +1006,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         dummyCorrelationId
                 );
 
-                FetchRequest requestForSinglePartition = FetchRequest.Builder.forConsumer(((FetchRequest) fetch.getRequest()).maxWait(),
-                        ((FetchRequest) fetch.getRequest()).minBytes(),
+                FetchRequest requestForSinglePartition = FetchRequest.Builder
+                        .forConsumer(((FetchRequest) fetch.getRequest()).maxWait(),
+                                ((FetchRequest) fetch.getRequest()).minBytes(),
                                 recordsCopy)
                         .build();
 
@@ -1005,15 +1029,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         .thenAccept(response -> {
                             FetchResponse<?> resp = (FetchResponse) response;
                             resp.responseData()
-                                    .forEach( (part, partitionResponse) -> {
-                                        if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                            String fullTopicName = KopTopic.toString(topicPartition);
-                                            log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
-                                            topicsLeaders.remove(fullTopicName);
-                                        }
-                                log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker, partitionResponse);
-                                resultConsumer.accept(partitionResponse);
-                            });
+                                .forEach((part, partitionResponse) -> {
+                                    if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
+                                        String fullTopicName = KopTopic.toString(topicPartition);
+                                        log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
+                                        topicsLeaders.remove(fullTopicName);
+                                    }
+                                    log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
+                                            partitionResponse);
+                                    resultConsumer.accept(partitionResponse);
+                                });
                         }).exceptionally(error -> {
                             log.error("bad error", error);
                             errorsConsumer.accept(Errors.UNKNOWN_SERVER_ERROR);
@@ -1023,7 +1048,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    private CompletableFuture<PartitionMetadata> findCoordinator(FindCoordinatorRequest.CoordinatorType type, String key) {
+    private CompletableFuture<PartitionMetadata> findCoordinator(FindCoordinatorRequest.CoordinatorType type,
+                                                                 String key) {
         String pulsarTopicName = computePulsarTopicName(type, key);
         log.debug("findCoordinator for {} {} -> topic {}", type, key, pulsarTopicName);
         return findBroker(TopicName.get(pulsarTopicName), true);
@@ -1039,10 +1065,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(kafkaConfig))
                     .build();
             partition = TransactionCoordinator.partitionFor(key, kafkaConfig.getTxnLogTopicNumPartitions());
-            pulsarTopicName = TransactionCoordinator.getTopicPartitionName(transactionConfig.getTransactionMetadataTopicName(), partition);
+            pulsarTopicName = TransactionCoordinator
+                    .getTopicPartitionName(transactionConfig.getTransactionMetadataTopicName(), partition);
         } else if (type == FindCoordinatorRequest.CoordinatorType.GROUP) {
             partition = GroupMetadataManager.getPartitionId(key, kafkaConfig.getOffsetsTopicNumPartitions());
-            pulsarTopicName = GroupMetadataManager.getTopicPartitionName(kafkaConfig.getKafkaMetadataTenant() + "/"
+            pulsarTopicName = GroupMetadataManager
+                    .getTopicPartitionName(kafkaConfig.getKafkaMetadataTenant() + "/"
                     + kafkaConfig.getKafkaMetadataNamespace()
                     + "/" + Topic.GROUP_METADATA_TOPIC_NAME, partition);
         } else {
@@ -1069,7 +1097,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         JoinGroupRequest joinGroupRequest = (JoinGroupRequest) kafkaHeaderAndRequest.getRequest();
         log.info("handleJoinGroupRequest {}", joinGroupRequest.groupId());
 
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, JoinGroupRequest.class, JoinGroupRequest::groupId,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                JoinGroupRequest.class, JoinGroupRequest::groupId,
                 (JoinGroupRequest request) -> {
                     return new JoinGroupResponse(
                             Errors.BROKER_NOT_AVAILABLE,
@@ -1084,9 +1113,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleSyncGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                           CompletableFuture<AbstractResponse> resultFuture) {
 
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, SyncGroupRequest.class, SyncGroupRequest::groupId,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                SyncGroupRequest.class, SyncGroupRequest::groupId,
                 (SyncGroupRequest request) -> {
-                    return  new SyncGroupResponse(
+                    return new SyncGroupResponse(
                             Errors.BROKER_NOT_AVAILABLE,
                             null
                     );
@@ -1096,9 +1126,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleHeartbeatRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                           CompletableFuture<AbstractResponse> resultFuture) {
 
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, HeartbeatRequest.class, HeartbeatRequest::groupId,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                HeartbeatRequest.class, HeartbeatRequest::groupId,
                 (HeartbeatRequest request) -> {
-                    return  new HeartbeatResponse(0,
+                    return new HeartbeatResponse(0,
                             Errors.BROKER_NOT_AVAILABLE
                     );
                 });
@@ -1107,7 +1138,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleLeaveGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, LeaveGroupRequest.class, LeaveGroupRequest::groupId,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                LeaveGroupRequest.class, LeaveGroupRequest::groupId,
                 (LeaveGroupRequest request) -> {
                     return new LeaveGroupResponse(Errors.BROKER_NOT_AVAILABLE);
                 });
@@ -1117,13 +1149,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleDescribeGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                               CompletableFuture<AbstractResponse> resultFuture) {
         // forward to the coordinator of the first group
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, DescribeGroupsRequest.class,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                DescribeGroupsRequest.class,
                 (DescribeGroupsRequest r) -> r.groupIds().get(0),
                 (DescribeGroupsRequest request) -> {
-                    Map<String, DescribeGroupsResponse.GroupMetadata> errors = request.groupIds().stream().collect(Collectors.toMap(Function.identity(), gid -> {
-                        return new DescribeGroupsResponse.GroupMetadata(Errors.BROKER_NOT_AVAILABLE, null,  null,  null, Collections.emptyList());
+                    Map<String, DescribeGroupsResponse.GroupMetadata> errors = request.groupIds().stream()
+                            .collect(Collectors.toMap(Function.identity(), gid -> {
+                        return new DescribeGroupsResponse.GroupMetadata(Errors.BROKER_NOT_AVAILABLE, null,
+                                null, null, Collections.emptyList());
                     }));
-                    DescribeGroupsResponse res =  new DescribeGroupsResponse(errors);
+                    DescribeGroupsResponse res = new DescribeGroupsResponse(errors);
                     return res;
                 });
     }
@@ -1142,11 +1177,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         DeleteGroupsRequest request = (DeleteGroupsRequest) deleteGroups.getRequest();
 
         Map<String, Errors> deleteResult = new HashMap<>();
-        request.groups().forEach(k ->{
+        request.groups().forEach(k -> {
             deleteResult.put(k, Errors.BROKER_NOT_AVAILABLE);
         });
         DeleteGroupsResponse response = new DeleteGroupsResponse(
-            deleteResult
+                deleteResult
         );
         resultFuture.complete(response);
     }
@@ -1174,7 +1209,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .topics()
                     .keySet()
                     .stream()
-                    .collect(Collectors.toMap(Function.identity(), (a) -> ApiError.fromThrowable(new UnsupportedOperationException())));
+                    .collect(Collectors.toMap(Function.identity(), (a) ->
+                            ApiError.fromThrowable(new UnsupportedOperationException())));
             resultFuture.complete(new CreateTopicsResponse(errors));
             return;
         }
@@ -1237,11 +1273,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .resources()
                     .stream()
                     .collect(Collectors.toMap(Function.identity(), r -> {
-                        return new DescribeConfigsResponse.Config(ApiError.fromThrowable(error), Collections.emptyList());
+                        return new DescribeConfigsResponse.Config(ApiError.fromThrowable(error),
+                                Collections.emptyList());
                     }));
             resultFuture.complete(new DescribeConfigsResponse(0, errors));
             return null;
-        });;
+        });
+        ;
     }
 
     @Override
@@ -1271,8 +1309,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         this.close();
     }
 
-    private CompletableFuture<Optional<String>>  getProtocolDataToAdvertise(String pulsarAddress,
-                               TopicName topic) {
+    private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(String pulsarAddress,
+                                                                           TopicName topic) {
 
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
 
@@ -1298,16 +1336,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     protected boolean isOffsetTopic(String topic) {
         String offsetsTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + GROUP_METADATA_TOPIC_NAME;
+                + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + GROUP_METADATA_TOPIC_NAME;
 
         return topic != null && topic.contains(offsetsTopic);
     }
 
     protected boolean isTransactionTopic(String topic) {
         String transactionTopic = kafkaConfig.getKafkaMetadataTenant() + "/"
-            + kafkaConfig.getKafkaMetadataNamespace()
-            + "/" + TRANSACTION_STATE_TOPIC_NAME;
+                + kafkaConfig.getKafkaMetadataNamespace()
+                + "/" + TRANSACTION_STATE_TOPIC_NAME;
 
         return topic != null && topic.contains(transactionTopic);
     }
@@ -1357,39 +1395,39 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return returnFuture;
         }
         getPulsarAdmin(system).thenCompose(admin -> admin.lookups().lookupTopicAsync(topic.toString())
-            .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
-            .whenComplete((stringOptional, throwable) -> {
-                if (throwable != null || stringOptional == null || !stringOptional.isPresent()) {
-                    log.error("Not get advertise data for Kafka topic:{}. throwable",
-                        topic, throwable);
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    returnFuture.complete(null);
-                    return;
-                }
+                .thenCompose(address -> getProtocolDataToAdvertise(address, topic))
+                .whenComplete((stringOptional, throwable) -> {
+                    if (throwable != null || stringOptional == null || !stringOptional.isPresent()) {
+                        log.error("Not get advertise data for Kafka topic:{}. throwable",
+                                topic, throwable);
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                        returnFuture.complete(null);
+                        return;
+                    }
 
-                // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                final String listeners = stringOptional.get();
-                // here we always connect in pleintext to the Pulsar broker
-                final EndPoint endPoint = EndPoint.getPlainTextEndPoint(listeners);
-                final Node node = newNode(endPoint.getInetAddress());
+                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
+                    final String listeners = stringOptional.get();
+                    // here we always connect in pleintext to the Pulsar broker
+                    final EndPoint endPoint = EndPoint.getPlainTextEndPoint(listeners);
+                    final Node node = newNode(endPoint.getInetAddress());
 
-                if (log.isTraceEnabled()) {
-                    log.trace("Found broker localListeners: {} for topicName: {}, "
-                            + "localListeners: {}, found Listeners: {}",
-                        listeners, topic, advertisedListeners, listeners);
-                }
+                    if (log.isTraceEnabled()) {
+                        log.trace("Found broker localListeners: {} for topicName: {}, "
+                                        + "localListeners: {}, found Listeners: {}",
+                                listeners, topic, advertisedListeners, listeners);
+                    }
 
-                // here we found topic broker: broker2, but this is in broker1,
-                // how to clean the lookup cache?
-                if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                }
-                topicsLeaders.put(topic.toString(), node);
-                returnFuture.complete(newPartitionMetadata(topic, node));
-            }).exceptionally(error -> {
-                log.error("bad error", error);
-                return null;
-            }));
+                    // here we found topic broker: broker2, but this is in broker1,
+                    // how to clean the lookup cache?
+                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
+                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
+                    }
+                    topicsLeaders.put(topic.toString(), node);
+                    returnFuture.complete(newPartitionMetadata(topic, node));
+                }).exceptionally(error -> {
+                    log.error("bad error", error);
+                    return null;
+                }));
         return returnFuture;
     }
 
@@ -1398,9 +1436,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             log.trace("Return Broker Node of {}. {}:{}", address, address.getHostString(), address.getPort());
         }
         return new Node(
-            Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
-            address.getHostString(),
-            address.getPort());
+                Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
+                address.getHostString(),
+                address.getPort());
     }
 
     Node newSelfNode() {
@@ -1416,12 +1454,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
 
         return new PartitionMetadata(
-            Errors.NONE,
-            kafkaPartitionIndex,
-            node,                      // leader
-            Lists.newArrayList(node),  // replicas
-            Lists.newArrayList(node),  // isr
-            Collections.emptyList()     // offline replicas
+                Errors.NONE,
+                kafkaPartitionIndex,
+                node,                      // leader
+                Lists.newArrayList(node),  // replicas
+                Lists.newArrayList(node),  // isr
+                Collections.emptyList()     // offline replicas
         );
     }
 
@@ -1433,12 +1471,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
         // most of this error happens when topic is in loading/unloading status,
         return new PartitionMetadata(
-            Errors.NOT_LEADER_FOR_PARTITION,
-            kafkaPartitionIndex,
-            Node.noNode(),                      // leader
-            Lists.newArrayList(Node.noNode()),  // replicas
-            Lists.newArrayList(Node.noNode()),  // isr
-            Collections.emptyList()             // offline replicas
+                Errors.NOT_LEADER_FOR_PARTITION,
+                kafkaPartitionIndex,
+                Node.noNode(),                      // leader
+                Lists.newArrayList(Node.noNode()),  // replicas
+                Lists.newArrayList(Node.noNode()),  // isr
+                Collections.emptyList()             // offline replicas
         );
     }
 
@@ -1488,8 +1526,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset, CompletableFuture<AbstractResponse> resultFuture)
-    {
+    protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
+                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
@@ -1497,7 +1535,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         AtomicInteger expectedCount = new AtomicInteger(request.partitionTimestamps().size());
 
         BiConsumer<String, ListOffsetResponse> onResponse = (topic, topicResponse) -> {
-            topicResponse.responseData().forEach( (tp, data) -> {
+            topicResponse.responseData().forEach((tp, data) -> {
                 map.put(tp, data);
                 if (expectedCount.decrementAndGet() == 0) {
                     ListOffsetResponse response = new ListOffsetResponse(map);
@@ -1506,7 +1544,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             });
         };
 
-        for (Map.Entry<TopicPartition, Long> entry: request.partitionTimestamps().entrySet()) {
+        for (Map.Entry<TopicPartition, Long> entry : request.partitionTimestamps().entrySet()) {
             final String fullPartitionName = KopTopic.toString(entry.getKey());
 
             int dummyCorrelationId = getDummyCorrelationId();
@@ -1540,13 +1578,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     onResponse.accept(fullPartitionName, (ListOffsetResponse) theResponse);
                                 }).exceptionally(err -> {
                                     ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
-                                    dummyResponse.responseData().put(entry.getKey(), new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE, 0, 0));
+                                    dummyResponse.responseData().put(entry.getKey(),
+                                            new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                                    0, 0));
                                     onResponse.accept(fullPartitionName, dummyResponse);
                                     return null;
                                 });
                     }).exceptionally(err -> {
                         ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
-                        dummyResponse.responseData().put(entry.getKey(), new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE, 0, 0));
+                        dummyResponse.responseData().put(entry.getKey(),
+                                new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                        0, 0));
                         onResponse.accept(fullPartitionName, dummyResponse);
                         return null;
                     });
@@ -1554,18 +1596,20 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleOffsetFetchRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, OffsetFetchRequest.class, OffsetFetchRequest::groupId,
+    protected void handleOffsetFetchRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                            CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                OffsetFetchRequest.class, OffsetFetchRequest::groupId,
                 (OffsetFetchRequest request) -> {
-                    return  new OffsetFetchResponse(Errors.BROKER_NOT_AVAILABLE, new HashMap<>());
+                    return new OffsetFetchResponse(Errors.BROKER_NOT_AVAILABLE, new HashMap<>());
                 });
     }
 
     @Override
-    protected void handleOffsetCommitRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, OffsetCommitRequest.class, OffsetCommitRequest::groupId,
+    protected void handleOffsetCommitRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                             CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                FindCoordinatorRequest.CoordinatorType.GROUP, OffsetCommitRequest.class, OffsetCommitRequest::groupId,
                 (OffsetCommitRequest request) -> {
                     Map<TopicPartition, Errors> map = request.offsetData().keySet().stream()
                             .collect(Collectors.toMap(Function.identity(), i -> Errors.BROKER_NOT_AVAILABLE));
@@ -1573,44 +1617,45 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 });
     }
 
-   private <RT extends AbstractRequest, RST extends AbstractResponse> void handleRequestWithCoordinator(
-           KafkaHeaderAndRequest kafkaHeaderAndRequest,
-           CompletableFuture<AbstractResponse> resultFuture,
-           FindCoordinatorRequest.CoordinatorType coordinatorType,
-           Class<RT> requestClass,
-           Function<RT, String> keyExtractor,
-           Function<RT, RST> errorBuilder
-           )
-    {
-        try
-        {
+    private <K extends AbstractRequest, R extends AbstractResponse> void handleRequestWithCoordinator(
+            KafkaHeaderAndRequest kafkaHeaderAndRequest,
+            CompletableFuture<AbstractResponse> resultFuture,
+            FindCoordinatorRequest.CoordinatorType coordinatorType,
+            Class<K> requestClass,
+            Function<K, String> keyExtractor,
+            Function<K, R> errorBuilder
+    ) {
+        try {
             checkArgument(requestClass.isInstance(kafkaHeaderAndRequest.getRequest()));
-            RT request = (RT) kafkaHeaderAndRequest.getRequest();
+            K request = (K) kafkaHeaderAndRequest.getRequest();
 
             String transactionalId = keyExtractor.apply(request);
             if (!isNoisyRequest(request)) {
-                log.info("handleRequestWithCoordinator {} {} {} {}", request.getClass().getSimpleName(), request, transactionalId);
+                log.info("handleRequestWithCoordinator {} {} {} {}", request.getClass().getSimpleName(), request,
+                        transactionalId);
             }
 
             findCoordinator(coordinatorType, transactionalId)
                     .thenAccept(metadata -> {
                         grabConnectionToBroker(metadata.leader().host(), metadata.leader().port())
-                                .forwardRequest(kafkaHeaderAndRequest)
-                                .thenAccept(serverResponse -> {
-                                    if (!isNoisyRequest(request)) {
-                                        log.info("Sending {} {} errors {}.", serverResponse, serverResponse.getClass(), serverResponse.errorCounts());
-                                    }
-                                    if (serverResponse.errorCounts() != null) {
-                                        for (Errors error : serverResponse.errorCounts().keySet()) {
-                                            if (error == Errors.NOT_COORDINATOR) {
-                                                forgetMetadataForFailedBroker(metadata.leader().host(), metadata.leader().port());
-                                            }
+                            .forwardRequest(kafkaHeaderAndRequest)
+                            .thenAccept(serverResponse -> {
+                                if (!isNoisyRequest(request)) {
+                                    log.info("Sending {} {} errors {}.", serverResponse, serverResponse.getClass(),
+                                            serverResponse.errorCounts());
+                                }
+                                if (serverResponse.errorCounts() != null) {
+                                    for (Errors error : serverResponse.errorCounts().keySet()) {
+                                        if (error == Errors.NOT_COORDINATOR) {
+                                            forgetMetadataForFailedBroker(metadata.leader().host(),
+                                                    metadata.leader().port());
                                         }
                                     }
-                                    resultFuture.complete(serverResponse);
-                                }).exceptionally(err -> {
-                                    resultFuture.complete(errorBuilder.apply(request));
-                                    return null;
+                                }
+                                resultFuture.complete(serverResponse);
+                            }).exceptionally(err -> {
+                                resultFuture.complete(errorBuilder.apply(request));
+                                return null;
                                 });
                     })
                     .exceptionally((err) -> {
@@ -1618,31 +1663,35 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         return null;
                     });
         } catch (RuntimeException err) {
-            log.error("Runtime error "+err, err);
+            log.error("Runtime error " + err, err);
             resultFuture.completeExceptionally(err);
         }
     }
 
-    private <RT extends AbstractRequest> boolean isNoisyRequest(RT request) {
+    private <R extends AbstractRequest> boolean isNoisyRequest(R request) {
         // Consumers send these packets very often
         return (request instanceof HeartbeatRequest)
                 || (request instanceof OffsetCommitRequest);
     }
 
     @Override
-    protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
+    protected void handleInitProducerId(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                        CompletableFuture<AbstractResponse> resultFuture) {
 
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.TRANSACTION, InitProducerIdRequest.class, InitProducerIdRequest::transactionalId,
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION, InitProducerIdRequest.class,
+                InitProducerIdRequest::transactionalId,
                 (InitProducerIdRequest request) -> {
                     return new InitProducerIdResponse(0, Errors.BROKER_NOT_AVAILABLE);
                 });
     }
 
     @Override
-    protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.TRANSACTION, AddPartitionsToTxnRequest.class, AddPartitionsToTxnRequest::transactionalId,
+    protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                            CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION, AddPartitionsToTxnRequest.class,
+                AddPartitionsToTxnRequest::transactionalId,
                 (AddPartitionsToTxnRequest request) -> {
                     Map<TopicPartition, Errors> map = request.partitions().stream()
                             .collect(Collectors.toMap(Function.identity(), i -> Errors.BROKER_NOT_AVAILABLE));
@@ -1651,9 +1700,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.TRANSACTION, AddOffsetsToTxnRequest.class, AddOffsetsToTxnRequest::transactionalId,
+    protected void handleAddOffsetsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION, AddOffsetsToTxnRequest.class,
+                AddOffsetsToTxnRequest::transactionalId,
                 (AddOffsetsToTxnRequest request) -> {
                     // TODO: verify contents of the Map
                     return new AddPartitionsToTxnResponse(0, new HashMap<>());
@@ -1662,9 +1713,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP, TxnOffsetCommitRequest.class, TxnOffsetCommitRequest::consumerGroupId,
+    protected void handleTxnOffsetCommit(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                TxnOffsetCommitRequest.class, TxnOffsetCommitRequest::consumerGroupId,
                 (TxnOffsetCommitRequest request) -> {
                     // TODO: verify contents of the Map
                     return new TxnOffsetCommitResponse(0, new HashMap<>());
@@ -1672,24 +1724,25 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.TRANSACTION, EndTxnRequest.class, EndTxnRequest::transactionalId,
+    protected void handleEndTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION, EndTxnRequest.class, EndTxnRequest::transactionalId,
                 (EndTxnRequest request) -> {
                     return new EndTxnResponse(0, Errors.BROKER_NOT_AVAILABLE);
                 });
     }
 
     @Override
-    protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> resultFuture)
-    {
+    protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
         resultFuture.completeExceptionally(new UnsupportedOperationException("not a proxy operation"));
     }
 
     private ConcurrentHashMap<String, ConnectionToBroker> connectionsToBrokers = new ConcurrentHashMap<>();
 
     private ConnectionToBroker grabConnectionToBroker(String brokerHost, int brokerPort) {
-        String connectionKey = brokerHost+":"+brokerPort;
+        String connectionKey = brokerHost + ":" + brokerPort;
         return connectionsToBrokers.computeIfAbsent(connectionKey, (brokerAddress) -> {
             return new ConnectionToBroker(this, connectionKey, brokerHost, brokerPort);
         });
@@ -1707,11 +1760,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     void forgetMetadataForFailedBroker(String brokerHost, int brokerPort) {
-        Collection<String> keysToRemove  = topicsLeaders
+        Collection<String> keysToRemove = topicsLeaders
                 .entrySet()
                 .stream()
                 .filter(n -> n.getValue().port() == brokerPort && n.getValue().host().equals(brokerHost))
-                .map(e->e.getKey())
+                .map(e -> e.getKey())
                 .collect(Collectors.toSet());
         log.info("forgetMetadataForFailedBroker {}:{} -> {}", brokerHost, brokerPort, keysToRemove);
         keysToRemove.forEach(topicsLeaders::remove);
