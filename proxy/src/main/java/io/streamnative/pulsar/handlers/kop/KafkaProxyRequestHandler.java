@@ -21,6 +21,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -185,12 +186,29 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     @Override
     protected void maybeDelayCloseOnAuthenticationFailure() {
+        if (this.kafkaConfig.getFailedAuthenticationDelayMs() > 0) {
+            this.ctx.executor().schedule(
+                    this::handleCloseOnAuthenticationFailure,
+                    this.kafkaConfig.getFailedAuthenticationDelayMs(),
+                    TimeUnit.MILLISECONDS);
+        } else {
+            handleCloseOnAuthenticationFailure();
+        }
+    }
 
+    private void handleCloseOnAuthenticationFailure() {
+        try {
+            this.completeCloseOnAuthenticationFailure();
+        } finally {
+            this.close();
+        }
     }
 
     @Override
     protected void completeCloseOnAuthenticationFailure() {
-
+        if (isActive.get() && authenticator != null) {
+            authenticator.sendAuthenticationFailureResponse();
+        }
     }
 
     @Override
@@ -1527,7 +1545,87 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
+                                             CompletableFuture<AbstractResponse> resultFuture) {
+        if (listOffset.getHeader().apiVersion() == 0) {
+            // clients up to Kafka 0.10.0.0
+            handleListOffsetRequestV0(listOffset, resultFuture);
+        } else {
+            handleListOffsetRequestV1(listOffset, resultFuture);
+        }
+    }
+    protected void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
+        // use offsetData
+        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
+        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
+
+        Map<TopicPartition, ListOffsetResponse.PartitionData> map = new ConcurrentHashMap<>();
+        AtomicInteger expectedCount = new AtomicInteger(request.offsetData().size());
+
+        BiConsumer<String, ListOffsetResponse> onResponse = (topic, topicResponse) -> {
+            topicResponse.responseData().forEach((tp, data) -> {
+                map.put(tp, data);
+                if (expectedCount.decrementAndGet() == 0) {
+                    ListOffsetResponse response = new ListOffsetResponse(map);
+                    resultFuture.complete(response);
+                }
+            });
+        };
+
+        for (Map.Entry<TopicPartition, ListOffsetRequest.PartitionData> entry : request.offsetData().entrySet()) {
+            final String fullPartitionName = KopTopic.toString(entry.getKey());
+
+            int dummyCorrelationId = getDummyCorrelationId();
+            RequestHeader header = new RequestHeader(
+                    listOffset.getHeader().apiKey(),
+                    listOffset.getHeader().apiVersion(),
+                    listOffset.getHeader().clientId(),
+                    dummyCorrelationId
+            );
+
+            Map<TopicPartition, ListOffsetRequest.PartitionData> tsData = new HashMap<>();
+            tsData.put(entry.getKey(), entry.getValue());
+            ListOffsetRequest requestForSinglePartition = ListOffsetRequest.Builder
+                    .forConsumer(false, request.isolationLevel())
+                    .setOffsetData(tsData)
+                    .build(request.version());
+            ByteBuffer buffer = requestForSinglePartition.serialize(header);
+
+            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                    header,
+                    requestForSinglePartition,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+
+            findBroker(TopicName.get(fullPartitionName))
+                    .thenAccept(brokerAddress -> {
+                        grabConnectionToBroker(brokerAddress.leader().host(), brokerAddress.leader().port())
+                                .forwardRequest(singlePartitionRequest)
+                                .thenAccept(theResponse -> {
+                                    onResponse.accept(fullPartitionName, (ListOffsetResponse) theResponse);
+                                }).exceptionally(err -> {
+                                    ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                                    dummyResponse.responseData().put(entry.getKey(),
+                                            new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                                    0, 0));
+                                    onResponse.accept(fullPartitionName, dummyResponse);
+                                    return null;
+                                });
+                    }).exceptionally(err -> {
+                        ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                        dummyResponse.responseData().put(entry.getKey(),
+                                new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                        0, 0));
+                        onResponse.accept(fullPartitionName, dummyResponse);
+                        return null;
+                    });
+        }
+    }
+
+    protected void handleListOffsetRequestV1(KafkaHeaderAndRequest listOffset,
+                                             CompletableFuture<AbstractResponse> resultFuture) {
+        // use partitionTimestamps
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
 
@@ -1543,6 +1641,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             });
         };
+
+        if (request.partitionTimestamps().isEmpty()) {
+            // this should not happen
+            ListOffsetResponse response = new ListOffsetResponse(map);
+            resultFuture.complete(response);
+            return;
+        }
 
         for (Map.Entry<TopicPartition, Long> entry : request.partitionTimestamps().entrySet()) {
             final String fullPartitionName = KopTopic.toString(entry.getKey());

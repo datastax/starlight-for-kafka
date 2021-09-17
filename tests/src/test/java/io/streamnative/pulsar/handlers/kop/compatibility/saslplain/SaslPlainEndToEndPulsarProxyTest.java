@@ -13,8 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.compatibility.saslplain;
 
+import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
+import org.apache.pulsar.client.impl.auth.AuthenticationToken;
+import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
+
+import java.util.Properties;
 
 public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTestBase {
 
@@ -22,12 +28,31 @@ public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTestBase 
         super("pulsar");
     }
 
-
     @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.setup();
+
+        // when using PulsarAdmin you need to be Tenant Admin in order to
+        // list topic partitions
+        TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
+        tenantInfo.getAdminRoles().add(SIMPLE_USER);
+        admin.tenants().updateTenant(TENANT, tenantInfo);
+
         startProxy();
+    }
+
+    @Override
+    protected void prepareProxyConfiguration(Properties conf) throws Exception {
+        conf.put("authorizationEnabled", "true");
+        conf.put("authenticationEnabled", "true");
+        conf.put("kafkaProxySuperUserRole", ADMIN_USER);
+
+        conf.put("authenticationProviders", AuthenticationProviderToken.class.getName());
+
+        // the Proxy myst use a proxy token
+        conf.put("brokerClientAuthenticationPlugin", AuthenticationToken.class.getName());
+        conf.put("brokerClientAuthenticationParameters", "token:" + proxyToken);
     }
 
     @AfterClass(alwaysRun = true)
@@ -40,4 +65,5 @@ public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTestBase 
     protected int getClientPort() {
         return getKafkaProxyPort();
     }
+
 }

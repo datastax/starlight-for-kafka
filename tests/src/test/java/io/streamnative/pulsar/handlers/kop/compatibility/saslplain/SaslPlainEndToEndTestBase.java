@@ -66,15 +66,17 @@ import org.testng.annotations.Test;
 
 @Slf4j
 public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String TENANT = "public";
+    protected static final String SIMPLE_USER = "muggle_user";
+    protected static final String TENANT = "public";
     private static final String ANOTHER_USER = "death_eater_user";
-    private static final String ADMIN_USER = "admin_user";
+    private static final String PROXY_USER = "proxy_user";
+    protected static final String ADMIN_USER = "admin_user";
     private static final String NAMESPACE = "default";
     private static final String KAFKA_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + KAFKA_TOPIC;
     private String userToken;
     private String anotherToken;
+    protected String proxyToken;
     private File jaasConfigFile;
 
     protected Map<KafkaVersion, KafkaClientFactory> kafkaClientFactories = Arrays.stream(KafkaVersion.values())
@@ -111,8 +113,10 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         String adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
+        proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         super.resetConfig();
+        conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
         conf.setKopAllowedNamespaces(Collections.singleton(TENANT + "/" + NAMESPACE));
         ((KafkaServiceConfiguration) conf).setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
@@ -122,7 +126,7 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationAllowWildcardsMatching(true);
-        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
+        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER, PROXY_USER));
         conf.setAuthenticationProviders(
                 Sets.newHashSet("org.apache.pulsar.broker.authentication."
                         + "AuthenticationProviderToken"));

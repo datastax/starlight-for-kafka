@@ -308,7 +308,7 @@ public class SaslAuthenticator {
         // Raise an error prior to parsing if the api cannot be handled at this layer. This avoids
         // unnecessary exposure to some of the more complex schema types.
         if (apiKey != ApiKeys.API_VERSIONS && apiKey != ApiKeys.SASL_HANDSHAKE) {
-            throw new IllegalSaslStateException(
+            throw new AuthenticationException(
                     "Unexpected Kafka request of type " + apiKey + " during SASL handshake.");
         }
 
