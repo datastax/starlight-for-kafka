@@ -6,7 +6,6 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import lombok.AllArgsConstructor;
@@ -22,6 +21,7 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -56,11 +56,12 @@ class ConnectionToBroker {
         if (connectionFuture != null) {
             return connectionFuture;
         }
-        log.info("Opening proxy connection to {} {}", brokerHost, brokerPort);
+        log.info("Opening proxy connection to {} {} current user {", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
 
+        EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
         Bootstrap b = new Bootstrap();
-        b.group(kafkaProxyRequestHandler.getWorkerGroup());
-        b.channel(NioSocketChannel.class);
+        b.group(workerGroup);
+        b.channel(EventLoopUtil.getClientSocketChannelClass(workerGroup));
         b.handler(new ChannelInitializer<SocketChannel>() {
             @Override
             public void initChannel(SocketChannel ch) throws Exception {
