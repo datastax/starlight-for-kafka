@@ -6,6 +6,7 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import lombok.AllArgsConstructor;
@@ -59,7 +60,13 @@ class ConnectionToBroker {
         log.info("Opening proxy connection to {} {} current user {", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
 
         EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
-        Class<? extends SocketChannel> clientSocketChannelClass = EventLoopUtil.getClientSocketChannelClass(workerGroup);
+        Class<? extends SocketChannel> clientSocketChannelClass;
+        if (workerGroup instanceof SingleThreadEventLoop) {
+            // handle Epool
+            clientSocketChannelClass = EventLoopUtil.getClientSocketChannelClass(((SingleThreadEventLoop) workerGroup).parent());
+        } else {
+            clientSocketChannelClass = NioSocketChannel.class;
+        }
         log.info("Opening proxy connection {} {}", workerGroup.getClass(), clientSocketChannelClass);
         Bootstrap b = new Bootstrap();
         b.group(workerGroup);

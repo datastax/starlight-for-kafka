@@ -119,6 +119,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
+                    // use the same eventloop to preserve ordering
                     enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop()));
     }
 
