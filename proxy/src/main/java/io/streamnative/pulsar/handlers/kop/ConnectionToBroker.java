@@ -59,9 +59,11 @@ class ConnectionToBroker {
         log.info("Opening proxy connection to {} {} current user {", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
 
         EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
+        Class<? extends SocketChannel> clientSocketChannelClass = EventLoopUtil.getClientSocketChannelClass(workerGroup);
+        log.info("Opening proxy connection {} {}", workerGroup.getClass(), clientSocketChannelClass);
         Bootstrap b = new Bootstrap();
         b.group(workerGroup);
-        b.channel(EventLoopUtil.getClientSocketChannelClass(workerGroup));
+        b.channel(clientSocketChannelClass);
         b.handler(new ChannelInitializer<SocketChannel>() {
             @Override
             public void initChannel(SocketChannel ch) throws Exception {

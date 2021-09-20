@@ -16,9 +16,9 @@ package io.streamnative.pulsar.handlers.kop;
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
-import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import lombok.AllArgsConstructor;
@@ -35,6 +35,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.proxy.server.ProxyService;
@@ -61,6 +62,7 @@ public class KafkaProtocolProxyMain {
     private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
+    private EventLoopGroup eventLoopGroup;
 
     private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
         // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
@@ -143,6 +145,8 @@ public class KafkaProtocolProxyMain {
         // init config
         kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
 
+        eventLoopGroup = EventLoopUtil.newEventLoopGroup(kafkaConfig.getKafkaProxyBrokerThreads(), false, new DefaultThreadFactory("kop-broker-connection"));
+
         // some of the configs value in conf.properties may not updated.
         // So need to get latest value from conf itself
         kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
@@ -203,8 +207,8 @@ public class KafkaProtocolProxyMain {
         newChannelInitializers().forEach((address, initializer) -> {
             System.out.println("Starting protocol at " + address);
             ServerBootstrap bootstrap = new ServerBootstrap()
-                    .group(new NioEventLoopGroup())
-                    .channel(NioServerSocketChannel.class);
+                    .group(eventLoopGroup)
+                    .channel(EventLoopUtil.getServerSocketChannelClass(eventLoopGroup));
             bootstrap.childHandler(initializer);
             try {
                 bootstrap.bind(address).sync();
@@ -216,6 +220,9 @@ public class KafkaProtocolProxyMain {
 
     public void close() throws Exception {
         pulsarAdminProvider.close();
+        if (eventLoopGroup != null) {
+            eventLoopGroup.shutdownGracefully();
+        }
     }
 
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -238,13 +245,13 @@ public class KafkaProtocolProxyMain {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, false,
-                                advertisedEndPoint, brokerAddressMapper));
+                                advertisedEndPoint, brokerAddressMapper, eventLoopGroup));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, true,
-                                advertisedEndPoint, brokerAddressMapper));
+                                advertisedEndPoint, brokerAddressMapper, eventLoopGroup));
                         break;
                 }
             });
