@@ -44,8 +44,4 @@ public class KafkaMessageOrderPulsarProxyTest extends KafkaMessageOrderTestBase 
         return getKafkaProxyPort();
     }
 
-//    @Test
-//    public void testAAA() throws Exception {
-//        super.testKafkaProduceMessageOrder(1);
-//    }
 }

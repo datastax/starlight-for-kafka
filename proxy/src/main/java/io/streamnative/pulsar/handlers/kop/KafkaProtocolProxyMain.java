@@ -245,13 +245,13 @@ public class KafkaProtocolProxyMain {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, false,
-                                advertisedEndPoint, brokerAddressMapper, eventLoopGroup));
+                                advertisedEndPoint, brokerAddressMapper));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, true,
-                                advertisedEndPoint, brokerAddressMapper, eventLoopGroup));
+                                advertisedEndPoint, brokerAddressMapper));
                         break;
                 }
             });

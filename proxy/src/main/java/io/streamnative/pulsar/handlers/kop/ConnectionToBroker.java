@@ -210,9 +210,7 @@ class ConnectionToBroker {
             return channel;
         });
     }
-
     private void processWriteQueue(Channel channel, Throwable error) {
-
         Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> entry =
                 writeQueue.poll();
         if (entry == null) {
@@ -238,8 +236,8 @@ class ConnectionToBroker {
             // this execution may not process the request, but
             // the tip of the queue
             // CompletableFuture#whenComplete does not
+            // provide ordering guarantees
             processWriteQueue(channel, error);
-
         });
         return result;
     }

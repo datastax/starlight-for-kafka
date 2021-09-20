@@ -50,7 +50,6 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
     private final NettyServerSslContextBuilder serverSslCtxRefresher;
     private final boolean tlsEnabledWithKeyStore;
-    private final EventLoopGroup eventLoopGroup;
 
     private final Function<String, String> brokerAddressMapper;
 
@@ -60,10 +59,8 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
             KafkaServiceConfiguration serviceConfig,
             boolean enableTLS,
             EndPoint advertisedEndPoint,
-            Function<String, String> brokerAddressMapper,
-            EventLoopGroup eventLoopGroup) {
+            Function<String, String> brokerAddressMapper) {
         super();
-        this.eventLoopGroup = eventLoopGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
         this.pulsarAdmin = pulsarAdmin;
@@ -122,7 +119,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
             new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
-                    enableTls, advertisedEndPoint, brokerAddressMapper, eventLoopGroup));
+                    enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop()));
     }
 
 }
