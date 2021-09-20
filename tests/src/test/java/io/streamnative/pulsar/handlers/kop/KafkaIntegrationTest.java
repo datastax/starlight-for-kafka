@@ -172,7 +172,7 @@ public class KafkaIntegrationTest extends KopProtocolHandlerTestBase {
         Testcontainers.exposeHostPorts(ImmutableMap.of(super.kafkaBrokerPort, super.kafkaBrokerPort));
     }
 
-    @Test(timeOut = 3 * 60_000, dataProvider = "integrations")
+    @Test(timeOut = 3 * 60_000, dataProvider = "integrations", enabled = false)
     void simpleProduceAndConsume(final String integration, final Optional<String> topic,
                                  final boolean shouldProduce, final boolean shouldConsume) throws Exception {
         String topicName = topic.orElse(integration);
