@@ -794,17 +794,23 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             };
 
+            // split the request per broker
+            final Map<Node, ProduceRequest> requestsPerBroker = new HashMap<>();
             produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-                final Consumer<Long> offsetConsumer = offset -> addPartitionResponse.accept(
-                        topicPartition, new PartitionResponse(Errors.NONE, offset, -1L, -1L));
-                final Consumer<Errors> errorsConsumer =
-                        errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
-
                 final String fullPartitionName = KopTopic.toString(topicPartition);
-                // TODO: have a better way to find an unused correlation id
+                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
+                Node kopBroker = topicMetadata.leader();
+
+                ProduceRequest produceRequestPerBroker = requestsPerBroker.computeIfAbsent(kopBroker, a -> {
+                            return ProduceRequest.Builder.forCurrentMagic((short) 1,
+                                    produceRequest.timeout(),
+                                    new HashMap<>())
+                            .build();
+                });
+                produceRequestPerBroker.partitionRecordsOrFail().put(topicPartition, records);
+            });
+            requestsPerBroker.forEach((kopBroker, requestForSinglePartition) -> {
                 int dummyCorrelationId = getDummyCorrelationId();
-                Map<TopicPartition, MemoryRecords> recordsCopy = new HashMap<>();
-                recordsCopy.put(topicPartition, records);
 
                 RequestHeader header = new RequestHeader(
                         produceHar.getHeader().apiKey(),
@@ -812,11 +818,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         produceHar.getHeader().clientId(),
                         dummyCorrelationId
                 );
-
-                ProduceRequest requestForSinglePartition = ProduceRequest.Builder.forCurrentMagic((short) 1,
-                                produceRequest.timeout(),
-                                recordsCopy)
-                        .build();
 
                 ByteBuffer buffer = requestForSinglePartition.serialize(header);
 
@@ -827,29 +828,34 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         null
                 );
 
-                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
-                Node kopBroker = topicMetadata.leader();
-                log.debug("forward produce for {} to {}", fullPartitionName, kopBroker);
+                if (log.isDebugEnabled()) {
+                    log.debug("forward produce for {} to {}", requestForSinglePartition.partitionRecordsOrFail().keySet(), kopBroker);
+                }
                 grabConnectionToBroker(kopBroker.host(), kopBroker.port())
                         .forwardRequest(singlePartitionRequest)
                         .thenAccept(response -> {
                             ProduceResponse resp = (ProduceResponse) response;
-                            resp.responses().values().forEach(partitionResponse -> {
+                            resp.responses().forEach((topicPartition, partitionResponse) -> {
                                 if (partitionResponse.error == Errors.NONE) {
-                                    log.debug("result produce for {} to {} {}", fullPartitionName,
+                                    log.debug("result produce for {} to {} {}", topicPartition,
                                             kopBroker, partitionResponse);
-                                    offsetConsumer.accept(partitionResponse.baseOffset);
+                                    addPartitionResponse.accept(topicPartition, partitionResponse);
                                 } else {
                                     if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                        log.info("Broker {} is no more the leader for {}", kopBroker, fullPartitionName);
+                                        log.info("Broker {} is no more the leader for {}", kopBroker,
+                                                topicPartition);
+                                        final String fullPartitionName = KopTopic.toString(topicPartition);
                                         topicsLeaders.remove(fullPartitionName);
                                     }
-                                    errorsConsumer.accept(partitionResponse.error);
+                                    addPartitionResponse.accept(topicPartition, partitionResponse);
                                 }
                             });
                         }).exceptionally(error -> {
-                            log.error("bad error", error);
-                            errorsConsumer.accept(Errors.BROKER_NOT_AVAILABLE);
+                            log.error("bad error during split produce for {}",
+                                    requestForSinglePartition.partitionRecordsOrFail().keySet(), error);
+                            requestForSinglePartition.partitionRecordsOrFail().keySet().forEach(topicPartition
+                                    -> addPartitionResponse.accept(topicPartition,
+                                    new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
                             return null;
                         });
             });
