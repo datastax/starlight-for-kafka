@@ -656,7 +656,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
-        log.info("handleProduceRequest id {}", produceHar.getHeader().correlationId());
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
 
