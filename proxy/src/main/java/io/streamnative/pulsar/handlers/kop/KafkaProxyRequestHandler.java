@@ -1011,63 +1011,70 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             };
 
+            final BiConsumer<TopicPartition, FetchResponse.PartitionData> resultConsumer = (topicPartition, data) -> addFetchPartitionResponse.accept(
+                    topicPartition, data);
+            final BiConsumer<TopicPartition, Errors> errorsConsumer =
+                    (topicPartition, errors) -> addFetchPartitionResponse.accept(topicPartition,
+                            new FetchResponse.PartitionData(errors, 0, 0, 0,
+                                    null, MemoryRecords.EMPTY));
+
+            Map<Node, FetchRequest> requestsByBroker = new HashMap<>();
+
             fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
-                final Consumer<FetchResponse.PartitionData> resultConsumer = data -> addFetchPartitionResponse.accept(
-                        topicPartition, data);
-                final Consumer<Errors> errorsConsumer =
-                        errors -> addFetchPartitionResponse.accept(topicPartition,
-                                new FetchResponse.PartitionData(errors, 0, 0, 0,
-                                        null, MemoryRecords.EMPTY));
-
                 final String fullPartitionName = KopTopic.toString(topicPartition);
-                // TODO: have a better way to find an unused correlation id
-                int dummyCorrelationId = getDummyCorrelationId();
-                Map<TopicPartition, FetchRequest.PartitionData> recordsCopy = new HashMap<>();
-                recordsCopy.put(topicPartition, partitionData);
+                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
+                Node kopBroker = topicMetadata.leader();
+                FetchRequest requestForSinglePartition = requestsByBroker.computeIfAbsent(kopBroker, ___ -> FetchRequest.Builder
+                        .forConsumer(((FetchRequest) fetch.getRequest()).maxWait(),
+                                ((FetchRequest) fetch.getRequest()).minBytes(),
+                                new HashMap<>())
+                        .build());
 
+                requestForSinglePartition.fetchData().put(topicPartition, partitionData);
+            });
+
+            requestsByBroker.forEach((kopBroker, requestForSingleBroker) -> {
+                int dummyCorrelationId = getDummyCorrelationId();
                 RequestHeader header = new RequestHeader(
                         fetch.getHeader().apiKey(),
                         fetch.getHeader().apiVersion(),
                         fetch.getHeader().clientId(),
                         dummyCorrelationId
                 );
-
-                FetchRequest requestForSinglePartition = FetchRequest.Builder
-                        .forConsumer(((FetchRequest) fetch.getRequest()).maxWait(),
-                                ((FetchRequest) fetch.getRequest()).minBytes(),
-                                recordsCopy)
-                        .build();
-
-                ByteBuffer buffer = requestForSinglePartition.serialize(header);
-
+                ByteBuffer buffer = requestForSingleBroker.serialize(header);
                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                         header,
-                        requestForSinglePartition,
+                        requestForSingleBroker,
                         Unpooled.wrappedBuffer(buffer),
                         null
                 );
 
-                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
-                Node kopBroker = topicMetadata.leader();
-                log.debug("forward fetch for {} to {}", fullPartitionName, kopBroker);
+                if (log.isDebugEnabled()) {
+                    log.debug("forward fetch for {} to {}", requestForSingleBroker.fetchData().keySet(), kopBroker);
+                }
                 grabConnectionToBroker(kopBroker.host(), kopBroker.port())
                         .forwardRequest(singlePartitionRequest)
                         .thenAccept(response -> {
                             FetchResponse<?> resp = (FetchResponse) response;
                             resp.responseData()
-                                .forEach((part, partitionResponse) -> {
+                                .forEach((topicPartition, partitionResponse) -> {
                                     if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
                                         String fullTopicName = KopTopic.toString(topicPartition);
                                         log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
                                         topicsLeaders.remove(fullTopicName);
                                     }
-                                    log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
-                                            partitionResponse);
-                                    resultConsumer.accept(partitionResponse);
+                                    if (log.isDebugEnabled()) {
+                                        final String fullPartitionName = KopTopic.toString(topicPartition);
+                                        log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
+                                                partitionResponse);
+                                    }
+                                    addFetchPartitionResponse.accept(topicPartition, partitionResponse);
                                 });
                         }).exceptionally(error -> {
-                            log.error("bad error", error);
-                            errorsConsumer.accept(Errors.UNKNOWN_SERVER_ERROR);
+                            log.error("bad error while fetching for {} from {}", requestForSingleBroker.fetchData().keySet(), error, kopBroker);
+                            requestForSingleBroker.fetchData().keySet().forEach(topicPartition ->
+                                errorsConsumer.accept(topicPartition, Errors.UNKNOWN_SERVER_ERROR)
+                            );
                             return null;
                         });
             });
