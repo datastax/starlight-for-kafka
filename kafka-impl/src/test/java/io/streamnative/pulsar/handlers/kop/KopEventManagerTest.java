@@ -13,15 +13,21 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import org.apache.kafka.common.Node;
+import org.testng.Assert;
 import org.testng.annotations.Test;
 
-/**
- * test topics in different namespaces with `entryFormat=kafka`.
- */
-public class DifferentNamespaceKafkaTest extends DifferentNamespaceTestBase {
+public class KopEventManagerTest {
 
-    public DifferentNamespaceKafkaTest() {
-        super("kafka");
+    @Test
+    public void testGetNode() {
+        final String host = "localhost";
+        final int port = 9120;
+        final String securityProtocol = "SASL_PLAINTEXT";
+        final String brokerStr = securityProtocol + "://" + host + ":" + port;
+        Node node = KopEventManager.getNode(brokerStr);
+        Assert.assertEquals(node.host(), host);
+        Assert.assertEquals(node.port(), port);
     }
 
 }

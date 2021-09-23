@@ -182,10 +182,12 @@ class ConnectionToBroker {
         }
 
         String originalPrincipal = kafkaProxyRequestHandler.currentUser();
+        String originalTenant = kafkaProxyRequestHandler.getCurrentTenant();
+        String username = originalTenant != null ? originalPrincipal + "/" + originalTenant : originalTenant;
         String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
         String password = "token:" + actualAuthenticationToken;
         String usernamePassword = prefix
-                + "\u0000" + originalPrincipal
+                + "\u0000" + username
                 + "\u0000" + password;
         byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
         SaslAuthenticateRequest request = new SaslAuthenticateRequest

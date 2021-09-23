@@ -51,7 +51,7 @@ public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBas
 
         conf.put("authenticationProviders", AuthenticationProviderToken.class.getName());
 
-        // the Proxy myst use a proxy token
+        // the Proxy must use a proxy token
         conf.put("brokerClientAuthenticationPlugin", AuthenticationToken.class.getName());
         conf.put("brokerClientAuthenticationParameters", "token:" + proxyToken);
     }

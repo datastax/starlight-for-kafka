@@ -156,7 +156,8 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         assertEquals(sortedSuffixes, expectedSuffixes);
     }
 
-    protected void testListNonexistentNamespace() throws Exception {
+    @Test(timeOut = 20000)
+    void testListNonexistentNamespace() throws Exception {
         final String defaultNamespace = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE;
         final String nonexistentNamespace = "xxxxxxx/yyyyyyy";
         conf.setKopAllowedNamespaces(Sets.newHashSet(defaultNamespace, nonexistentNamespace));
@@ -178,7 +179,8 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         kafkaAdmin.close();
     }
 
-    protected void testListTopics() throws Exception {
+    @Test(timeOut = 20000)
+    void testListTopics() throws Exception {
         final String defaultNamespacePrefix = DEFAULT_TENANT + "/" + DEFAULT_NAMESPACE + "/";
         final String anotherNamespacePrefix = ANOTHER_TENANT + "/" + ANOTHER_NAMESPACE + "/";
         final String notAllowedNamespacePrefix = NOT_ALLOWED_TENANT + "/" + NOT_ALLOWED_NAMESPACE + "/";
