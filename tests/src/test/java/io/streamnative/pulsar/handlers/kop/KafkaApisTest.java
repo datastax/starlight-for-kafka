@@ -260,7 +260,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                     i,
                     messageStr))
                 .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
@@ -311,7 +313,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                     i,
                     messageStr))
                 .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
         }
 
         // 2. real test, for ListOffset request verify Earliest get earliest
@@ -478,7 +482,9 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                             i,
                             messageStr))
                     .get();
-            log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            if (log.isDebugEnabled()) {
+                log.debug("Kafka Producer Sent message: ({}, {})", i, messageStr);
+            }
         }
 
         // 2. real test, test earliest
@@ -839,14 +845,16 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // check metadata response
         Collection<TopicMetadata> topicMetadatas = metadataResponse.topicMetadata();
 
-        log.debug("a. dumpTopicMetadata: ");
-        topicMetadatas.forEach(topicMetadata -> {
-            log.debug("      topicMetadata: {}", topicMetadata);
-            log.debug("b.    dumpPartitionMetadata: ");
-            topicMetadata.partitionMetadata().forEach(partition -> {
-                log.debug("            PartitionMetadata: {}", partition);
+        if (log.isDebugEnabled()) {
+            log.debug("a. dumpTopicMetadata: ");
+            topicMetadatas.forEach(topicMetadata -> {
+                log.debug("      topicMetadata: {}", topicMetadata);
+                log.debug("b.    dumpPartitionMetadata: ");
+                topicMetadata.partitionMetadata().forEach(partition -> {
+                    log.debug("            PartitionMetadata: {}", partition);
+                });
             });
-        });
+        }
 
         assertEquals(topicMetadatas.size(), numberTopics);
 

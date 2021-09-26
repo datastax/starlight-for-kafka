@@ -180,7 +180,9 @@ public class SaslAuthenticator {
                              Function<Session, Boolean> tenantAccessValidationFunction)
             throws AuthenticationException {
         checkArgument(requestBuf.readableBytes() > 0);
-        log.info("Authenticate {} {} {}", ctx, saslServer, state);
+        if (log.isDebugEnabled()) {
+            log.debug("Authenticate {} {} {}", ctx, saslServer, state);
+        }
 
         this.ctx = ctx;
         if (saslServer != null && saslServer.isComplete()) {
@@ -500,8 +502,10 @@ public class SaslAuthenticator {
                 buildResponseOnAuthenticateFailure(header, request,
                         new SaslAuthenticateResponse(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), null);
                 sendAuthenticationFailureResponse();
-                log.error("Authenticate failed for client, header {}, request {}, reason {}",
-                        header, saslAuthenticateRequest, e.getMessage());
+                if (log.isDebugEnabled()) {
+                    log.debug("Authenticate failed for client, header {}, request {}, reason {}",
+                            header, saslAuthenticateRequest, e.getMessage());
+                }
             }
         }
     }
