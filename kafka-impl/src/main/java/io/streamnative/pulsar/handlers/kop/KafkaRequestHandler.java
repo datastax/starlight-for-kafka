@@ -414,6 +414,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
@@ -448,6 +449,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                CompletableFuture<AbstractResponse> resultFuture) {
         String err = String.format("Kafka API (%s) Not supported by kop server.",
@@ -459,6 +461,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         resultFuture.complete(apiResponse);
     }
 
+    @Override
     protected void handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                   CompletableFuture<AbstractResponse> resultFuture) {
         AbstractRequest request = kafkaHeaderAndRequest.getRequest();
@@ -518,6 +521,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return topicMapFuture;
     }
 
+    @Override
     protected void handleTopicMetadataRequest(KafkaHeaderAndRequest metadataHar,
                                               CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(metadataHar.getRequest() instanceof MetadataRequest);
@@ -910,6 +914,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
@@ -1061,6 +1066,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
                                                 CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
@@ -1125,6 +1131,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         replacedMap.putAll(newMap);
     }
 
+    @Override
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest offsetFetch,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetFetch.getRequest() instanceof OffsetFetchRequest);
@@ -1463,6 +1470,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     // get offset from underline managedLedger
+    @Override
     protected void handleListOffsetRequest(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
@@ -1554,6 +1562,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     }
 
+    @Override
     protected void handleOffsetCommitRequest(KafkaHeaderAndRequest offsetCommit,
                                              CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(offsetCommit.getRequest() instanceof OffsetCommitRequest);
@@ -1633,6 +1642,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleFetchRequest(KafkaHeaderAndRequest fetch,
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
@@ -1651,6 +1661,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         MessageFetchContext.get(this, fetch, resultFuture, fetchPurgatory).handleFetch();
     }
 
+    @Override
     protected void handleJoinGroupRequest(KafkaHeaderAndRequest joinGroup,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(joinGroup.getRequest() instanceof JoinGroupRequest);
@@ -1696,6 +1707,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleSyncGroupRequest(KafkaHeaderAndRequest syncGroup,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(syncGroup.getRequest() instanceof SyncGroupRequest);
@@ -1719,6 +1731,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
     }
 
+    @Override
     protected void handleHeartbeatRequest(KafkaHeaderAndRequest heartbeat,
                                           CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(heartbeat.getRequest() instanceof HeartbeatRequest);
@@ -1877,6 +1890,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    @Override
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
@@ -2171,6 +2185,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return new SaslHandshakeResponse(Errors.UNSUPPORTED_SASL_MECHANISM, new HashSet<>());
     }
 
+    @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
         ctx.close();
