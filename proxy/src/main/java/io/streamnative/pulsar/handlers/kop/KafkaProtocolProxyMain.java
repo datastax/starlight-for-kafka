@@ -232,7 +232,7 @@ public class KafkaProtocolProxyMain {
             ImmutableMap.Builder<InetSocketAddress, ChannelInitializer<SocketChannel>> builder =
                     ImmutableMap.builder();
 
-            final Map<SecurityProtocol, EndPoint> advertisedEndpointMap =
+            final Map<String, EndPoint> advertisedEndpointMap =
                     EndPoint.parseListeners(kafkaConfig.getKafkaAdvertisedListeners());
             EndPoint.parseListeners(kafkaConfig.getListeners()).forEach((protocol, endPoint) -> {
                 EndPoint advertisedEndPoint = advertisedEndpointMap.get(protocol);
@@ -240,7 +240,7 @@ public class KafkaProtocolProxyMain {
                     // Use the bind endpoint as the advertised endpoint.
                     advertisedEndPoint = endPoint;
                 }
-                switch (protocol) {
+                switch (endPoint.getSecurityProtocol()) {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
