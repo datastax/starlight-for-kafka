@@ -16,27 +16,27 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import lombok.SneakyThrows;
-import org.apache.pulsar.proxy.protocol.ProtocolHandler;
+import org.apache.pulsar.proxy.extensions.ProxyExtension;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.proxy.server.ProxyService;
 
 import java.net.InetSocketAddress;
 import java.util.Map;
 
-public class KafkaProtocolProxyHandler implements ProtocolHandler  {
+public class KafkaProxyExtension implements ProxyExtension {
 
     private KafkaProtocolProxyMain protocolHandlerCore;
     private ProxyConfiguration conf;
 
-    public KafkaProtocolProxyHandler(){
+    public KafkaProxyExtension(){
         protocolHandlerCore = new KafkaProtocolProxyMain();
     }
-
 
     /**
      * Returns the unique protocol name. For example, `kafka-v2` for protocol handler for Kafka v2 protocol.
      */
-    public String protocolName() {
+    @Override
+    public String extensionName() {
         return "kafka";
     }
 
@@ -46,8 +46,10 @@ public class KafkaProtocolProxyHandler implements ProtocolHandler  {
      * @param protocol the protocol to verify
      * @return true if the protocol handler can handle the given protocol, otherwise false.
      */
+
+    @Override
     public boolean accept(String protocol) {
-        return protocolName().equals(protocol);
+        return extensionName().equals(protocol);
     }
 
     /**
@@ -59,6 +61,7 @@ public class KafkaProtocolProxyHandler implements ProtocolHandler  {
      * @param conf broker service configuration
      * @throws Exception when fail to initialize the protocol handler.
      */
+    @Override
     public void initialize(ProxyConfiguration conf) throws Exception {
         this.conf = conf;
     }

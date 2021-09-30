@@ -26,7 +26,6 @@ import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
-import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
@@ -84,7 +83,7 @@ import org.eclipse.jetty.server.Server;
 public abstract class KopProtocolHandlerTestBase {
 
     protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/protocols/test-protocol-handler.nar";
-    protected static final String PROXYROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/proxyprotocols/test-protocol-proxy-handler.nar";
+    protected static final String PROXY_EXTENSION_TEST_NAR = "/proxyextensions/test-proxy-extension.nar";
     protected KafkaServiceConfiguration conf;
     protected ProxyService pulsarProxy;
     protected PulsarService pulsar;
@@ -769,13 +768,13 @@ public abstract class KopProtocolHandlerTestBase {
         // Map Pulsar port to KOP port
         proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", computeKafkaProxyBrokerPortToKopMapping());
 
-        URL testHandlerUrl = this.getClass().getResource(PROXYROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
-        Path handlerPath = Paths.get(testHandlerUrl.toURI());
+        URL proxyExtUrl = this.getClass().getResource(PROXY_EXTENSION_TEST_NAR);
+        Path proxyExtPath = Paths.get(proxyExtUrl.toURI());
 
-        String protocolHandlerDir = handlerPath.toFile().getParent();
+        String extensionsDir = proxyExtPath.toFile().getParent();
 
-        proxyConfiguration.setProxyProtocolHandlerDirectory(protocolHandlerDir);
-        proxyConfiguration.setProxyMessagingProtocols(Sets.newHashSet("kafka"));
+        proxyConfiguration.setProxyExtensionsDirectory(extensionsDir);
+        proxyConfiguration.setProxyExtensions(Sets.newHashSet("kafka"));
         beforeStartingProxy(proxyConfiguration);
         pulsarProxy = new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService());
         pulsarProxy.start();
