@@ -347,7 +347,12 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
             } catch (Exception e) {
+<<<<<<< HEAD
                 if (version == KafkaVersion.KAFKA_2_8_0) {
+=======
+                if (version == KafkaVersion.KAFKA_2_8_0
+                    || version == KafkaVersion.KAFKA_3_0_0) {
+>>>>>>> origin/master
                     assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC
                             + " not present in metadata after " + metadataTimeoutMs + " ms."));
                 } else {

@@ -43,6 +43,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -59,8 +60,6 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
-import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.impl.PulsarClientImpl;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -85,19 +84,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KopBrokerLookupManager kopBrokerLookupManager;
     private AdminManager adminManager = null;
     private MetadataCache<LocalBrokerData> localBrokerDataCache;
+    private SystemTopicClient offsetTopicClient;
 
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
     @Getter
     private BrokerService brokerService;
 
-    private Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
-    private Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
-    private Map<String, KopEventManager> kopEventManagerByTenant = new ConcurrentHashMap<>();
+    @Getter
+    private KopEventManager kopEventManager;
 
-    public KopEventManager getKopEventManager(String tenant) {
-        return kopEventManagerByTenant.get(tenant);
-    }
+    private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
+    private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -108,6 +106,58 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public TransactionCoordinator getTransactionCoordinator(String tenant) {
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
+
+    /**
+     * Listener for invalidating the global Broker ownership cache.
+     */
+    @AllArgsConstructor
+    public static class CacheInvalidator implements NamespaceBundleOwnershipListener {
+        final BrokerService service;
+
+        @Override
+        public boolean test(NamespaceBundle namespaceBundle) {
+            // we are interested in every topic,
+            // because we do not know which topics are served by KOP
+            return true;
+        }
+
+        private void invalidateBundleCache(NamespaceBundle bundle) {
+            log.info("invalidateBundleCache for {}", bundle);
+            service.pulsar().getNamespaceService().getOwnedTopicListForNamespaceBundle(bundle)
+                    .whenComplete((topics, ex) -> {
+                        if (ex == null) {
+                            for (String topic : topics) {
+                                TopicName name = TopicName.get(topic);
+
+                                log.info("invalidateBundleCache for topic {}", topic);
+                                KopBrokerLookupManager.removeTopicManagerCache(topic);
+                                KafkaTopicManager.deReference(topic);
+
+                                // For non-partitioned topic.
+                                if (!name.isPartitioned()) {
+                                    String partitionedZeroTopicName = name.getPartition(0).toString();
+                                    KafkaTopicManager.deReference(partitionedZeroTopicName);
+                                    KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
+                                }
+                            }
+                        } else {
+                            log.error("Failed to get owned topic list for "
+                                            + "CacheInvalidator when triggering bundle ownership change {}.",
+                                    bundle, ex);
+                        }
+                    }
+                    );
+        }
+        @Override
+        public void onLoad(NamespaceBundle bundle) {
+            invalidateBundleCache(bundle);
+        }
+        @Override
+        public void unLoad(NamespaceBundle bundle) {
+            invalidateBundleCache(bundle);
+        }
+    }
+
     /**
      * Listener for the changing of topic that stores offsets of consumer group.
      */
@@ -156,16 +206,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
-                            // deReference topic when unload
-                            KopBrokerLookupManager.removeTopicManagerCache(topic);
-                            KafkaTopicManager.deReference(topic);
-
-                            // For non-partitioned topic.
-                            if (!name.isPartitioned()) {
-                                String partitionedZeroTopicName = name.getPartition(0).toString();
-                                KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
-                            }
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -200,17 +240,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
-                            // deReference topic when unload
-                            KopBrokerLookupManager.removeTopicManagerCache(topic);
-                            KafkaTopicManager.deReference(topic);
-
-                            // For non-partitioned topic.
-                            if (!name.isPartitioned()) {
-                                String partitionedZeroTopicName = name.getPartition(0).toString();
-                                KafkaTopicManager.deReference(partitionedZeroTopicName);
-                                KopBrokerLookupManager.removeTopicManagerCache(partitionedZeroTopicName);
-                            }
-
                         }
                     } else {
                         log.error("Failed to get owned topic list for "
@@ -315,12 +344,23 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(e);
         }
 
-        // Create PulsarClient for topic lookup, the listenerName will be set if kafkaListenerName is configured.
-        // After it's created successfully, this method won't throw any exception.
         LOOKUP_CLIENT_MAP.put(brokerService.pulsar(), new LookupClient(brokerService.pulsar(), kafkaConfig));
+        offsetTopicClient = new SystemTopicClient(brokerService.pulsar(), kafkaConfig);
+
+        brokerService.pulsar()
+                .getNamespaceService()
+                .addNamespaceBundleOwnershipListener(
+                        new CacheInvalidator(brokerService));
 
         // initialize default Group Coordinator
         getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
+
+        // init KopEventManager
+        kopEventManager = new KopEventManager(adminManager,
+                brokerService.getPulsar().getLocalMetadataStore(),
+                scopeStatsLogger,
+                groupCoordinatorsByTenant);
+        kopEventManager.start();
 
         if (kafkaConfig.isEnableTransactionCoordinator()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
@@ -366,15 +406,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     clusterData, kafkaConfig);
 
             // init and start group coordinator
-            groupCoordinator = startGroupCoordinator(tenant, brokerService.getPulsar().getClient());
-
-            // init KopEventManager
-            KopEventManager kopEventManager = new KopEventManager(groupCoordinator,
-                    adminManager,
-                    brokerService.getPulsar().getLocalMetadataStore(),
-                    scopeStatsLogger);
-            kopEventManager.start();
-            kopEventManagerByTenant.put(tenant, kopEventManager);
+            groupCoordinator = startGroupCoordinator(tenant, offsetTopicClient);
 
             // and listener for Offset topics load/unload
             brokerService.pulsar()
@@ -385,8 +417,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             log.error("Failed to create offset metadata", e);
             throw new IllegalStateException(e);
         }
-
-
 
         // init kafka namespaces
         try {
@@ -438,15 +468,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public void close() {
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
+        offsetTopicClient.close();
         adminManager.shutdown();
-        for (Map.Entry<String, GroupCoordinator> groupCoordinator : groupCoordinatorsByTenant.entrySet()) {
-            String tenant = groupCoordinator.getKey();
-            groupCoordinator.getValue().shutdown();
-            KopEventManager kopEventManager = kopEventManagerByTenant.get(tenant);
-            if (kopEventManager != null) {
-                kopEventManager.close();
-            }
-        }
+
+        groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
+        kopEventManager.close();
 
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
@@ -456,7 +482,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
     }
 
-    private GroupCoordinator startGroupCoordinator(String tenant, PulsarClient pulsarClient) {
+    private GroupCoordinator startGroupCoordinator(String tenant, SystemTopicClient client) {
         GroupConfig groupConfig = new GroupConfig(
             kafkaConfig.getGroupMinSessionTimeoutMs(),
             kafkaConfig.getGroupMaxSessionTimeoutMs(),
@@ -475,7 +501,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             .build();
 
         GroupCoordinator groupCoordinator = GroupCoordinator.of(
-            (PulsarClientImpl) pulsarClient,
+            client,
             groupConfig,
             offsetConfig,
             SystemTimer.builder()
@@ -488,7 +514,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         return groupCoordinator;
     }
-
 
     public TransactionCoordinator initTransactionCoordinator(String tenant, PulsarAdmin pulsarAdmin,
                                                              ClusterData clusterData) throws Exception {

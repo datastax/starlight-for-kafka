@@ -53,7 +53,6 @@ public class MetadataUtils {
                                                      KafkaServiceConfiguration conf)
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf));
-
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
                 conf.getOffsetsTopicNumPartitions());
     }
@@ -90,7 +89,6 @@ public class MetadataUtils {
                                                      int partitionNum)
         throws PulsarAdminException {
         String cluster = conf.getClusterName();
-
         String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
 
         boolean clusterExists = false;

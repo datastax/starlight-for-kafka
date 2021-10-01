@@ -35,7 +35,10 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.CreateTopicsResult;
+import org.apache.kafka.clients.admin.DeleteTopicsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -67,7 +70,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     protected static final String SIMPLE_USER = "muggle_user";
     protected static final String ANOTHER_USER = "death_eater_user";
     protected static final String ADMIN_USER = "admin_user";
+<<<<<<< HEAD
     private static final String PROXY_USER = "proxy_user";
+=======
+>>>>>>> origin/master
 
     private String adminToken;
     private String userToken;
@@ -94,11 +100,16 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
+<<<<<<< HEAD
         proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
         super.resetConfig();
         conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
+=======
+        boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
+        super.resetConfig();
+>>>>>>> origin/master
         conf.setKafkaEnableMultiTenantMetadata(originalKafkaEnableMultiTenantMetadata);
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
@@ -280,6 +291,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         assertTrue(result.containsKey(newTopic));
 
         // Check AdminClient use specific user to list topic
+<<<<<<< HEAD
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
@@ -299,6 +311,14 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             assertEquals(topics.size(), 1);
             assertTrue(topics.contains(newTopic));
         }
+=======
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
+        ListTopicsResult listTopicsResult = adminClient.listTopics();
+        Set<String> topics = listTopicsResult.names().get();
+
+        assertEquals(topics.size(), 1);
+        assertTrue(topics.contains(newTopic));
+>>>>>>> origin/master
 
         // Cleanup
         kConsumer.close();
@@ -408,6 +428,103 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             // Cleanup
             admin.topics().deletePartitionedTopic(testTopic);
         }
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreateTopicSuccess() throws ExecutionException, InterruptedException, PulsarAdminException {
+        String newTopic = "testCreateTopicSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        CreateTopicsResult result =
+                adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
+        result.all().get();
+
+        try {
+            admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        } catch (PulsarAdminException exception) {
+            assertTrue(exception.getMessage().contains("This topic already exists"));
+        }
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreateTopicFailed() throws PulsarAdminException {
+        String newTopic = "testCreateTopicFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        CreateTopicsResult result =
+                adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
+        try {
+            result.all().get();
+        } catch (ExecutionException | InterruptedException ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testDeleteTopicSuccess() throws PulsarAdminException, InterruptedException {
+        String newTopic = "testDeleteTopicSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
+        try {
+            deleteTopicsResult.all().get();
+        } catch (ExecutionException ex) {
+            fail("Should success but have : " + ex.getMessage());
+        }
+        List<String> topicList = admin.topics().getList(TENANT + "/" + NAMESPACE);
+        topicList.forEach(topic -> {
+            if (topic.startsWith(fullNewTopicName)) {
+                fail("Delete topic failed!");
+            }
+        });
+
+        adminClient.close();
+    }
+
+    @Test(timeOut = 20000)
+    public void testDeleteTopicFailed() throws PulsarAdminException, InterruptedException {
+        String newTopic = "testDeleteTopicFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
+        try {
+            deleteTopicsResult.all().get();
+            fail("Should delete failed!");
+        } catch (ExecutionException ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+        try {
+            admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        } catch (PulsarAdminException exception) {
+            assertTrue(exception.getMessage().contains("This topic already exists"));
+        }
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+        adminClient.close();
+    }
+
+    private AdminClient createAdminClient(String username, String token) {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
+                + "required username=\"%s\" password=\"%s\";";
+        String jaasCfg = String.format(jaasTemplate, username, "token:" + token);
+        props.put("sasl.jaas.config", jaasCfg);
+        props.put("security.protocol", "SASL_PLAINTEXT");
+        props.put("sasl.mechanism", "PLAIN");
+        return AdminClient.create(props);
     }
 
 }
