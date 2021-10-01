@@ -125,10 +125,6 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         log.info("created namespaces, init handler");
 
         ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
-<<<<<<< HEAD
-
-=======
->>>>>>> origin/master
         GroupCoordinator groupCoordinator = ((KafkaProtocolHandler) handler)
                 .getGroupCoordinator(conf.getKafkaMetadataTenant());
         TransactionCoordinator transactionCoordinator = ((KafkaProtocolHandler) handler)
@@ -684,11 +680,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                                                               String clientId) {
         final Properties props = new Properties();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, clientId);
-<<<<<<< HEAD
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getClientPort());
-=======
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + getKafkaBrokerPort());
->>>>>>> origin/master
         props.put(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, maxWait);
         props.put(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, minBytes);
         props.put(ConsumerConfig.FETCH_MAX_BYTES_CONFIG, maxBytes);

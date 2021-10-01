@@ -70,10 +70,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     protected static final String SIMPLE_USER = "muggle_user";
     protected static final String ANOTHER_USER = "death_eater_user";
     protected static final String ADMIN_USER = "admin_user";
-<<<<<<< HEAD
     private static final String PROXY_USER = "proxy_user";
-=======
->>>>>>> origin/master
 
     private String adminToken;
     private String userToken;
@@ -100,16 +97,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
-<<<<<<< HEAD
         proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
         super.resetConfig();
         conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
-=======
-        boolean originalKafkaEnableMultiTenantMetadata = conf.isKafkaEnableMultiTenantMetadata();
-        super.resetConfig();
->>>>>>> origin/master
         conf.setKafkaEnableMultiTenantMetadata(originalKafkaEnableMultiTenantMetadata);
         conf.setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         conf.setKafkaMetadataTenant("internal");
@@ -291,7 +283,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         assertTrue(result.containsKey(newTopic));
 
         // Check AdminClient use specific user to list topic
-<<<<<<< HEAD
         Properties props = new Properties();
         props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
@@ -300,7 +291,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("sasl.jaas.config", jaasCfg);
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
-        AdminClient adminClient = AdminClient.create(props);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
 
@@ -311,14 +302,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             assertEquals(topics.size(), 1);
             assertTrue(topics.contains(newTopic));
         }
-=======
-        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
-        ListTopicsResult listTopicsResult = adminClient.listTopics();
-        Set<String> topics = listTopicsResult.names().get();
-
-        assertEquals(topics.size(), 1);
-        assertTrue(topics.contains(newTopic));
->>>>>>> origin/master
 
         // Cleanup
         kConsumer.close();

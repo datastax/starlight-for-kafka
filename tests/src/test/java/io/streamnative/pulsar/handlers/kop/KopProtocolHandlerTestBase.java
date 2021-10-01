@@ -141,7 +141,6 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected EndPoint getPlainEndPoint() {
         return new EndPoint(PLAINTEXT_PREFIX + "127.0.0.1:" + kafkaBrokerPort, null);
-<<<<<<< HEAD
     }
 
     /**
@@ -151,8 +150,6 @@ public abstract class KopProtocolHandlerTestBase {
      */
     protected int getClientPort() {
         return getKafkaBrokerPort();
-=======
->>>>>>> origin/master
     }
 
     protected void resetConfig() {

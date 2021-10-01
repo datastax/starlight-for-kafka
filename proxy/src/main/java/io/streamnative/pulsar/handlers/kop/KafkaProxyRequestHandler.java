@@ -36,6 +36,8 @@ import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.EventLoopGroup;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.NotImplementedException;
 
@@ -1334,9 +1336,55 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
+        if (topicsToDelete == null || topicsToDelete.isEmpty()) {
+            resultFuture.complete(new DeleteTopicsResponse(Maps.newHashMap()));
+            return;
+        }
+
         getPulsarAdmin(false).thenApply(admin -> {
             AdminManager adminManager = new AdminManager(admin, kafkaConfig);
-            resultFuture.complete(new DeleteTopicsResponse(adminManager.deleteTopics(topicsToDelete)));
+            Map<String, Errors> deleteTopicsResponse = Maps.newConcurrentMap();
+            AtomicInteger topicToDeleteCount = new AtomicInteger(topicsToDelete.size());
+            BiConsumer<String, Errors> completeOne = (topic, errors) -> {
+                deleteTopicsResponse.put(topic, errors);
+                if (errors == Errors.NONE) {
+//              TODO
+//                    // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
+//                    ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
+//                            KopEventManager.getDeleteTopicsPath() + "/" + topic,
+//                            new byte[0]);
+                }
+
+                if (topicToDeleteCount.decrementAndGet() == 0) {
+                    resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
+                }
+            };
+            topicsToDelete.forEach(topic -> {
+                KopTopic kopTopic;
+                try {
+                    kopTopic = new KopTopic(topic);
+                } catch (KoPTopicException e) {
+                    completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                    return;
+                }
+                String fullTopicName = kopTopic.getFullName();
+                authorize(AclOperation.DELETE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorize, ex) -> {
+                            if (ex != null) {
+                                log.error("DeleteTopics authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
+                                return;
+                            }
+                            if (!isAuthorize) {
+                                completeOne.accept(topic, Errors.TOPIC_AUTHORIZATION_FAILED);
+                                return;
+                            }
+                            adminManager.deleteTopic(fullTopicName,
+                                    __ -> completeOne.accept(topic, Errors.NONE),
+                                    __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                        });
+            });
             return null;
         }).exceptionally(error -> {
             Map<String, Errors> errors = request
@@ -1346,7 +1394,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(new DeleteTopicsResponse(errors));
             return null;
         });
-
     }
 
 

@@ -21,10 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
-<<<<<<< HEAD
-=======
 import org.apache.kafka.clients.producer.RecordMetadata;
->>>>>>> origin/master
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.testng.Assert;
@@ -79,36 +76,6 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         conf.setKafkaListeners(kafkaListeners);
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort
-                        + ",kafka:pulsar://localhost:" + kafkaBrokerPort
-                        + ",kafka_external:pulsar://localhost:" + externalPort;
-        conf.setAdvertisedListeners(advertisedListeners);
-        log.info("Set advertisedListeners to {}", advertisedListeners);
-        super.internalSetup();
-
-        kafkaProducerSend("localhost:" + kafkaBrokerPort);
-<<<<<<< HEAD
-=======
-        kafkaProducerSend("localhost:" + externalPort);
->>>>>>> origin/master
-
-        super.internalCleanup();
-    }
-
-<<<<<<< HEAD
-    @Test(timeOut = 30000)
-    public void testMultipleListenerName() throws Exception {
-        super.resetConfig();
-        conf.setAdvertisedAddress(null);
-        final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
-        conf.setInternalListenerName("pulsar");
-        final String kafkaProtocolMap = "kafka:PLAINTEXT,kafka_external:PLAINTEXT";
-        conf.setKafkaProtocolMap(kafkaProtocolMap);
-        int externalPort = PortManager.nextFreePort();
-        final String kafkaListeners = "kafka://0.0.0.0:" + kafkaBrokerPort
-                + ",kafka_external://0.0.0.0:" + externalPort;
-        conf.setKafkaListeners(kafkaListeners);
-        final String advertisedListeners =
-                "pulsar:pulsar://" + localAddress + ":" + brokerPort
                         + ",kafka:pulsar://" + "localhost:" + kafkaBrokerPort
                         + ",kafka_external:pulsar://" + "localhost:" + externalPort;
         conf.setAdvertisedListeners(advertisedListeners);
@@ -121,7 +88,6 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-=======
     @Test(timeOut = 20000)
     public void testConnectListenerNotExist() throws Exception {
         final int externalPort = PortManager.nextFreePort();
@@ -144,7 +110,6 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
     }
 
 
->>>>>>> origin/master
     private void kafkaProducerSend(String server) throws ExecutionException, InterruptedException, TimeoutException {
         final Properties props = new Properties();
         props.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, server);

@@ -481,8 +481,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return admin.topics().getPartitionedTopicMetadataAsync(topicName);
     }
 
-
-    private static boolean isInternalTopic(final String fullTopicName) {
+    public static boolean isInternalTopic(final String fullTopicName) {
         String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
         return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
