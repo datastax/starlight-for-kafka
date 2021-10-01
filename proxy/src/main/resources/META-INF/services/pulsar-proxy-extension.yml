@@ -18,5 +18,5 @@
 #
 
 name: kafka
-description: Kafka Protocol Handler
-handlerClass: io.streamnative.pulsar.handlers.kop.KafkaProtocolProxyHandler
+description: Kafka Proxy Extension
+extensionClass: io.streamnative.pulsar.handlers.kop.KafkaProxyExtension
