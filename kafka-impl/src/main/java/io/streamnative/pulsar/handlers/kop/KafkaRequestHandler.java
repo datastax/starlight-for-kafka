@@ -44,6 +44,7 @@ import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
+import io.streamnative.pulsar.handlers.kop.security.auth.PulsarMetadataAccessor;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
@@ -295,7 +296,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 : null;
         final boolean authorizationEnabled = pulsarService.getBrokerService().isAuthorizationEnabled();
         this.authorizer = authorizationEnabled && authenticationEnabled
-                ? new SimpleAclAuthorizer(pulsarService)
+                ? new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsarService))
                 : null;
         this.adminManager = adminManager;
         this.localBrokerDataCache = localBrokerDataCache;
@@ -2574,7 +2575,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return authorize(operation, resource, session);
     }
 
+
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session) {
+        return authorize(operation, resource, session, authorizer);
+    }
+
+    public static CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session, Authorizer authorizer) {
         if (authorizer == null) {
             return CompletableFuture.completedFuture(true);
         }

@@ -267,9 +267,13 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
 
             // ensure that we can list the topic
             Map<String, List<PartitionInfo>> result = consumer.listTopics(1000);
-            assertEquals(result.size(), 1);
-            assertTrue(result.containsKey(KAFKA_TOPIC),
-                    "list of topics " + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
+            if (isProxyStarted()) {
+                assertEquals(result.size(), 0);
+            } else {
+                assertEquals(result.size(), 1);
+                assertTrue(result.containsKey(KAFKA_TOPIC),
+                        "list of topics " + result.keySet().toString() + "  does not contains " + KAFKA_TOPIC);
+            }
             consumer.close();
         }
     }

@@ -218,14 +218,17 @@ class AdminManager {
     public void deleteTopic(String topicToDelete,
                             Consumer<String> successConsumer,
                             Consumer<String> errorConsumer) {
-        try {
-            admin.topics().deletePartitionedTopic(topicToDelete);
-            successConsumer.accept(topicToDelete);
-            log.info("delete topic {} successfully.", topicToDelete);
-        } catch (PulsarAdminException e) {
-            log.error("delete topic {} failed, exception: ", topicToDelete, e);
-            errorConsumer.accept(topicToDelete);
-        }
+        admin.topics()
+                .deletePartitionedTopicAsync(topicToDelete)
+                .thenRun(() -> {
+                    log.info("delete topic {} successfully.", topicToDelete);
+                    successConsumer.accept(topicToDelete);
+                })
+                .exceptionally((e -> {
+                    log.error("delete topic {} failed, exception: ", topicToDelete, e);
+                    errorConsumer.accept(topicToDelete);
+                    return null;
+                }));
     }
 
     public Collection<? extends Node> getBrokers(String listenerName) {

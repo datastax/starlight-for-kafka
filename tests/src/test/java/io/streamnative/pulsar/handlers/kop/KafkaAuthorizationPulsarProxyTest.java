@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.TenantInfo;
@@ -22,8 +23,9 @@ import org.testng.annotations.BeforeClass;
 import java.util.Properties;
 
 /**
- * Unit test for Authorization with `entryFormat=pulsar`.
+ * Unit test for Authorization with `entryFormat=pulsar` and using the Proxy
  */
+@Slf4j
 public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBase {
     public KafkaAuthorizationPulsarProxyTest() {
         super("pulsar");
@@ -34,8 +36,7 @@ public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBas
     protected void setup() throws Exception {
         super.setup();
 
-        // when using PulsarAdmin you need to be Tenant Admin in order to
-        // list topic partitions
+        // you need to be tenant admin in order to access the tenant
         TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
         tenantInfo.getAdminRoles().add(SIMPLE_USER);
         admin.tenants().updateTenant(TENANT, tenantInfo);

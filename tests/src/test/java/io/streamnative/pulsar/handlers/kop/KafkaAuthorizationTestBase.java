@@ -170,7 +170,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         }
     }
 
-    @Test(timeOut = 20000)
+    @Test
     void testAuthorizationSuccess() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
@@ -204,9 +204,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 2);
-        assertTrue(result.containsKey(topic),
-                "list of topics " + result.keySet() + "  does not contains " + topic);
+        if (isProxyStarted()) {
+            assertEquals(result.size(), 0);
+        } else {
+            assertEquals(result.size(), 2);
+            assertTrue(result.containsKey(topic),
+                    "list of topics " + result.keySet() + "  does not contains " + topic);
+        }
 
         // Cleanup
         kProducer.close();
@@ -248,9 +252,13 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 2);
-        assertTrue(result.containsKey(topic),
-                "list of topics " + result.keySet() + "  does not contains " + topic);
+        if (isProxyStarted()) {
+            assertEquals(result.size(), 0);
+        } else {
+            assertEquals(result.size(), 2);
+            assertTrue(result.containsKey(topic),
+                    "list of topics " + result.keySet() + "  does not contains " + topic);
+        }
 
         // Cleanup
         kProducer.close();
@@ -266,8 +274,12 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 1);
-        assertFalse(result.containsKey(newTopic));
+        if (isProxyStarted()) {
+            assertEquals(result.size(), 0);
+        } else {
+            assertEquals(result.size(), 1);
+            assertFalse(result.containsKey(newTopic));
+        }
 
         // Create newTopic
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
@@ -279,8 +291,12 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // Use consumer to list topic
         result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        assertEquals(result.size(), 2);
-        assertTrue(result.containsKey(newTopic));
+        if (isProxyStarted()) {
+            assertEquals(result.size(), 0);
+        } else {
+            assertEquals(result.size(), 2);
+            assertTrue(result.containsKey(newTopic));
+        }
 
         // Check AdminClient use specific user to list topic
         Properties props = new Properties();
@@ -389,12 +405,23 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                     Sets.newHashSet(AuthAction.produce));
             admin.topics().createPartitionedTopic(testTopic, 1);
 
+            if (isProxyStarted()) {
+                TenantInfo tenantInfo = admin.tenants().getTenantInfo(newTenant);
+                tenantInfo.getAdminRoles().add(SIMPLE_USER);
+                admin.tenants().updateTenant(newTenant, tenantInfo);
+            }
+
             // SIMPLE_USER can produce
             @Cleanup
             KProducer adminProducer = new KProducer(testTopic, false, "localhost", getClientPort(),
                     newTenant + "/" + NAMESPACE, "token:" + userToken);
             adminProducer.getProducer().send(new ProducerRecord<>(testTopic, 0, "message")).get();
 
+            if (isProxyStarted()) {
+                TenantInfo tenantInfo = admin.tenants().getTenantInfo(newTenant);
+                tenantInfo.getAdminRoles().remove(SIMPLE_USER);
+                admin.tenants().updateTenant(newTenant, tenantInfo);
+            }
 
             // Consume should be failed.
             @Cleanup
@@ -434,6 +461,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 20000)
     public void testCreateTopicFailed() throws PulsarAdminException {
+        if (isProxyStarted()) {
+            // with the Proxy you need to be tenant admin,
+            // so this test does not make much sense
+            return;
+        }
         String newTopic = "testCreateTopicFailed";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -442,6 +474,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
         try {
             result.all().get();
+            fail("should have failed");
         } catch (ExecutionException | InterruptedException ex) {
             assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
         }
@@ -476,6 +509,11 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 20000)
     public void testDeleteTopicFailed() throws PulsarAdminException, InterruptedException {
+        if (isProxyStarted()) {
+            // with the Proxy you need to be tenant admin,
+            // so this test does not make much sense
+            return;
+        }
         String newTopic = "testDeleteTopicFailed";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -500,7 +538,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     private AdminClient createAdminClient(String username, String token) {
         Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
                 + "required username=\"%s\" password=\"%s\";";
         String jaasCfg = String.format(jaasTemplate, username, "token:" + token);

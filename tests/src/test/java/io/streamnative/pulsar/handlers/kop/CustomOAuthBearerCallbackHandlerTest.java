@@ -103,7 +103,7 @@ public class CustomOAuthBearerCallbackHandlerTest extends KopProtocolHandlerTest
                 .build());
     }
 
-    @Test(timeOut = 10000)
+    @Test
     public void testNumAuthenticateSuccess() throws Exception {
         final String topic = "testNumAuthenticateSuccess";
 

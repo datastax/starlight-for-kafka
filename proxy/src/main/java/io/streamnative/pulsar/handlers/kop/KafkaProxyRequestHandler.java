@@ -37,6 +37,9 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
+import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
+import io.streamnative.pulsar.handlers.kop.security.auth.PulsarMetadataAccessor;
+import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang3.NotImplementedException;
@@ -143,8 +146,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 ? new SaslAuthenticator(null, authenticationService,
                 kafkaConfig.getSaslAllowedMechanisms(), kafkaConfig)
                 : null;
-        final boolean authorizationEnabled = false;
-        this.authorizer = null;
+        final boolean authorizationEnabled = kafkaConfig.isAuthorizationEnabled();
+        this.authorizer = authorizationEnabled && authenticationEnabled
+                ? new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarAdminMetadataAccessor(() -> {
+                    try {
+                        return CompletableFuture
+                                .completedFuture(admin.getAdminForPrincipal(kafkaConfig.getKafkaProxySuperUserRole()));
+                    } catch (Exception err) {
+                        return FutureUtil.failedFuture(err);
+                    }
+                    }, kafkaConfig))
+                : null;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
@@ -1263,10 +1275,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return;
         }
 
-        final Map<String, ApiError> result = new HashMap<>();
-        final Map<String, CreateTopicsRequest.TopicDetails> validTopics = new HashMap<>();
+        final Map<String, ApiError> result = Maps.newConcurrentMap();
+        final Map<String, CreateTopicsRequest.TopicDetails> validTopics = Maps.newHashMap();
         final Set<String> duplicateTopics = request.duplicateTopics();
-
         request.topics().forEach((topic, details) -> {
             if (!duplicateTopics.contains(topic)) {
                 validTopics.put(topic, details);
@@ -1279,25 +1290,65 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
         if (validTopics.isEmpty()) {
             resultFuture.complete(new CreateTopicsResponse(result));
-        } else {
-            // we are using a PulsarAdmin with the user identity, so Pulsar will handle authorization
-            getPulsarAdmin().thenCompose(admin -> {
+            return;
+        }
+
+        final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
+        final Map<String, CreateTopicsRequest.TopicDetails> authorizedTopics = Maps.newConcurrentMap();
+        Runnable createTopicsAsync = () -> {
+            if (authorizedTopics.isEmpty()) {
+                resultFuture.complete(new CreateTopicsResponse(result));
+                return;
+            }
+            // TODO: handle request.validateOnly()
+            getPulsarAdmin(false).thenCompose(admin -> {
                 AdminManager adminManager = new AdminManager(admin, kafkaConfig);
-                return adminManager.createTopicsAsync(validTopics, request.timeout()).thenApply(validResult -> {
+                return adminManager.createTopicsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
                     result.putAll(validResult);
                     resultFuture.complete(new CreateTopicsResponse(result));
                     return null;
                 });
-            }).exceptionally(error -> {
-                Map<String, ApiError> errors = request
-                        .topics()
-                        .keySet()
-                        .stream()
-                        .collect(Collectors.toMap(Function.identity(), (a) -> ApiError.fromThrowable(error)));
-                resultFuture.complete(new CreateTopicsResponse(errors));
-                return null;
             });
-        }
+        };
+
+        BiConsumer<String, CreateTopicsRequest.TopicDetails> completeOneTopic = (topic, topicDetails) -> {
+            authorizedTopics.put(topic, topicDetails);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createTopicsAsync.run();
+            }
+        };
+        BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
+            result.put(topic, error);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createTopicsAsync.run();
+            }
+        };
+        validTopics.forEach((topic, details) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic);
+            } catch (KoPTopicException e) {
+                completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
+                return;
+            }
+            String fullTopicName = kopTopic.getFullName();
+            authorize(AclOperation.CREATE, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("CreateTopics authorize failed, topic - {}. {}",  fullTopicName, ex.getMessage());
+                            completeOneErrorTopic
+                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            log.error("CreateTopics authorize failed, topic - {}", fullTopicName);
+                            completeOneErrorTopic
+                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                            return;
+                        }
+                        completeOneTopic.accept(topic, details);
+                    });
+        });
     }
 
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
@@ -1615,45 +1666,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     protected CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session) {
-        if (authorizer == null) {
-            return CompletableFuture.completedFuture(true);
-        }
-        if (session == null) {
-            return CompletableFuture.completedFuture(false);
-        }
-        CompletableFuture<Boolean> isAuthorizedFuture = null;
-        switch (operation) {
-            case READ:
-                isAuthorizedFuture = authorizer.canConsumeAsync(session.getPrincipal(), resource);
-                break;
-            case IDEMPOTENT_WRITE:
-            case WRITE:
-                isAuthorizedFuture = authorizer.canProduceAsync(session.getPrincipal(), resource);
-                break;
-            case DESCRIBE:
-                isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
-                break;
-            case ANY:
-                if (resource.getResourceType() == ResourceType.TENANT) {
-                    isAuthorizedFuture = authorizer.canAccessTenantAsync(session.getPrincipal(), resource);
-                }
-                break;
-            case CREATE:
-            case DELETE:
-            case CLUSTER_ACTION:
-            case DESCRIBE_CONFIGS:
-            case ALTER_CONFIGS:
-            case ALTER:
-            case UNKNOWN:
-            case ALL:
-            default:
-                break;
-        }
-        if (isAuthorizedFuture == null) {
-            return FutureUtil.failedFuture(
-                    new IllegalStateException("AclOperation [" + operation.name() + "] is not supported."));
-        }
-        return isAuthorizedFuture;
+        return KafkaRequestHandler.authorize(operation, resource, session, authorizer);
     }
 
     @Override
@@ -2019,6 +2032,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return granted != null && granted;
         } catch (ExecutionException | InterruptedException err) {
             log.error("Internal error while verifying tenant access", err);
+            if (err.getCause() != null
+                    && (err.getCause() instanceof PulsarAdminException.NotAuthorizedException
+                    || err.getCause().getCause() instanceof PulsarAdminException.NotAuthorizedException)) {
+                return false;
+            }
             throw new AuthenticationException("Internal error while verifying tenant access:" + err, err);
         }
     }

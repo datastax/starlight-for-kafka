@@ -111,7 +111,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
         admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + NAMESPACE, CONSUMER_USER,
                 Sets.newHashSet(AuthAction.consume));
 
-        simpleAclAuthorizer = new SimpleAclAuthorizer(pulsar);
+        simpleAclAuthorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
     }
 
     @Override

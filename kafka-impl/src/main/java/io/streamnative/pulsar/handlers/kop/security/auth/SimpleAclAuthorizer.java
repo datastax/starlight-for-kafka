@@ -22,7 +22,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -36,19 +35,12 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 @Slf4j
 public class SimpleAclAuthorizer implements Authorizer {
 
-    private static final String POLICY_ROOT = "/admin/policies/";
-
-    private final PulsarService pulsarService;
-
+    private final PulsarMetadataAccessor pulsarService;
     private final ServiceConfiguration conf;
 
-    public SimpleAclAuthorizer(PulsarService pulsarService) {
+    public SimpleAclAuthorizer(PulsarMetadataAccessor pulsarService) {
         this.pulsarService = pulsarService;
         this.conf = pulsarService.getConfiguration();
-    }
-
-    protected PulsarService getPulsarService() {
-        return this.pulsarService;
     }
 
     private CompletableFuture<Boolean> authorize(KafkaPrincipal principal, AuthAction action, Resource resource) {
@@ -73,9 +65,8 @@ public class SimpleAclAuthorizer implements Authorizer {
                     new IllegalArgumentException("Resource name must contains namespace."));
             return permissionFuture;
         }
-        String policiesPath = path(namespace.toString());
         String tenantName = namespace.getTenant();
-        isSuperUserOrTenantAdmin(tenantName, principal.getName()).whenComplete((isSuperUserOrAdmin, exception) -> {
+        isSuperUserOrTenantAdmin(tenantName, principal.getName(), principal).whenComplete((isSuperUserOrAdmin, exception) -> {
             if (exception != null) {
                 if (log.isDebugEnabled()) {
                     log.debug("Verify if role {} is allowed to {} to resource {}: isSuperUserOrAdmin={}",
@@ -87,10 +78,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                 permissionFuture.complete(true);
                 return;
             }
-            getPulsarService()
-                    .getPulsarResources()
-                    .getNamespaceResources()
-                    .getAsync(policiesPath)
+            pulsarService.getNamespacePoliciesAsync(namespace)
                     .thenAccept(policies -> {
                         if (!policies.isPresent()) {
                             if (log.isDebugEnabled()) {
@@ -155,10 +143,7 @@ public class SimpleAclAuthorizer implements Authorizer {
         CompletableFuture<Boolean> permissionFuture = new CompletableFuture<>();
         // we can only check if the tenant exists
         String tenant = resource.getName();
-        getPulsarService()
-                .getPulsarResources()
-                .getTenantResources()
-                .getAsync(path(tenant))
+        pulsarService.getTenantInfoAsync(tenant)
                 .thenAccept(tenantInfo -> {
                     permissionFuture.complete(tenantInfo.isPresent());
                 }).exceptionally(ex -> {
@@ -209,13 +194,11 @@ public class SimpleAclAuthorizer implements Authorizer {
      * @return a CompletableFuture containing a boolean in which true means the role is an admin user
      * and false if it is not
      */
-    private CompletableFuture<Boolean> isSuperUserOrTenantAdmin(String tenant, String role) {
+    private CompletableFuture<Boolean> isSuperUserOrTenantAdmin(String tenant, String role, KafkaPrincipal currentUser) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         isSuperUser(role).whenComplete((isSuperUser, ex) -> {
             if (ex != null || !isSuperUser) {
-                pulsarService.getPulsarResources()
-                        .getTenantResources()
-                        .getAsync(path(tenant))
+                pulsarService.getTenantInfoAsync(tenant)
                         .thenAccept(tenantInfo -> {
                             if (!tenantInfo.isPresent()) {
                                 future.complete(false);
@@ -231,13 +214,6 @@ public class SimpleAclAuthorizer implements Authorizer {
             future.complete(true);
         });
         return future;
-    }
-
-    private static String path(String... parts) {
-        StringBuilder sb = new StringBuilder();
-        sb.append(POLICY_ROOT);
-        Joiner.on('/').appendTo(sb, parts);
-        return sb.toString();
     }
 
     @Override
@@ -269,7 +245,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
         TopicName topicName = TopicName.get(resource.getName());
         NamespaceName namespace = topicName.getNamespaceObject();
-        return isSuperUserOrTenantAdmin(namespace.getTenant(), principal.getName());
+        return isSuperUserOrTenantAdmin(namespace.getTenant(), principal.getName(), principal);
     }
 
     @Override
