@@ -35,6 +35,7 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
+import org.apache.pulsar.common.net.ServiceURI;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
@@ -45,6 +46,7 @@ import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkState;
@@ -267,11 +269,30 @@ public class KafkaProtocolProxyMain {
         PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException;
 
         void close();
+
+        void invalidateAdminForPrincipal(String principal, PulsarAdmin expected, Throwable error);
     }
 
     private class AuthenticatedPulsarAdminProvider implements PulsarAdminProvider {
 
         private final ConcurrentHashMap<String, PulsarAdmin> cache = new ConcurrentHashMap<>();
+
+        @Override
+        public void invalidateAdminForPrincipal(String originalPrincipal, PulsarAdmin expected, Throwable error) {
+            if (originalPrincipal == null) {
+                originalPrincipal = "";
+            }
+            cache.computeIfPresent(originalPrincipal, (p, current) -> {
+                if (expected == current) {
+                    // prevent race conditions and multiple threads that try to
+                    // invalidate the same principal
+                    current.close();
+                    return null;
+                } else {
+                    return current;
+                }
+            });
+        }
 
         public void close() {
             cache.values().forEach(admin -> {
@@ -293,13 +314,14 @@ public class KafkaProtocolProxyMain {
                     Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
                     Authentication authenticationWithPrincipal =
                             new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
-
                     return PulsarAdmin
                             .builder()
                             .authentication(authenticationWithPrincipal)
                             .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
                             .allowTlsInsecureConnection(proxyConfiguration.isTlsAllowInsecureConnection())
                             .enableTlsHostnameVerification(proxyConfiguration.isTlsHostnameVerificationEnabled())
+                            .readTimeout(5000, TimeUnit.MILLISECONDS)
+                            .connectionTimeout(5000, TimeUnit.MILLISECONDS)
                             .build();
                 } catch (PulsarClientException err) {
                     throw new RuntimeException(err);

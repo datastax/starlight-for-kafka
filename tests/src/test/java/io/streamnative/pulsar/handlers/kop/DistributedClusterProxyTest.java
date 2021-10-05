@@ -27,9 +27,12 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
     }
 
     protected void beforeStartingProxy(ProxyConfiguration proxyConfiguration) throws Exception {
-        // we have to give the addresses of all the brokers, because in some tests we are stopping one of them
+        // we are passing the address of the second broker,
+        // because in some tests we are stopping the first broker
+        // and the test will take too much time to handle recovery
+        // because PulsarAdmin does not take into consideration failures
+        // and the test will take too much time
         proxyConfiguration.setBrokerWebServiceURL("http://"
-                + "localhost:" + primaryBrokerWebservicePort + ";"
                 + "localhost:" + secondaryBrokerWebservicePort);
     }
 

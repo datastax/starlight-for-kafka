@@ -57,7 +57,7 @@ class ConnectionToBroker {
         if (connectionFuture != null) {
             return connectionFuture;
         }
-        log.info("Opening proxy connection to {} {} current user {", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
+        log.info("Opening proxy connection to {} {} current user {}", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
 
         EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
         Class<? extends SocketChannel> clientSocketChannelClass;
@@ -274,6 +274,9 @@ class ConnectionToBroker {
             if (!writeFuture.isSuccess()) {
                 pendingRequests.remove(correlationId);
                 kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
+                // cannot write, so we have to "close()" and trigger failure of every other
+                // pending request and discard the reference to this connection
+                close();
                 result.completeExceptionally(writeFuture.cause());
             }
         });
