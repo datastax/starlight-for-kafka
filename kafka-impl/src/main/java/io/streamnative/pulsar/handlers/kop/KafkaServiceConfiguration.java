@@ -462,8 +462,11 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     public @NonNull Set<String> getKopAllowedNamespaces() {
         if (kopAllowedNamespaces == null || kopAllowedNamespaces.isEmpty()) {
-            return Collections.singleton(getKafkaTenant() + "/" + getKafkaNamespace());
+            return Collections.singleton(TENANT_PLACEHOLDER + "/" + getKafkaNamespace());
         }
         return kopAllowedNamespaces;
     }
+
+    public static String TENANT_PLACEHOLDER = "${tenant}";
+
 }

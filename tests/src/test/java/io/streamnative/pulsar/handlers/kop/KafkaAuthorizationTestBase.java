@@ -204,13 +204,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        if (isProxyStarted()) {
-            assertEquals(result.size(), 0);
-        } else {
-            assertEquals(result.size(), 2);
-            assertTrue(result.containsKey(topic),
-                    "list of topics " + result.keySet() + "  does not contains " + topic);
-        }
+
+        assertEquals(result.size(), 2);
+        assertTrue(result.containsKey(topic),
+                "list of topics " + result.keySet() + "  does not contains " + topic);
 
         // Cleanup
         kProducer.close();
@@ -252,13 +249,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // ensure that we can list the topic
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        if (isProxyStarted()) {
-            assertEquals(result.size(), 0);
-        } else {
-            assertEquals(result.size(), 2);
-            assertTrue(result.containsKey(topic),
-                    "list of topics " + result.keySet() + "  does not contains " + topic);
-        }
+
+        assertEquals(result.size(), 2);
+        assertTrue(result.containsKey(topic),
+                "list of topics " + result.keySet() + "  does not contains " + topic);
 
         // Cleanup
         kProducer.close();
@@ -274,12 +268,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         Map<String, List<PartitionInfo>> result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        if (isProxyStarted()) {
-            assertEquals(result.size(), 0);
-        } else {
-            assertEquals(result.size(), 1);
-            assertFalse(result.containsKey(newTopic));
-        }
+
+        assertEquals(result.size(), 1);
+        assertFalse(result.containsKey(newTopic));
 
         // Create newTopic
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
@@ -291,12 +282,10 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         // Use consumer to list topic
         result = kConsumer.getConsumer().listTopics(Duration.ofSeconds(1));
-        if (isProxyStarted()) {
-            assertEquals(result.size(), 0);
-        } else {
-            assertEquals(result.size(), 2);
-            assertTrue(result.containsKey(newTopic));
-        }
+
+        assertEquals(result.size(), 2);
+        assertTrue(result.containsKey(newTopic));
+
 
         // Check AdminClient use specific user to list topic
         Properties props = new Properties();
@@ -311,13 +300,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
 
-        if (isProxyStarted()) {
-            // https://github.com/apache/pulsar/issues/11945
-            assertEquals(topics.size(), 0);
-        } else {
-            assertEquals(topics.size(), 1);
-            assertTrue(topics.contains(newTopic));
-        }
+        assertEquals(topics.size(), 1);
+        assertTrue(topics.contains(newTopic));
+
 
         // Cleanup
         kConsumer.close();
@@ -461,11 +446,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 20000)
     public void testCreateTopicFailed() throws PulsarAdminException {
-        if (isProxyStarted()) {
-            // with the Proxy you need to be tenant admin,
-            // so this test does not make much sense
-            return;
-        }
         String newTopic = "testCreateTopicFailed";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -509,11 +489,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     @Test(timeOut = 20000)
     public void testDeleteTopicFailed() throws PulsarAdminException, InterruptedException {
-        if (isProxyStarted()) {
-            // with the Proxy you need to be tenant admin,
-            // so this test does not make much sense
-            return;
-        }
         String newTopic = "testDeleteTopicFailed";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 

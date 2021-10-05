@@ -163,9 +163,9 @@ public class KafkaProtocolProxyMain {
                 throw new IllegalArgumentException(
                         "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
             }
-            NamespaceName.validateNamespaceName(tokens[0], tokens[1]);
+            NamespaceName.validateNamespaceName(tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
+                    tokens[1].replace("*", kafkaConfig.getKafkaNamespace()));
         }
-
 
         log.info("AuthenticationEnabled:  {}", kafkaConfig.isAuthenticationEnabled());
         log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());

@@ -36,11 +36,6 @@ public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBas
     protected void setup() throws Exception {
         super.setup();
 
-        // you need to be tenant admin in order to access the tenant
-        TenantInfo tenantInfo = admin.tenants().getTenantInfo(TENANT);
-        tenantInfo.getAdminRoles().add(SIMPLE_USER);
-        admin.tenants().updateTenant(TENANT, tenantInfo);
-
         startProxy();
     }
 
