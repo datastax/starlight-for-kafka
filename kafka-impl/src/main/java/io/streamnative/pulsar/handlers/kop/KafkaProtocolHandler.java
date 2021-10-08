@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
@@ -93,6 +94,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Getter
     private KopEventManager kopEventManager;
+
+    private SchemaRegistryManager schemaRegistryManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -372,6 +375,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
         statsProvider.start(conf);
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
+
+        schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
+                brokerService.getAuthenticationService());
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -459,6 +465,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     default:
                 }
             });
+
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
+            if (schemaRegistryChannelInitializer.isPresent()) {
+                builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
+            }
+
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
