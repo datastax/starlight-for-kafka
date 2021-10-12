@@ -26,6 +26,7 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SchemaResour
 import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SubjectResource;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
+import io.streamnative.pulsar.handlers.kop.security.auth.PulsarMetadataAccessor;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
@@ -62,7 +63,7 @@ public class SchemaRegistryManager {
         this.pulsar = pulsar;
         this.authenticationService = authenticationService;
         this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator();
-        this.authorizer = new SimpleAclAuthorizer(pulsar);
+        this.authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
     }
 
     @AllArgsConstructor
