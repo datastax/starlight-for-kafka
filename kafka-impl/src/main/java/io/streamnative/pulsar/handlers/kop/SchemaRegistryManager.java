@@ -37,6 +37,7 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -62,8 +63,8 @@ public class SchemaRegistryManager {
         this.kafkaConfig = kafkaConfig;
         this.pulsar = pulsar;
         this.authenticationService = authenticationService;
-        this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator();
         this.authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
+        this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator(this.kafkaConfig, this.authenticationService, this.authorizer);
     }
 
     @AllArgsConstructor
@@ -72,7 +73,13 @@ public class SchemaRegistryManager {
         final String password;
     }
 
-    private class HttpRequestAuthenticator implements SchemaRegistryRequestAuthenticator {
+    @AllArgsConstructor
+    public static class HttpRequestAuthenticator implements SchemaRegistryRequestAuthenticator {
+
+        private final KafkaServiceConfiguration kafkaConfig;
+        private final AuthenticationService authenticationService;
+        private final Authorizer authorizer;
+
         @Override
         public String authenticate(FullHttpRequest request) throws Exception {
             if (!kafkaConfig.isAuthenticationEnabled()) {
