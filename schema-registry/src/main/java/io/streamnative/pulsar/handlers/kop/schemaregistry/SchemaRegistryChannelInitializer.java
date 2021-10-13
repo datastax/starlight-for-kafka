@@ -18,6 +18,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
+import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 
 /**
@@ -28,11 +29,20 @@ public class SchemaRegistryChannelInitializer extends ChannelInitializer<SocketC
 
     public static final int MAX_FRAME_LENGTH = 5 * 1024 * 1024; // 5MB
 
-    private SchemaRegistryHandler schemaRegistryHandler;
+    private final SchemaRegistryHandler schemaRegistryHandler;
+    private final Consumer<ChannelPipeline> pipelineCustomizer;
+
+    public SchemaRegistryChannelInitializer(SchemaRegistryHandler schemaRegistryHandler) {
+        this.schemaRegistryHandler = schemaRegistryHandler;
+        this.pipelineCustomizer = null;
+    }
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
         ChannelPipeline p = ch.pipeline();
+        if (pipelineCustomizer != null) {
+            pipelineCustomizer.accept(p);
+        }
         p.addLast(new HttpServerCodec());
         p.addLast(new HttpObjectAggregator(MAX_FRAME_LENGTH));
         p.addLast(schemaRegistryHandler);

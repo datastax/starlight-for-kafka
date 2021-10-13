@@ -425,6 +425,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int kopSchemaRegistryProxyPort = 8001;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Enable TLS on the KOP Proxy Schema Registry."
+    )
+    private boolean kopSchemaRegistryProxyEnableTls = false;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {

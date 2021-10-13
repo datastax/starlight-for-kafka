@@ -296,7 +296,7 @@ public class KafkaProtocolProxyMain {
                 }
             });
 
-            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryProxyManager.build();
+            Optional<ChannelInitializer<SocketChannel>> schemaRegistryChannelInitializer = schemaRegistryProxyManager.build();
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryProxyManager.getAddress(), schemaRegistryChannelInitializer.get());
             }
