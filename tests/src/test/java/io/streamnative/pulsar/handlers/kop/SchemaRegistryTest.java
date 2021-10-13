@@ -45,7 +45,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
 
-    private String bootstrapServers;
+    protected String bootstrapServers;
 
     public SchemaRegistryTest() {
         super("pulsar");

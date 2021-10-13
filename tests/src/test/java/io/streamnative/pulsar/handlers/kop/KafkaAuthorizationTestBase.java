@@ -638,7 +638,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     private KafkaProducer<Integer, Object> createAvroProducer() {
         Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, KafkaAvroSerializer.class);
         props.put(KafkaAvroSerializerConfig.SCHEMA_REGISTRY_URL_CONFIG, restConnect);
@@ -663,7 +663,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
     private KafkaConsumer<Integer, Object> createAvroConsumer() {
         Properties props = new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "avroGroup");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, IntegerDeserializer.class);
@@ -684,16 +684,20 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         return new KafkaConsumer<>(props);
     }
 
-    @Test(timeOut = 40000)
+    // this test creates the schema registry topic, and this may interfere with other tests
+    @Test(timeOut = 409000000, priority = 1000)
     public void testAvroProduceAndConsumeWithAuth() throws Exception {
 
         if (conf.isKafkaEnableMultiTenantMetadata()) {
             // ensure that the KOP metadata namespace exists and that the user can write to it
             // because we require "produce" permissions on the Schema Registry Topic
             // while working in Multi Tenant mode
-            admin.namespaces().createNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace());
-            admin.namespaces().grantPermissionOnNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace(), SIMPLE_USER,
-                    Sets.newHashSet(AuthAction.produce, AuthAction.consume));
+            if (!admin.namespaces().getNamespaces(TENANT).contains(TENANT + "/" + conf.getKafkaMetadataNamespace())) {
+                admin.namespaces().createNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace());
+            }
+            admin.namespaces()
+                    .grantPermissionOnNamespace(TENANT + "/" + conf.getKafkaMetadataNamespace(), SIMPLE_USER,
+                            Sets.newHashSet(AuthAction.produce, AuthAction.consume));
         }
 
         String topic = "SchemaRegistryTest-testAvroProduceAndConsumeWithAuth";

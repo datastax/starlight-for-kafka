@@ -31,12 +31,12 @@ import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import lombok.AllArgsConstructor;
 
-public abstract class HttpRequestProcessor {
+public abstract class HttpRequestProcessor implements AutoCloseable {
 
     protected static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(SerializationFeature.INDENT_OUTPUT, true);
 
-    abstract FullHttpResponse processRequest(FullHttpRequest request);
+    protected abstract FullHttpResponse processRequest(FullHttpRequest request);
 
     protected FullHttpResponse buildStringResponse(String body, String contentType) {
         FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  OK,
@@ -71,12 +71,15 @@ public abstract class HttpRequestProcessor {
         }
     }
 
-    protected FullHttpResponse buildJsonErrorResponse(SchemaStorageException err) {
-        HttpResponseStatus error = HttpResponseStatus.valueOf(err.getHttpStatusCode());
+    protected FullHttpResponse buildJsonErrorResponse(Exception err) {
+        int httpStatusCode = err instanceof SchemaStorageException
+                ? ((SchemaStorageException) err).getHttpStatusCode()
+                : INTERNAL_SERVER_ERROR.code();
+        HttpResponseStatus error = HttpResponseStatus.valueOf(httpStatusCode);
 
         FullHttpResponse httpResponse = null;
         try {
-            String body = MAPPER.writeValueAsString(new ErrorModel(err.getHttpStatusCode(), err.getMessage()));
+            String body = MAPPER.writeValueAsString(new ErrorModel(httpStatusCode, err.getMessage()));
             httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
@@ -101,5 +104,8 @@ public abstract class HttpRequestProcessor {
         }
     }
 
-
+    @Override
+    public void close() {
+        // nothing
+    }
 }

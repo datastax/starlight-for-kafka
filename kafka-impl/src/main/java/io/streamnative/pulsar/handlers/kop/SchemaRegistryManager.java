@@ -36,6 +36,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -81,7 +82,7 @@ public class SchemaRegistryManager {
         private final Authorizer authorizer;
 
         @Override
-        public String authenticate(FullHttpRequest request) throws Exception {
+        public String authenticate(FullHttpRequest request) throws SchemaStorageException {
             if (!kafkaConfig.isAuthenticationEnabled()) {
                 return kafkaConfig.getKafkaMetadataTenant();
             }
@@ -95,41 +96,51 @@ public class SchemaRegistryManager {
             if (authenticationProvider == null) {
                 throw new SchemaStorageException("Pulsar is not configured for Token auth");
             }
-            final AuthenticationState authState = authenticationProvider
-                    .newAuthState(AuthData.of(password.getBytes(StandardCharsets.UTF_8)), null, null);
-            final String role = authState.getAuthRole();
+            try {
+                final AuthenticationState authState = authenticationProvider
+                        .newAuthState(AuthData.of(password.getBytes(StandardCharsets.UTF_8)), null, null);
+                final String role = authState.getAuthRole();
 
-            final String tenant;
-            if (kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
-                // the tenant is the username
-                log.debug("SchemaRegistry Authenticated username {} role {} using tenant {} for data",
-                        username, role, username);
-                tenant =  username;
-            } else {
-                // use system tenant
-                log.debug("SchemaRegistry Authenticated username {} role {} using system tenant {} for data",
-                        username, role, kafkaConfig.getKafkaMetadataTenant());
-                tenant =  kafkaConfig.getKafkaMetadataTenant();
+                final String tenant;
+                if (kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
+                    // the tenant is the username
+                    log.debug("SchemaRegistry Authenticated username {} role {} using tenant {} for data",
+                            username, role, username);
+                    tenant = username;
+                } else {
+                    // use system tenant
+                    log.debug("SchemaRegistry Authenticated username {} role {} using system tenant {} for data",
+                            username, role, kafkaConfig.getKafkaMetadataTenant());
+                    tenant = kafkaConfig.getKafkaMetadataTenant();
+                }
+
+                performAuthorizationValidation(username, role, tenant);
+                return tenant;
+            } catch (AuthenticationException err) {
+                throw new SchemaStorageException(err);
             }
 
-            performAuthorizationValidation(username, role, tenant);
-
-            return tenant;
         }
 
         private void performAuthorizationValidation(String username, String role, String tenant)
-                throws InterruptedException, ExecutionException, SchemaStorageException {
+                throws SchemaStorageException {
             if (kafkaConfig.isAuthorizationEnabled() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
                 KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username);
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
-                Boolean hasPermission = authorizer
-                        .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
-                        .get();
-                if (hasPermission == null || !hasPermission) {
-                    log.debug("SchemaRegistry username {} role {} tenant {} cannot access topic {}",
-                            username, role, tenant, topicName);
-                    throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName,
-                            HttpResponseStatus.FORBIDDEN.code());
+                try {
+                    Boolean hasPermission = authorizer
+                            .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
+                            .get();
+                    if (hasPermission == null || !hasPermission) {
+                        log.debug("SchemaRegistry username {} role {} tenant {} cannot access topic {}",
+                                username, role, tenant, topicName);
+                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName,
+                                HttpResponseStatus.FORBIDDEN.code());
+                    }
+                } catch (ExecutionException err) {
+                    throw new SchemaStorageException(err.getCause());
+                } catch (InterruptedException err) {
+                    throw new SchemaStorageException(err);
                 }
             }
         }

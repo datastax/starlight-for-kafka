@@ -45,7 +45,7 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
     }
 
     @Override
-    FullHttpResponse processRequest(FullHttpRequest request) {
+    public FullHttpResponse processRequest(FullHttpRequest request) {
         if (!request.method().name().equals(method)) {
             return null;
         }

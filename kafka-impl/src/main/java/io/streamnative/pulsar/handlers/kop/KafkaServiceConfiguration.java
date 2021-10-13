@@ -419,6 +419,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int kopSchemaRegistryPort = 8001;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Schema Registry port on Proxy service."
+    )
+    private int kopSchemaRegistryProxyPort = 8001;
+
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
         for (String listener : advertisedListeners.split(EndPoint.END_POINT_SEPARATOR)) {

@@ -48,7 +48,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, Object msg) {
         if (log.isDebugEnabled()) {
-            log.debug("SchemaRegistry {}", msg);
+            log.debug("SchemaRegistry at {} request {}", ctx.channel().localAddress(), msg);
         }
         FullHttpRequest request = (FullHttpRequest) msg;
         boolean done = false;

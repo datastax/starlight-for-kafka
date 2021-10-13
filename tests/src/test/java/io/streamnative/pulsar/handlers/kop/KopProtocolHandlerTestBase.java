@@ -102,6 +102,8 @@ public abstract class KopProtocolHandlerTestBase {
     protected int kafkaBrokerPortTls = PortManager.nextFreePort();
     @Getter
     protected int kafkaSchemaRegistryPort = PortManager.nextFreePort();
+    @Getter
+    protected int kafkaSchemaRegistryProxyPort = PortManager.nextFreePort();
 
     protected MockZooKeeper mockZooKeeper;
     protected NonClosableMockBookKeeper mockBookKeeper;
@@ -722,12 +724,20 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     protected void startProxy() throws Exception {
+        // use SchemaRegistry via the Proxy
+        restConnect = "http://localhost:" + getKafkaSchemaRegistryProxyPort();
+
         Properties config = new Properties();
         config.put("kafkaMetadataNamespace", conf.getKafkaMetadataNamespace());
         config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
         config.put("kafkaTenant", conf.getKafkaTenant());
         config.put("kafkaNamespace", conf.getKafkaNamespace());
         config.put("entryFormat", conf.getEntryFormat());
+        config.put("kopSchemaRegistryProxyPort", getKafkaSchemaRegistryProxyPort() + "");
+        config.put("kopSchemaRegistryPort", getKafkaSchemaRegistryPort() + "");
+
+        config.put("kopSchemaRegistryEnable", conf.isKopSchemaRegistryEnable() + "");
+
         config.put("saslAllowedMechanisms", "PLAIN");
         config.put("defaultNumPartitions", conf.getDefaultNumPartitions() + "");
         config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));

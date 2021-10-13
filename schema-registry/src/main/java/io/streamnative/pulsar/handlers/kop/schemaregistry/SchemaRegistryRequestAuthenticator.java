@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.schemaregistry;
 
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 
 /**
  * Authenticates a HTTP Request for the Schema Registry.
@@ -26,6 +27,6 @@ public interface SchemaRegistryRequestAuthenticator {
      * @return a tenant name in case of valid request
      * @throws Exception in case of authentication failure or other system error
      */
-    String authenticate(FullHttpRequest request) throws Exception;
+    String authenticate(FullHttpRequest request) throws SchemaStorageException;
 
 }

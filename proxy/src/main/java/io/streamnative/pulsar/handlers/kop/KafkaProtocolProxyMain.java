@@ -19,13 +19,15 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -34,8 +36,9 @@ import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
+import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
-import org.apache.pulsar.common.net.ServiceURI;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
@@ -60,6 +63,7 @@ public class KafkaProtocolProxyMain {
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
     private ProxyConfiguration proxyConfiguration;
+    private KafkaSchemaRegistryProxyManager schemaRegistryProxyManager;
 
     private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     private AuthenticationService authenticationService;
@@ -90,6 +94,28 @@ public class KafkaProtocolProxyMain {
         }
         return kafkaAddress;
     });
+
+    @AllArgsConstructor
+    private final class SchemaRegistryBrokerProvider implements Supplier<String> {
+
+        @Override
+        public String get() {
+            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
+
+            int colon = rawServiceUrl.lastIndexOf(':');
+            String res;
+            if (colon <= 0) {
+                // no port ? this should not happen
+                res = rawServiceUrl + ":" +kafkaConfig.getKopSchemaRegistryPort();
+            } else {
+                res = rawServiceUrl.substring(0, colon + 1) + kafkaConfig.getKopSchemaRegistryPort();
+            }
+            // no https to talk with the internal KOP broker
+            res = res.replace("http://", "http://");
+            log.info("SchemaRegistry mapping {} to {}", rawServiceUrl, res);
+            return res;
+        }
+    }
 
     @AllArgsConstructor
     private final class BrokerAddressMapper implements Function<String, String> {
@@ -155,6 +181,15 @@ public class KafkaProtocolProxyMain {
         kafkaConfig.setBindAddress(conf.getBindAddress());
 
         KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
+
+        schemaRegistryProxyManager = new KafkaSchemaRegistryProxyManager(kafkaConfig, new SchemaRegistryBrokerProvider(),
+                () -> {
+                    try {
+                        return CompletableFuture.completedFuture(pulsarAdminProvider.getSuperUserPulsarAdmin());
+                    } catch (PulsarClientException err) {
+                        return FutureUtil.failedFuture(err);
+                    }
+                }, authenticationService);
 
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
@@ -225,6 +260,9 @@ public class KafkaProtocolProxyMain {
         if (eventLoopGroup != null) {
             eventLoopGroup.shutdownGracefully();
         }
+        if (schemaRegistryProxyManager != null) {
+            schemaRegistryProxyManager.close();
+        }
     }
 
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -258,6 +296,11 @@ public class KafkaProtocolProxyMain {
                 }
             });
 
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryProxyManager.build();
+            if (schemaRegistryChannelInitializer.isPresent()) {
+                builder.put(schemaRegistryProxyManager.getAddress(), schemaRegistryChannelInitializer.get());
+            }
+
             return builder.build();
         } catch (Exception e) {
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
@@ -271,6 +314,8 @@ public class KafkaProtocolProxyMain {
         void close();
 
         void invalidateAdminForPrincipal(String principal, PulsarAdmin expected, Throwable error);
+
+        PulsarAdmin getSuperUserPulsarAdmin() throws PulsarClientException;
     }
 
     private class AuthenticatedPulsarAdminProvider implements PulsarAdminProvider {
@@ -298,6 +343,11 @@ public class KafkaProtocolProxyMain {
             cache.values().forEach(admin -> {
                 admin.close();
             });
+        }
+
+        @Override
+        public PulsarAdmin getSuperUserPulsarAdmin() throws PulsarClientException {
+            return getAdminForPrincipal(kafkaConfig.getKafkaProxySuperUserRole());
         }
 
         @Override
