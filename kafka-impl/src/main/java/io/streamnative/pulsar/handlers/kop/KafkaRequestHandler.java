@@ -333,22 +333,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         RequestStats.ALIVE_CHANNEL_COUNT_INSTANCE.incrementAndGet();
     }
 
-    private String getOffsetsTopicName() {
-        return new KopTopic(String.join("/",
-                getCurrentTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                GROUP_METADATA_TOPIC_NAME)
-        ).getFullName();
-    }
-
-    private String getTxnTopicName() {
-        return new KopTopic(String.join("/",
-                getCurrentTenant(),
-                kafkaConfig.getKafkaMetadataNamespace(),
-                TRANSACTION_STATE_TOPIC_NAME)
-        ).getFullName();
-    }
-
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
@@ -510,8 +494,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return sb.toString();
     }
 
-    CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
-        return expandAllowedNamespaces(allowedNamespaces, getCurrentTenant(), pulsarService);
+    private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
+        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        return expandAllowedNamespaces(allowedNamespaces, currentTenant, pulsarService);
     }
 
     @VisibleForTesting
@@ -527,17 +512,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 results.add(CompletableFuture.completedFuture(namespace));
             } else {
                 int slash = namespace.lastIndexOf('/');
-                if (slash > 0) {
-                    String tenant = namespace.substring(0, slash);
-                    results.add(pulsarService.getPulsarResources()
-                            .getNamespaceResources()
-                            .getChildrenAsync(path(tenant))
-                            .thenAccept(children -> {
-                                children.forEach(ns -> {
-                                    result.add(tenant + "/" + ns);
-                                });
-                            }));
-                }
+                String tenant = namespace.substring(0, slash);
+                results.add(pulsarService.getPulsarResources()
+                        .getNamespaceResources()
+                        .getChildrenAsync(path(tenant))
+                        .thenAccept(children -> {
+                            children.forEach(ns -> {
+                                result.add(tenant + "/" + ns);
+                            });
+                        }));
             }
         }
         return CompletableFuture
@@ -606,7 +589,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         List<TopicMetadata> allTopicMetadata = Collections.synchronizedList(Lists.newArrayList());
         List<Node> allNodes = Collections.synchronizedList(Lists.newArrayList());
         // Get all kop brokers in local cache
-
         allNodes.addAll(adminManager.getBrokers(advertisedEndPoint.getListenerName()));
 
         List<String> topics = metadataRequest.topics();
@@ -2377,7 +2359,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(deleteTopics.getRequest() instanceof DeleteTopicsRequest);
         DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
         Set<String> topicsToDelete = request.topics();
-
         if (topicsToDelete == null || topicsToDelete.isEmpty()) {
             resultFuture.complete(new DeleteTopicsResponse(Maps.newHashMap()));
             return;
@@ -2393,7 +2374,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
                         new byte[0]);
             }
-
             if (topicToDeleteCount.decrementAndGet() == 0) {
                 resultFuture.complete(new DeleteTopicsResponse(deleteTopicsResponse));
             }
@@ -2424,7 +2404,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
                     });
         });
-
     }
 
     @Override
@@ -2572,7 +2551,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
-    private CompletableFuture<Optional<String>> getProtocolDataToAdvertise(InetSocketAddress pulsarAddress, TopicName topic) {
+    private CompletableFuture<Optional<String>>
+    getProtocolDataToAdvertise(InetSocketAddress pulsarAddress,
+                               TopicName topic) {
         CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
 
         if (pulsarAddress == null) {
@@ -2890,17 +2871,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             case DESCRIBE:
                 isAuthorizedFuture = authorizer.canLookupAsync(session.getPrincipal(), resource);
                 break;
-            case ANY:
-                if (resource.getResourceType() == ResourceType.TENANT) {
-                    isAuthorizedFuture = authorizer.canAccessTenantAsync(session.getPrincipal(), resource);
-                }
-                break;
             case CREATE:
             case DELETE:
             case ALTER:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:
                 isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
+                break;
+            case ANY:
+                if (resource.getResourceType() == ResourceType.TENANT) {
+                    isAuthorizedFuture = authorizer.canAccessTenantAsync(session.getPrincipal(), resource);
+                }
                 break;
             case CLUSTER_ACTION:
             case UNKNOWN:
