@@ -42,8 +42,10 @@ import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.IndexedRecord;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.DeleteTopicsResult;
+import org.apache.kafka.clients.admin.DescribeConfigsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -54,6 +56,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -160,7 +163,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationFailed() throws PulsarAdminException {
+    public void testAuthorizationFailed() throws PulsarAdminException {
         String newTenant = "newTenantAuthorizationFailed";
         String testTopic = "persistent://" + newTenant + "/" + NAMESPACE + "/topic1";
         try {
@@ -188,8 +191,9 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         }
     }
 
-    @Test
-    void testAuthorizationSuccess() throws PulsarAdminException {
+
+    @Test(timeOut = 20000)
+    public void testAuthorizationSuccess() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getClientPort(),
@@ -234,7 +238,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
+    public void testAuthorizationSuccessByAdmin() throws PulsarAdminException {
         String topic = "testAuthorizationSuccessByAdminTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
         KProducer kProducer = new KProducer(topic, false, "localhost", getClientPort(),
@@ -279,7 +283,64 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     @Test(timeOut = 20000)
-    void testListTopic() throws Exception {
+    public void testProduceWithTopicLevelPermissions()
+            throws PulsarAdminException, ExecutionException, InterruptedException {
+        String topic = "testTopicLevelPermissions";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+
+        // Grant produce permission with topic level permission to ANOTHER_USER
+        admin.topics().grantPermission(fullNewTopicName,
+                ANOTHER_USER,
+                Sets.newHashSet(AuthAction.produce));
+
+        @Cleanup
+        KProducer producer = new KProducer(fullNewTopicName, false, "localhost", getKafkaBrokerPort(),
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken);
+        int totalMsgs = 10;
+        String messageStrPrefix = fullNewTopicName + "_message_";
+
+        for (int i = 0; i < totalMsgs; i++) {
+            String messageStr = messageStrPrefix + i;
+            producer.getProducer().send(new ProducerRecord<>(fullNewTopicName, i, messageStr)).get();
+        }
+
+        // Ensure admin can consume message.
+        @Cleanup
+        KConsumer adminConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + adminToken, "DemoAdminKafkaOnPulsarConsumer");
+        adminConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+
+        int i = 0;
+        while (i < totalMsgs) {
+            ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofSeconds(1));
+            for (ConsumerRecord<Integer, String> record : records) {
+                Integer key = record.key();
+                assertEquals(messageStrPrefix + key.toString(), record.value());
+                i++;
+            }
+        }
+        assertEquals(i, totalMsgs);
+
+        // no more records
+        ConsumerRecords<Integer, String> records = adminConsumer.getConsumer().poll(Duration.ofMillis(200));
+        assertTrue(records.isEmpty());
+
+
+        // Consume should be failed.
+        @Cleanup
+        KConsumer anotherConsumer = new KConsumer(fullNewTopicName, "localhost", getKafkaBrokerPort(), false,
+                TENANT + "/" + NAMESPACE, "token:" + anotherToken, "DemoAnotherKafkaOnPulsarConsumer");
+        anotherConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
+        try {
+            anotherConsumer.getConsumer().poll(Duration.ofSeconds(2));
+            fail("expected TopicAuthorizationException");
+        } catch (TopicAuthorizationException ignore) {
+            log.info("Has TopicAuthorizationException.");
+        }
+    }
+
+    @Test(timeOut = 20000)
+    public void testListTopic() throws Exception {
         String newTopic = "newTestListTopic";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
@@ -613,6 +674,46 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         admin.topics().deletePartitionedTopic(fullNewTopicName);
         adminClient.close();
     }
+
+    @Test(timeOut = 20000)
+    public void testDescribeConfigSuccess() throws PulsarAdminException, ExecutionException, InterruptedException {
+        String newTopic = "testDescribeConfigSuccess";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
+        ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
+
+        DescribeConfigsResult describeConfigsResult =
+                adminClient.describeConfigs(Collections.singleton(configResource));
+        Map<ConfigResource, Config> configResourceConfigMap = describeConfigsResult.all().get();
+        assertEquals(configResourceConfigMap.size(), 1);
+        Config config = configResourceConfigMap.get(configResource);
+        assertFalse(config.entries().isEmpty());
+
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
+    @Test(timeOut = 20000)
+    public void testDescribeConfigFailed() throws PulsarAdminException {
+        String newTopic = "testDescribeConfigFailed";
+        String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
+
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
+        ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
+
+        DescribeConfigsResult describeConfigsResult =
+                adminClient.describeConfigs(Collections.singleton(configResource));
+        try {
+            describeConfigsResult.all().get();
+        } catch (Exception ex) {
+            assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
+        }
+
+        admin.topics().deletePartitionedTopic(fullNewTopicName);
+    }
+
 
     private AdminClient createAdminClient(String username, String token) {
         Properties props = new Properties();

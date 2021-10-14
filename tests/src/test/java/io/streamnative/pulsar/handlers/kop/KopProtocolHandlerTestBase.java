@@ -20,6 +20,7 @@ import static org.mockito.Mockito.spy;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.netty.channel.EventLoopGroup;
+import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
@@ -43,6 +44,7 @@ import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.ZkUtils;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.Callback;
@@ -59,6 +61,7 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
+import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -119,17 +122,20 @@ public abstract class KopProtocolHandlerTestBase {
     protected boolean enableSchemaRegistry = false;
     protected String restConnect;
 
-    private final String entryFormat;
+    private String entryFormat;
 
     protected static final String PLAINTEXT_PREFIX = SecurityProtocol.PLAINTEXT.name() + "://";
     protected static final String SSL_PREFIX = SecurityProtocol.SSL.name() + "://";
 
     public KopProtocolHandlerTestBase() {
-        this.entryFormat = "pulsar";
-        resetConfig();
+        changeEntryFormat("pulsar");
     }
 
     public KopProtocolHandlerTestBase(final String entryFormat) {
+        changeEntryFormat(entryFormat);
+    }
+
+    protected void changeEntryFormat(final String entryFormat) {
         this.entryFormat = entryFormat;
         resetConfig();
     }
@@ -373,6 +379,12 @@ public abstract class KopProtocolHandlerTestBase {
                 .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
+    }
+
+    protected GroupCoordinator createNewGroupCoordinator(String tenant) {
+        ProtocolHandler handler = pulsar.getProtocolHandlers().protocol("kafka");
+        KafkaProtocolHandler kafkaProtocolHandler = (KafkaProtocolHandler) handler;
+        return kafkaProtocolHandler.startGroupCoordinator(tenant, kafkaProtocolHandler.getOffsetTopicClient());
     }
 
     public static NonClosableMockBookKeeper createMockBookKeeper(OrderedExecutor executor) throws Exception {
@@ -708,6 +720,18 @@ public abstract class KopProtocolHandlerTestBase {
         return props;
     }
 
+    protected Properties newKafkaConsumerProperties(final String group) {
+        final Properties props = newKafkaConsumerProperties();
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, group);
+        return props;
+    }
+
+    protected Properties newKafkaAdminClientProperties() {
+        final Properties adminProps = new Properties();
+        adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        return adminProps;
+    }
+
     protected String computeKafkaProxyBrokerPortToKopMapping() {
         // Map Pulsar port to KOP port
         return getBrokerPort() + " = " + getKafkaBrokerPort();
@@ -771,4 +795,6 @@ public abstract class KopProtocolHandlerTestBase {
             pulsarProxy.close();
         }
     }
+
+
 }

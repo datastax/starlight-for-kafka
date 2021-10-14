@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.BYTES_IN;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.MESSAGE_IN;
@@ -30,6 +31,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -55,6 +57,7 @@ import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.OffsetFinder;
+import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ZooKeeperUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
@@ -64,6 +67,7 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -93,9 +97,11 @@ import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.NotImplementedException;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
@@ -111,8 +117,11 @@ import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.CreateTopicsResponse;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
@@ -190,6 +199,7 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     public static final long DEFAULT_TIMESTAMP = 0L;
+    private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
@@ -493,8 +503,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
     }
 
-    private static final String POLICY_ROOT = "/admin/policies/";
-
     private static String path(String... parts) {
         StringBuilder sb = new StringBuilder();
         sb.append(POLICY_ROOT);
@@ -502,13 +510,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return sb.toString();
     }
 
-    private CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
-        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+    CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces) {
+        return expandAllowedNamespaces(allowedNamespaces, getCurrentTenant(), pulsarService);
+    }
+
+    @VisibleForTesting
+    static CompletableFuture<Set<String>> expandAllowedNamespaces(Set<String> allowedNamespaces,
+                                                                  String currentTenant,
+                                                                  PulsarService pulsarService) {
         Set<String> result = new CopyOnWriteArraySet<>();
         List<CompletableFuture<?>> results = new ArrayList<>();
         for (String namespaceTemplate : allowedNamespaces) {
             String namespace = namespaceTemplate.replace(TENANT_PLACEHOLDER, currentTenant);
-            if (!namespace.endsWith("/*")) {
+            if (!namespace.endsWith("/" + TENANT_ALLNAMESPACES_PLACEHOLDER)) {
                 result.add(namespace);
                 results.add(CompletableFuture.completedFuture(namespace));
             } else {
@@ -519,9 +533,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             .getNamespaceResources()
                             .getChildrenAsync(path(tenant))
                             .thenAccept(children -> {
-                                for (String ns : children) {
-                                    result.add(ns);
-                                }
+                                children.forEach(ns -> {
+                                    result.add(tenant + "/" + ns);
+                                });
                             }));
                 }
             }
@@ -540,7 +554,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private CompletableFuture<Map<String, List<TopicName>>> getAllTopicsAsync() {
         CompletableFuture<Map<String, List<TopicName>>> topicMapFuture = new CompletableFuture<>();
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
-        final CompletableFuture<Set<String>> allowedNamespacesFuture = expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
+        final CompletableFuture<Set<String>> allowedNamespacesFuture =
+                expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
 
         allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
             final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
@@ -1174,12 +1189,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
     }
 
-    private <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
-                                           Map<TopicPartition, TopicPartition> replacingIndex) {
+    @VisibleForTesting
+    public <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
+                                          Map<TopicPartition, TopicPartition> replacingIndex) {
         Map<TopicPartition, T> newMap = new HashMap<>();
         replacedMap.entrySet().removeIf(entry -> {
             if (replacingIndex.containsKey(entry.getKey())) {
                 newMap.put(replacingIndex.get(entry.getKey()), entry.getValue());
+                return true;
+            } else if (KopTopic.isFullTopicName(entry.getKey().topic())) {
+                newMap.put(new TopicPartition(
+                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic()),
+                                entry.getKey().partition()),
+                        entry.getValue());
                 return true;
             }
             return false;
@@ -1561,10 +1583,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @VisibleForTesting
-    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(OffsetCommitRequest request,
-                                                                                 short apiVersion,
-                                                                                 long currentTimeStamp,
-                                                                                 long configOffsetsRetentionMs) {
+    Map<TopicPartition, OffsetAndMetadata> convertOffsetCommitRequestRetentionMs(
+            Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData,
+            long retentionTime,
+            short apiVersion,
+            long currentTimeStamp,
+            long configOffsetsRetentionMs) {
 
         // commit from kafka
         // > for version 1 and beyond store offsets in offset manager
@@ -1572,10 +1596,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // commit from kafka
 
         long offsetRetention;
-        if (apiVersion <= 1 || request.retentionTime() == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
+        if (apiVersion <= 1 || retentionTime == OffsetCommitRequest.DEFAULT_RETENTION_TIME) {
             offsetRetention = configOffsetsRetentionMs;
         } else {
-            offsetRetention = request.retentionTime();
+            offsetRetention = retentionTime;
         }
 
         // commit from kafka
@@ -1593,7 +1617,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
 
         long finalOffsetRetention = offsetRetention;
-        return CoreUtils.mapValue(request.offsetData(), (partitionData) -> {
+        return CoreUtils.mapValue(convertedOffsetData, (partitionData) -> {
 
             String metadata;
             if (partitionData.metadata == null) {
@@ -1628,74 +1652,100 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         OffsetCommitRequest request = (OffsetCommitRequest) offsetCommit.getRequest();
 
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors(request);
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
+        if (request.offsetData().isEmpty()) {
+            resultFuture.complete(new OffsetCommitResponse(Maps.newHashMap()));
+            return;
+        }
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = new HashMap<>();
-        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        request.offsetData().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
-            try {
-                TopicPartition newTopicPartition = new TopicPartition(
-                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, TopicPartition> replacingIndex = Maps.newConcurrentMap();
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsetData().size());
 
-                convertedOffsetData.put(newTopicPartition, entry.getValue());
-                replacingIndex.put(newTopicPartition, tp);
+        Consumer<Runnable> completeOne = (action) -> {
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo);
+                }
+                if (convertedOffsetData.isEmpty()) {
+                    Map<TopicPartition, Errors> offsetCommitResult = Maps.newHashMap();
+
+                    offsetCommitResult.putAll(nonExistingTopicErrors);
+                    offsetCommitResult.putAll(unauthorizedTopicErrors);
+
+                    OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                    resultFuture.complete(response);
+
+                } else {
+                    Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
+                            convertOffsetCommitRequestRetentionMs(
+                                    convertedOffsetData,
+                                    request.retentionTime(),
+                                    offsetCommit.getHeader().apiVersion(),
+                                    Time.SYSTEM.milliseconds(),
+                                    getGroupCoordinator().offsetConfig().offsetsRetentionMs()
+                            );
+
+                    getGroupCoordinator().handleCommitOffsets(
+                            request.groupId(),
+                            request.memberId(),
+                            request.generationId(),
+                            convertedPartitionData
+                    ).thenAccept(offsetCommitResult -> {
+                        // recover to original topic name
+                        replaceTopicPartition(offsetCommitResult, replacingIndex);
+
+                        offsetCommitResult.putAll(nonExistingTopicErrors);
+                        offsetCommitResult.putAll(unauthorizedTopicErrors);
+
+                        OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
+                        resultFuture.complete(response);
+                    });
+
+                }
+            }
+        };
+        request.offsetData().forEach((tp, partitionData) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
             }
-            return true;
+            String fullTopicName = kopTopic.getFullName();
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("OffsetCommit authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(() -> {
+                            TopicPartition newTopicPartition = new TopicPartition(
+                                    new KopTopic(tp.topic()).getFullName(), tp.partition());
+
+                            convertedOffsetData.put(newTopicPartition, partitionData);
+                            replacingIndex.put(newTopicPartition, tp);
+                        });
+                    });
         });
-
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
-        }
-
-        // update the request data
-        request.offsetData().putAll(convertedOffsetData);
-
-        Map<TopicPartition, OffsetCommitRequest.PartitionData> authorizedTopic = request.offsetData();
-        if (authorizedTopic.isEmpty()) {
-            Map<TopicPartition, Errors> offsetCommitResult = new HashMap<>();
-            if (!nonExistingTopic.isEmpty()) {
-                offsetCommitResult.putAll(nonExistingTopic);
-            }
-
-            OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-            resultFuture.complete(response);
-
-        } else {
-            Map<TopicPartition, OffsetAndMetadata> convertedPartitionData =
-                    convertOffsetCommitRequestRetentionMs(
-                            request,
-                            offsetCommit.getHeader().apiVersion(),
-                            Time.SYSTEM.milliseconds(),
-                            getGroupCoordinator().offsetConfig().offsetsRetentionMs()
-                    );
-
-            getGroupCoordinator().handleCommitOffsets(
-                    request.groupId(),
-                    request.memberId(),
-                    request.generationId(),
-                    convertedPartitionData
-            ).thenAccept(offsetCommitResult -> {
-
-                // recover to original topic name
-                replaceTopicPartition(offsetCommitResult, replacingIndex);
-
-                if (!nonExistingTopic.isEmpty()) {
-                    offsetCommitResult.putAll(nonExistingTopic);
-                }
-                OffsetCommitResponse response = new OffsetCommitResponse(offsetCommitResult);
-                resultFuture.complete(response);
-            });
-
-        }
     }
 
     @Override
@@ -2001,15 +2051,82 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(describeConfigs.getRequest() instanceof DescribeConfigsRequest);
         DescribeConfigsRequest request = (DescribeConfigsRequest) describeConfigs.getRequest();
 
-        adminManager.describeConfigsAsync(new ArrayList<>(request.resources()).stream()
-                .collect(Collectors.toMap(
-                        resource -> resource,
-                        resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                ))
-        ).thenApply(configResourceConfigMap -> {
-            resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
-            return null;
+        if (request.resources().isEmpty()) {
+            resultFuture.complete(new DescribeConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Collection<ConfigResource> authorizedResources = Collections.synchronizedList(new ArrayList<>());
+        Map<ConfigResource, DescribeConfigsResponse.Config> failedConfigResourceMap =
+                Maps.newConcurrentMap();
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.resources().size());
+
+
+        Consumer<Runnable> completeOne = (action) -> {
+            // When complete one authorization or failed, will do the action first.
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                adminManager.describeConfigsAsync(authorizedResources.stream()
+                        .collect(Collectors.toMap(
+                                resource -> resource,
+                                resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
+                        ))
+                ).thenApply(configResourceConfigMap -> {
+                    configResourceConfigMap.putAll(failedConfigResourceMap);
+                    resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
+                    return null;
+                });
+            }
+        };
+
+        // Do authorization for each of resource
+        request.resources().forEach(configResource -> {
+            switch (configResource.type()) {
+                case TOPIC:
+                    KopTopic kopTopic;
+                    try {
+                        kopTopic = new KopTopic(configResource.name());
+                    } catch (KoPTopicException e) {
+                        completeOne.accept(() -> {
+                            final ApiError error = new ApiError(
+                                    Errors.UNKNOWN_TOPIC_OR_PARTITION,
+                                    "Topic " + configResource.name() + " doesn't exist");
+                            failedConfigResourceMap.put(configResource, new DescribeConfigsResponse.Config(
+                                    error, Collections.emptyList()));
+                        });
+                        return;
+                    }
+                    String fullTopicName = kopTopic.getFullName();
+                    authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, fullTopicName))
+                            .whenComplete((isAuthorized, ex) -> {
+                                if (ex != null) {
+                                    log.error("DescribeConfigs in topic authorize failed, topic - {}. {}",
+                                            fullTopicName, ex.getMessage());
+                                    completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                            new DescribeConfigsResponse.Config(
+                                                    new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                    Collections.emptyList())));
+                                    return;
+                                }
+                                if (isAuthorized) {
+                                    completeOne.accept(() -> authorizedResources.add(configResource));
+                                    return;
+                                }
+                                completeOne.accept(() -> failedConfigResourceMap.put(configResource,
+                                        new DescribeConfigsResponse.Config(
+                                                new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null),
+                                                Collections.emptyList())));
+                            });
+                    break;
+                case BROKER:
+                    // Current KoP don't support Broker Resource.
+                case UNKNOWN:
+                default:
+                    completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));
+                    break;
+            }
         });
+
     }
 
     @Override
@@ -2025,9 +2142,54 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void handleAddPartitionsToTxn(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
-        TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-        transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                request.producerId(), request.producerEpoch(), request.partitions(), response);
+        List<TopicPartition> partitionsToAdd = request.partitions();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
+        Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(partitionsToAdd.size());
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (!unauthorizedTopicErrors.isEmpty() || !nonExistingTopicErrors.isEmpty()) {
+                    Map<TopicPartition, Errors> partitionErrors = Maps.newHashMap();
+                    partitionErrors.putAll(unauthorizedTopicErrors);
+                    partitionErrors.putAll(nonExistingTopicErrors);
+                    for (TopicPartition topicPartition : authorizedPartitions) {
+                        partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
+                    }
+                    response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                } else {
+                    TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+                    transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
+                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                }
+            }
+        };
+        partitionsToAdd.forEach(tp -> {
+            String fullPartitionName;
+            try {
+                fullPartitionName = KopTopic.toString(tp);
+            } catch (KoPTopicException e) {
+                log.warn("Invalid topic name: {}", tp.topic(), e);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
+            }
+            authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
+                    .whenComplete((isAuthorized, ex) -> {
+                if (ex != null) {
+                    log.error("AddPartitionsToTxn topic authorize failed, topic - {}. {}",
+                            fullPartitionName, ex.getMessage());
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                if (!isAuthorized) {
+                    completeOne.accept(() -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                    return;
+                }
+                completeOne.accept(() -> authorizedPartitions.add(tp));
+            });
+        });
     }
 
     @Override
@@ -2227,7 +2389,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (errors == Errors.NONE) {
                 // create topic ZNode to trigger the coordinator DeleteTopicsEvent event
                 ZooKeeperUtils.tryCreatePath(pulsarService.getZkClient(),
-                        KopEventManager.getDeleteTopicsPath() + "/" + topic,
+                        KopEventManager.getDeleteTopicsPath() + "/"
+                                + TopicNameUtils.getTopicNameWithUrlEncoded(topic),
                         new byte[0]);
             }
 
@@ -2262,6 +2425,84 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     });
         });
 
+    }
+
+    @Override
+    protected void handleCreatePartitions(KafkaHeaderAndRequest createPartitions,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(createPartitions.getRequest() instanceof CreatePartitionsRequest);
+        CreatePartitionsRequest request = (CreatePartitionsRequest) createPartitions.getRequest();
+
+        final Map<String, ApiError> result = Maps.newConcurrentMap();
+        final Map<String, NewPartitions> validTopics = Maps.newHashMap();
+        final Set<String> duplicateTopics = request.duplicates();
+
+        request.newPartitions().forEach((topic, newPartition) -> {
+            if (!duplicateTopics.contains(topic)) {
+                validTopics.put(topic, newPartition);
+            } else {
+                final String errorMessage = "Create topics partitions request from client `"
+                        + createPartitions.getHeader().clientId()
+                        + "` contains multiple entries for the following topics: " + duplicateTopics;
+                result.put(topic, new ApiError(Errors.INVALID_REQUEST, errorMessage));
+            }
+        });
+
+        if (validTopics.isEmpty()) {
+            resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+            return;
+        }
+
+        final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
+        final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
+        Runnable createPartitionsAsync = () -> {
+            if (authorizedTopics.isEmpty()) {
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return;
+            }
+            adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
+                result.putAll(validResult);
+                resultFuture.complete(new CreatePartitionsResponse(AbstractResponse.DEFAULT_THROTTLE_TIME, result));
+                return null;
+            });
+        };
+
+        BiConsumer<String, NewPartitions> completeOneTopic = (topic, newPartitions) -> {
+            authorizedTopics.put(topic, newPartitions);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        BiConsumer<String, ApiError> completeOneErrorTopic = (topic, error) -> {
+            result.put(topic, error);
+            if (validTopicsCount.decrementAndGet() == 0) {
+                createPartitionsAsync.run();
+            }
+        };
+        validTopics.forEach((topic, newPartitions) -> {
+            try {
+                KopTopic kopTopic = new KopTopic(topic);
+                String fullTopicName = kopTopic.getFullName();
+                authorize(AclOperation.ALTER, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("CreatePartitions authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, ex.getMessage()));
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                completeOneErrorTopic.accept(topic,
+                                        new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
+                                return;
+                            }
+                            completeOneTopic.accept(topic, newPartitions);
+                        });
+            } catch (KoPTopicException e) {
+                completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
+            }
+        });
     }
 
     /**
@@ -2656,12 +2897,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 break;
             case CREATE:
             case DELETE:
+            case ALTER:
             case DESCRIBE_CONFIGS:
             case ALTER_CONFIGS:
                 isAuthorizedFuture = authorizer.canManageTenantAsync(session.getPrincipal(), resource);
                 break;
             case CLUSTER_ACTION:
-            case ALTER:
             case UNKNOWN:
             case ALL:
             default:

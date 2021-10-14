@@ -837,6 +837,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 null);
     }
 
+    @Override
+    protected void handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                          CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                CreatePartitionsRequest.class, (metadataRequest) -> "system",
+                null);
+    }
+
     protected void handleDescribeConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
         handleRequestWithCoordinator(describeConfigs, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,

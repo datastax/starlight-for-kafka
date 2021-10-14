@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 
@@ -37,8 +38,10 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
@@ -47,6 +50,7 @@ import java.util.concurrent.ExecutionException;
 import javax.crypto.SecretKey;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
@@ -58,11 +62,17 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
+import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
+import org.apache.kafka.common.requests.CreatePartitionsRequest;
+import org.apache.kafka.common.requests.CreatePartitionsResponse;
 import org.apache.kafka.common.requests.IsolationLevel;
 import org.apache.kafka.common.requests.ListOffsetRequest;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetCommitRequest;
+import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
@@ -441,6 +451,251 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> {
             assertEquals(partitionData.error, Errors.TOPIC_AUTHORIZATION_FAILED);
         });
+    }
+
+    @Test(timeOut = 20000)
+    public void testOffsetCommitRequestAuthorizationFailed() throws Exception {
+        String group = "test-failed-groupId";
+        String memberId = "test_failed_member_id";
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+
+        // Build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleOffsetCommitRequest(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof OffsetCommitResponse);
+        OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
+        assertEquals(offsetCommitResponse.responseData().size(), 1);
+        assertFalse(offsetCommitResponse.errorCounts().isEmpty());
+        offsetCommitResponse.responseData().forEach((__, error) -> {
+            assertEquals(error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
+    }
+
+    @Test(timeOut = 20000)
+    public void testOffsetCommitRequestPartAuthorizationFailed() throws Exception {
+        String group = "test-failed-groupId";
+        String memberId = "test_failed_member_id";
+        TopicPartition topicPartition1 = new TopicPartition("test", 1);
+        TopicPartition topicPartition2 = new TopicPartition("test1", 2);
+        TopicPartition topicPartition3 = new TopicPartition("test2", 3);
+
+        // Build input params
+        Map<TopicPartition, OffsetCommitRequest.PartitionData> offsetData = Maps.newHashMap();
+        offsetData.put(topicPartition1,
+                new OffsetCommitRequest.PartitionData(1L, ""));
+        offsetData.put(topicPartition2,
+                new OffsetCommitRequest.PartitionData(2L, ""));
+        offsetData.put(topicPartition3,
+                new OffsetCommitRequest.PartitionData(3L, ""));
+
+        OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(group, offsetData)
+                .setMemberId(memberId)
+                .setRetentionTime(OffsetCommitRequest.DEFAULT_RETENTION_TIME);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Topic: `test` authorize success.
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.READ),
+                        eq(Resource.of(ResourceType.TOPIC, new KopTopic(topicPartition1.topic()).getFullName()))
+                );
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleOffsetCommitRequest(headerAndRequest, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof OffsetCommitResponse);
+        OffsetCommitResponse offsetCommitResponse = (OffsetCommitResponse) response;
+        assertEquals(offsetCommitResponse.responseData().size(), 3);
+        assertEquals(offsetCommitResponse.errorCounts().size(), 2);
+        assertEquals(offsetCommitResponse.responseData().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(offsetCommitResponse.responseData().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testAddPartitionsToTxnAuthorizationFailed() throws ExecutionException, InterruptedException {
+        TopicPartition topicPartition1 = new TopicPartition("test", 1);
+        TopicPartition topicPartition2 = new TopicPartition("test1", 2);
+        TopicPartition topicPartition3 = new TopicPartition("test2", 3);
+        List<TopicPartition> topicPartitions = Arrays.asList(topicPartition1, topicPartition2, topicPartition3);
+
+        AddPartitionsToTxnRequest.Builder builder =
+                new AddPartitionsToTxnRequest.Builder(
+                        "1", 1, (short) 1, topicPartitions);
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Topic: `test` authorize success.
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.WRITE),
+                        eq(Resource.of(ResourceType.TOPIC, KopTopic.toString(topicPartition1)))
+                );
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleAddPartitionsToTxn(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof AddPartitionsToTxnResponse);
+        AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
+
+        assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 2);
+
+        // OPERATION_NOT_ATTEMPTED Or TOPIC_AUTHORIZATION_FAILED
+        assertEquals(addPartitionsToTxnResponse.errors().size(), 3);
+
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition1), Errors.OPERATION_NOT_ATTEMPTED);
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+    }
+
+    @Test(timeOut = 20000)
+    public void testAddPartitionsToTxnPartAuthorizationFailed() throws ExecutionException, InterruptedException {
+        TopicPartition topicPartition = new TopicPartition("test", 1);
+        AddPartitionsToTxnRequest.Builder builder =
+                new AddPartitionsToTxnRequest.Builder(
+                        "1", 1, (short) 1, Collections.singletonList(topicPartition));
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleAddPartitionsToTxn(headerAndRequest, responseFuture);
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof AddPartitionsToTxnResponse);
+        AddPartitionsToTxnResponse addPartitionsToTxnResponse = (AddPartitionsToTxnResponse) response;
+
+        assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 1);
+        addPartitionsToTxnResponse.errors().values().forEach(errors -> {
+            assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED);
+        });
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsAuthorizationFailed() throws Exception {
+        final String topic = "test-create-partitions-failed";
+        final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+        final int oldPartitions = 5;
+
+        admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 10;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(fullTopic, newPartitions);
+
+        CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
+                newPartitionsMap, 5000, false);
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        handler.handleCreatePartitions(headerAndRequest, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof CreatePartitionsResponse);
+        CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
+        assertEquals(createPartitionsResponse.errorCounts().size(), 1);
+        assertTrue(createPartitionsResponse.errors().containsKey(fullTopic));
+        assertEquals(createPartitionsResponse.errors().get(fullTopic).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsPartAuthorizationFailed() throws Exception {
+        final String topic1 = "test-create-partitions-failed-1";
+        final String topic2 = "test-create-partitions-failed-2";
+        final String topic3 = "test-create-partitions-failed-3";
+        final String fullTopic1 = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic1;
+        final String fullTopic2 = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic2;
+        final String fullTopic3 = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic3;
+        final int oldPartitions = 5;
+
+        admin.topics().createPartitionedTopic(fullTopic1, oldPartitions);
+        admin.topics().createPartitionedTopic(fullTopic2, oldPartitions);
+        admin.topics().createPartitionedTopic(fullTopic3, oldPartitions);
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 10;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(fullTopic1, newPartitions);
+        newPartitionsMap.put(fullTopic2, newPartitions);
+        newPartitionsMap.put(fullTopic3, newPartitions);
+
+        CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
+                newPartitionsMap, 5000, false);
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        KafkaRequestHandler spyHandler = spy(handler);
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.ALTER),
+                        eq(Resource.of(ResourceType.TOPIC, fullTopic1))
+                );
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleCreatePartitions(headerAndRequest, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof CreatePartitionsResponse);
+        CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
+        assertEquals(createPartitionsResponse.errorCounts().size(), 2);
+        assertEquals(createPartitionsResponse.errors().size(), 3);
+        assertEquals(createPartitionsResponse.errors().get(fullTopic1).error(), Errors.NONE);
+        assertEquals(createPartitionsResponse.errors().get(fullTopic2).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(createPartitionsResponse.errors().get(fullTopic3).error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+
+    }
+
+    @Test(timeOut = 20000)
+    public void testCreatePartitionsAuthorizationSuccess() throws Exception {
+        KafkaRequestHandler spyHandler = spy(handler);
+        final String topic = "test-create-partitions-success";
+        final String fullTopic = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
+        final int oldPartitions = 5;
+
+        admin.topics().createPartitionedTopic(fullTopic, oldPartitions);
+
+        doReturn(CompletableFuture.completedFuture(true))
+                .when(spyHandler)
+                .authorize(eq(AclOperation.ALTER),
+                        eq(Resource.of(ResourceType.TOPIC, fullTopic))
+                );
+
+        HashMap<String, NewPartitions> newPartitionsMap = Maps.newHashMap();
+        final int numPartitions = 10;
+        NewPartitions newPartitions = NewPartitions.increaseTo(numPartitions);
+        newPartitionsMap.put(fullTopic, newPartitions);
+
+        CreatePartitionsRequest.Builder builder = new CreatePartitionsRequest.Builder(
+                newPartitionsMap, 5000, false);
+
+        KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
+
+        // Handle request
+        CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+        spyHandler.handleCreatePartitions(headerAndRequest, responseFuture);
+
+        AbstractResponse response = responseFuture.get();
+        assertTrue(response instanceof CreatePartitionsResponse);
+        CreatePartitionsResponse createPartitionsResponse = (CreatePartitionsResponse) response;
+        assertEquals(createPartitionsResponse.errors().size(), 1);
+        assertTrue(createPartitionsResponse.errors().containsKey(fullTopic));
+        assertEquals(createPartitionsResponse.errors().get(fullTopic).error(), Errors.NONE);
+
     }
 
     KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
