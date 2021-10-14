@@ -268,9 +268,46 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         log.debug("handleTopicMetadataRequest {}", metadataHar);
 
         // just pass the request to any broker
-        handleRequestWithCoordinator(metadataHar, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+
+        CompletableFuture<AbstractResponse> responseInterceptor = new CompletableFuture<>();
+
+        handleRequestWithCoordinator(metadataHar, responseInterceptor, FindCoordinatorRequest.CoordinatorType.GROUP,
                 MetadataRequest.class, (metadataRequest) -> "system",
                 null);
+
+        responseInterceptor.whenComplete((metadataResponse, error) -> {
+           if (error != null) {
+               resultFuture.completeExceptionally(error);
+           } else {
+               MetadataResponse responseFromBroker = (MetadataResponse) metadataResponse;
+               Node selfNode = newSelfNode();
+               List<Node> nodeList = Collections.singletonList(selfNode);
+               MetadataResponse response = new MetadataResponse(
+                       responseFromBroker.throttleTimeMs(),
+                       nodeList,
+                       responseFromBroker.clusterId(),
+                       selfNode.id(),
+                       responseFromBroker.topicMetadata()
+                               .stream()
+                               .map(md -> {
+                                   return new MetadataResponse.TopicMetadata(
+                                           md.error(),
+                                           md.topic(),
+                                           md.isInternal(),
+                                           md
+                                                   .partitionMetadata()
+                                                   .stream()
+                                                   .map(pd -> {
+                                                       return new PartitionMetadata(pd.error(), pd.partition(),
+                                                               selfNode, nodeList, nodeList, Collections.emptyList());
+                                                   })
+                                                   .collect(Collectors.toList()));
+                               })
+                               .collect(Collectors.toList())
+               );
+               resultFuture.complete(response);
+           }
+        });
     }
 
     protected void handleProduceRequest(KafkaHeaderAndRequest produceHar,
