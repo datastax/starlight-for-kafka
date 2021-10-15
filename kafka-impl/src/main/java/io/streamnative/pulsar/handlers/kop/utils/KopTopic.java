@@ -18,6 +18,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.requests.MetadataResponse;
 
 /**
  * KopTopic maintains two topic name, one is the original topic name, the other is the full topic name used in Pulsar.
@@ -108,5 +109,9 @@ public class KopTopic {
 
     public static String toString(TopicPartition topicPartition) {
         return (new KopTopic(topicPartition.topic())).getPartitionName(topicPartition.partition());
+    }
+
+    public static String toString(String topic, int partition) {
+        return (new KopTopic(topic)).getPartitionName(partition);
     }
 }

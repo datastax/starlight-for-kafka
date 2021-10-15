@@ -19,10 +19,8 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.util.concurrent.DefaultThreadFactory;
-import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -36,7 +34,6 @@ import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
-import org.apache.pulsar.common.lookup.data.LookupData;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
@@ -68,7 +65,7 @@ public class KafkaProtocolProxyMain {
     private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
-    private EventLoopGroup eventLoopGroup;
+    private EventLoopGroup eventLoopGroupStandaloneMode;
 
     private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
         // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
@@ -173,8 +170,6 @@ public class KafkaProtocolProxyMain {
         // init config
         kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
 
-        eventLoopGroup = EventLoopUtil.newEventLoopGroup(kafkaConfig.getKafkaProxyBrokerThreads(), false, new DefaultThreadFactory("kop-broker-connection"));
-
         // some of the configs value in conf.properties may not updated.
         // So need to get latest value from conf itself
         kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
@@ -235,6 +230,8 @@ public class KafkaProtocolProxyMain {
 
     public void startStandalone() {
 
+        eventLoopGroupStandaloneMode = EventLoopUtil.newEventLoopGroup(16, false, new DefaultThreadFactory("kop-broker-connection"));
+
         log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
         log.info("Built by {} on {} at {}",
@@ -244,8 +241,8 @@ public class KafkaProtocolProxyMain {
         newChannelInitializers().forEach((address, initializer) -> {
             System.out.println("Starting protocol at " + address);
             ServerBootstrap bootstrap = new ServerBootstrap()
-                    .group(eventLoopGroup)
-                    .channel(EventLoopUtil.getServerSocketChannelClass(eventLoopGroup));
+                    .group(eventLoopGroupStandaloneMode)
+                    .channel(EventLoopUtil.getServerSocketChannelClass(eventLoopGroupStandaloneMode));
             bootstrap.childHandler(initializer);
             try {
                 bootstrap.bind(address).sync();
@@ -257,8 +254,8 @@ public class KafkaProtocolProxyMain {
 
     public void close() throws Exception {
         pulsarAdminProvider.close();
-        if (eventLoopGroup != null) {
-            eventLoopGroup.shutdownGracefully();
+        if (eventLoopGroupStandaloneMode != null) {
+            eventLoopGroupStandaloneMode.shutdownGracefully();
         }
         if (schemaRegistryProxyManager != null) {
             schemaRegistryProxyManager.close();

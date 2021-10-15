@@ -24,6 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -298,6 +299,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                    .partitionMetadata()
                                                    .stream()
                                                    .map(pd -> {
+                                                       // please note that usually the Kafka client
+                                                       // opens two different connections
+                                                       // for metadata and for data
+                                                       // so caching this value here
+                                                       // won't help to serve Produce or Fetch requests
+                                                       String fullTopicName = KopTopic.toString(md.topic(), pd.partition());
+                                                       topicsLeaders.put(fullTopicName, pd.leader());
                                                        return new PartitionMetadata(pd.error(), pd.partition(),
                                                                selfNode, nodeList, nodeList, Collections.emptyList());
                                                    })
@@ -314,7 +322,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
-
         final int numPartitions = produceRequest.partitionRecordsOrFail().size();
         if (numPartitions == 0) {
             resultFuture.complete(new ProduceResponse(new HashMap<>()));
@@ -351,171 +358,175 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             lookups.add(findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(p -> brokers.put(fullPartitionName, p)));
         });
-        FutureUtil.waitForAll(lookups)
-                .whenComplete((result, error) -> {
-                    boolean multipleBrokers = false;
-                    if (error != null) {
-                        // TODO: report errors for specific partitions and continue for non failed lookups
+
+        // this looks weird
+        // we must block here, if we continue the execution of this Produce Request
+        // in other thread we will break strict ordering of messages
+        try {
+            FutureUtil.waitForAll(lookups).get(kafkaConfig.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
+        } catch (ExecutionException | InterruptedException | TimeoutException err) {
+            log.error("Cannot lookup brokers for a produce request {}", produceRequest, err);
+            Map<TopicPartition, PartitionResponse> errorsMap =
+                    produceRequest.partitionRecordsOrFail()
+                            .keySet()
+                            .stream()
+                            .collect(Collectors.toMap(Function.identity(),
+                                    p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
+            resultFuture.complete(new ProduceResponse(errorsMap));
+            return;
+        }
+
+        boolean multipleBrokers = false;
+        // check if all the partitions are for the same broker
+        PartitionMetadata first = null;
+        for (PartitionMetadata md : brokers.values()) {
+            if (first == null) {
+                first = md;
+            } else if (!first.leader().equals(md.leader())) {
+                multipleBrokers = true;
+                break;
+            }
+        }
+
+
+        if (!multipleBrokers) {
+            // all the partitions are owned by one single broker,
+            // we can forward the whole request to the only broker
+            final PartitionMetadata broker = first;
+            log.debug("forward FULL produce id {} of {} parts to {}", produceHar.getHeader().correlationId(), numPartitions, broker);
+            grabConnectionToBroker(broker.leader().host(), broker.leader().port()).
+                    forwardRequest(produceHar)
+                    .thenAccept(response -> {
+                        ProduceResponse resp = (ProduceResponse) response;
+                        resp.responses().forEach((topicPartition, topicResp) -> {
+                            if (topicResp.error == Errors.NOT_LEADER_FOR_PARTITION) {
+                                String fullTopicName = KopTopic.toString(topicPartition);
+                                log.info("Broker {} is no more the leader for {}", broker.leader(), fullTopicName);
+                                topicsLeaders.remove(fullTopicName);
+                            } else {
+                                log.debug("forward FULL produce id {} COMPLETE  of {} parts to {}", produceHar.getHeader().correlationId(), numPartitions, broker);
+                            }
+                        });
+                        resultFuture.complete(response);
+                    }).exceptionally(badError -> {
+                        log.error("Full Produce failed", badError);
+                        // REQUEST_TIMED_OUT triggers a new trials on the client
                         Map<TopicPartition, PartitionResponse> errorsMap =
                                 produceRequest.partitionRecordsOrFail()
                                         .keySet()
                                         .stream()
                                         .collect(Collectors.toMap(Function.identity(),
                                                 p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
-
                         resultFuture.complete(new ProduceResponse(errorsMap));
-                    } else {
+                        return null;
+                    });
+        } else {
+            log.debug("Split produce of {} parts to {}", numPartitions, brokers);
+            // we have to create multiple ProduceRequest
+            // this is a prototype, let's create a ProduceRequest per each partition
+            // we could group requests per broker
 
-                        // check if all the partitions are for the same broker
-                        PartitionMetadata first = null;
-                        for (PartitionMetadata md : brokers.values()) {
-                            if (first == null) {
-                                first = md;
-                            } else if (!first.leader().equals(md.leader())) {
-                                multipleBrokers = true;
-                                break;
-                            }
-                        }
-
-
-                        if (!multipleBrokers) {
-                            // all the partitions are owned by one single broker,
-                            // we can forward the whole request to the only broker
-                            final PartitionMetadata broker = first;
-                            log.debug("forward FULL produce id {} of {} parts to {}", produceHar.getHeader().correlationId(), numPartitions, broker);
-                            grabConnectionToBroker(broker.leader().host(), broker.leader().port()).
-                                    forwardRequest(produceHar)
-                                    .thenAccept(response -> {
-                                        ProduceResponse resp = (ProduceResponse) response;
-                                        resp.responses().forEach((topicPartition, topicResp) -> {
-                                            if (topicResp.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                String fullTopicName = KopTopic.toString(topicPartition);
-                                                log.info("Broker {} is no more the leader for {}", broker.leader(), fullTopicName);
-                                                topicsLeaders.remove(fullTopicName);
-                                            } else {
-                                                log.debug("forward FULL produce id {} COMPLETE  of {} parts to {}", produceHar.getHeader().correlationId(), numPartitions, broker);
-                                            }
-                                        });
-                                        resultFuture.complete(response);
-                                    }).exceptionally(badError -> {
-                                        log.error("Full Produce failed", badError);
-                                        // REQUEST_TIMED_OUT triggers a new trials on the client
-                                        Map<TopicPartition, PartitionResponse> errorsMap =
-                                                produceRequest.partitionRecordsOrFail()
-                                                        .keySet()
-                                                        .stream()
-                                                        .collect(Collectors.toMap(Function.identity(),
-                                                                p -> new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
-                                        resultFuture.complete(new ProduceResponse(errorsMap));
-                                        return null;
-                                    });
-                        } else {
-                            log.debug("Split produce of {} parts to {}", numPartitions, brokers);
-                            // we have to create multiple ProduceRequest
-                            // this is a prototype, let's create a ProduceRequest per each partition
-                            // we could group requests per broker
-
-                            Runnable complete = () -> {
-                                log.debug("complete produce {}", produceHar);
-                                topicPartitionNum.set(0);
-                                if (resultFuture.isDone()) {
-                                    // It may be triggered again in DelayedProduceAndFetch
-                                    return;
-                                }
-                                // add the topicPartition with timeout error if it's not existed in responseMap
-                                produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
-                                    if (!responseMap.containsKey(topicPartition)) {
-                                        responseMap.put(topicPartition, new PartitionResponse(Errors.REQUEST_TIMED_OUT));
-                                    }
-                                });
-                                if (log.isDebugEnabled()) {
-                                    log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
-                                }
-                                resultFuture.complete(new ProduceResponse(responseMap));
-                            };
-                            BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
-
-                                responseMap.put(topicPartition, response);
-                                // reset topicPartitionNum
-                                int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-                                log.debug("addPartitionResponse {} {} restTopicPartitionNum {}", topicPartition,
-                                        response, restTopicPartitionNum);
-                                if (restTopicPartitionNum < 0) {
-                                    return;
-                                }
-                                if (restTopicPartitionNum == 0) {
-                                    complete.run();
-                                }
-                            };
-
-                            // split the request per broker
-                            final Map<Node, ProduceRequest> requestsPerBroker = new HashMap<>();
-                            produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-                                final String fullPartitionName = KopTopic.toString(topicPartition);
-                                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
-                                Node kopBroker = topicMetadata.leader();
-
-                                ProduceRequest produceRequestPerBroker = requestsPerBroker.computeIfAbsent(kopBroker, a -> {
-                                    return ProduceRequest.Builder.forCurrentMagic((short) 1,
-                                                    produceRequest.timeout(),
-                                                    new HashMap<>())
-                                            .build();
-                                });
-                                produceRequestPerBroker.partitionRecordsOrFail().put(topicPartition, records);
-                            });
-                            requestsPerBroker.forEach((kopBroker, requestForSinglePartition) -> {
-                                int dummyCorrelationId = getDummyCorrelationId();
-
-                                RequestHeader header = new RequestHeader(
-                                        produceHar.getHeader().apiKey(),
-                                        produceHar.getHeader().apiVersion(),
-                                        produceHar.getHeader().clientId(),
-                                        dummyCorrelationId
-                                );
-
-                                ByteBuffer buffer = requestForSinglePartition.serialize(header);
-
-                                KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
-                                        header,
-                                        requestForSinglePartition,
-                                        Unpooled.wrappedBuffer(buffer),
-                                        null
-                                );
-
-                                if (log.isDebugEnabled()) {
-                                    log.debug("forward produce for {} to {}", requestForSinglePartition.partitionRecordsOrFail().keySet(), kopBroker);
-                                }
-                                grabConnectionToBroker(kopBroker.host(), kopBroker.port())
-                                        .forwardRequest(singlePartitionRequest)
-                                        .thenAccept(response -> {
-                                            ProduceResponse resp = (ProduceResponse) response;
-                                            resp.responses().forEach((topicPartition, partitionResponse) -> {
-                                                if (partitionResponse.error == Errors.NONE) {
-                                                    log.debug("result produce for {} to {} {}", topicPartition,
-                                                            kopBroker, partitionResponse);
-                                                    addPartitionResponse.accept(topicPartition, partitionResponse);
-                                                } else {
-                                                    if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                        log.info("Broker {} is no more the leader for {}", kopBroker,
-                                                                topicPartition);
-                                                        final String fullPartitionName = KopTopic.toString(topicPartition);
-                                                        topicsLeaders.remove(fullPartitionName);
-                                                    }
-                                                    addPartitionResponse.accept(topicPartition, partitionResponse);
-                                                }
-                                            });
-                                        }).exceptionally(badError -> {
-                                            log.error("bad error during split produce for {}",
-                                                    requestForSinglePartition.partitionRecordsOrFail().keySet(), badError);
-                                            requestForSinglePartition.partitionRecordsOrFail().keySet().forEach(topicPartition
-                                                    -> addPartitionResponse.accept(topicPartition,
-                                                    new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
-                                            return null;
-                                        });
-                            });
-                        }
+            Runnable complete = () -> {
+                log.debug("complete produce {}", produceHar);
+                topicPartitionNum.set(0);
+                if (resultFuture.isDone()) {
+                    // It may be triggered again in DelayedProduceAndFetch
+                    return;
+                }
+                // add the topicPartition with timeout error if it's not existed in responseMap
+                produceRequest.partitionRecordsOrFail().keySet().forEach(topicPartition -> {
+                    if (!responseMap.containsKey(topicPartition)) {
+                        responseMap.put(topicPartition, new PartitionResponse(Errors.REQUEST_TIMED_OUT));
                     }
                 });
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
+                }
+                resultFuture.complete(new ProduceResponse(responseMap));
+            };
+            BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
+
+                responseMap.put(topicPartition, response);
+                // reset topicPartitionNum
+                int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+                log.debug("addPartitionResponse {} {} restTopicPartitionNum {}", topicPartition,
+                        response, restTopicPartitionNum);
+                if (restTopicPartitionNum < 0) {
+                    return;
+                }
+                if (restTopicPartitionNum == 0) {
+                    complete.run();
+                }
+            };
+
+            // split the request per broker
+            final Map<Node, ProduceRequest> requestsPerBroker = new HashMap<>();
+            produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
+                final String fullPartitionName = KopTopic.toString(topicPartition);
+                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
+                Node kopBroker = topicMetadata.leader();
+
+                ProduceRequest produceRequestPerBroker = requestsPerBroker.computeIfAbsent(kopBroker, a -> {
+                    return ProduceRequest.Builder.forCurrentMagic((short) 1,
+                                    produceRequest.timeout(),
+                                    new HashMap<>())
+                            .build();
+                });
+                produceRequestPerBroker.partitionRecordsOrFail().put(topicPartition, records);
+            });
+            requestsPerBroker.forEach((kopBroker, requestForSinglePartition) -> {
+                int dummyCorrelationId = getDummyCorrelationId();
+
+                RequestHeader header = new RequestHeader(
+                        produceHar.getHeader().apiKey(),
+                        produceHar.getHeader().apiVersion(),
+                        produceHar.getHeader().clientId(),
+                        dummyCorrelationId
+                );
+
+                ByteBuffer buffer = requestForSinglePartition.serialize(header);
+
+                KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                        header,
+                        requestForSinglePartition,
+                        Unpooled.wrappedBuffer(buffer),
+                        null
+                );
+
+                if (log.isDebugEnabled()) {
+                    log.debug("forward produce for {} to {}", requestForSinglePartition.partitionRecordsOrFail().keySet(), kopBroker);
+                }
+                grabConnectionToBroker(kopBroker.host(), kopBroker.port())
+                        .forwardRequest(singlePartitionRequest)
+                        .thenAccept(response -> {
+                            ProduceResponse resp = (ProduceResponse) response;
+                            resp.responses().forEach((topicPartition, partitionResponse) -> {
+                                if (partitionResponse.error == Errors.NONE) {
+                                    log.debug("result produce for {} to {} {}", topicPartition,
+                                            kopBroker, partitionResponse);
+                                    addPartitionResponse.accept(topicPartition, partitionResponse);
+                                } else {
+                                    if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
+                                        log.info("Broker {} is no more the leader for {}", kopBroker,
+                                                topicPartition);
+                                        final String fullPartitionName = KopTopic.toString(topicPartition);
+                                        topicsLeaders.remove(fullPartitionName);
+                                    }
+                                    addPartitionResponse.accept(topicPartition, partitionResponse);
+                                }
+                            });
+                        }).exceptionally(badError -> {
+                            log.error("bad error during split produce for {}",
+                                    requestForSinglePartition.partitionRecordsOrFail().keySet(), badError);
+                            requestForSinglePartition.partitionRecordsOrFail().keySet().forEach(topicPartition
+                                    -> addPartitionResponse.accept(topicPartition,
+                                    new PartitionResponse(Errors.REQUEST_TIMED_OUT)));
+                            return null;
+                        });
+            });
+        }
+
+
     }
 
     int getDummyCorrelationId() {
@@ -567,6 +578,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             lookups.add(findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(p -> brokers.put(fullPartitionName, p)));
         });
+        // here we can perform the last part of the processing in a separate thread
+        // because one client won't perform many
+        // fetch requests concurrently
+        // without waiting for the results of the previous fetch
         FutureUtil.waitForAll(lookups)
                 .whenComplete((result, error) -> {
                     // TODO: report errors for specific partitions and continue for non failed lookups
@@ -1015,6 +1030,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
         Node cached = topicsLeaders.get(topic.toString());
+
         if (cached != null) {
             returnFuture.complete(newPartitionMetadata(topic, cached));
             return returnFuture;
