@@ -248,6 +248,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
     private synchronized <T> List<T> executeWriteOp(Supplier<List<Map.Entry<Op, T>>> opBuilder)
             throws SchemaStorageException {
+        log.info("opening exclusive producer to {}", topic);
         try (Producer<Op> opProducer = pulsarClient.newProducer(avroSchema)
                 .enableBatching(false)
                 .topic(topic)
@@ -281,6 +282,8 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
             return res;
         } catch (PulsarClientException err) {
             throw new SchemaStorageException(err);
+        } finally {
+            log.info("releasing exclusive producer to {}", topic);
         }
     }
 
