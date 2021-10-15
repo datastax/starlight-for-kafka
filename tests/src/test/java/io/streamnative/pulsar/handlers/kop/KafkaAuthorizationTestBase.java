@@ -375,6 +375,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("sasl.jaas.config", jaasCfg);
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, anotherToken);
         ListTopicsResult listTopicsResult = adminClient.listTopics();
         Set<String> topics = listTopicsResult.names().get();
@@ -594,6 +595,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String newTopic = "testCreateTopicSuccess";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
         CreateTopicsResult result =
                 adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
@@ -613,6 +615,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String newTopic = "testCreateTopicFailed";
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
         CreateTopicsResult result =
                 adminClient.createTopics(Collections.singleton(new NewTopic(fullNewTopicName, 1, (short) 1)));
@@ -634,6 +637,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
 
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
         DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
         try {
@@ -658,6 +662,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
 
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
         DeleteTopicsResult deleteTopicsResult = adminClient.deleteTopics(Collections.singletonList(newTopic));
         try {
@@ -681,6 +686,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, adminToken);
         ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
 
@@ -700,6 +706,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + newTopic;
 
         admin.topics().createPartitionedTopic(fullNewTopicName, 1);
+        @Cleanup
         AdminClient adminClient = createAdminClient(TENANT + "/" + NAMESPACE, userToken);
         ConfigResource configResource = new ConfigResource(ConfigResource.Type.TOPIC, fullNewTopicName);
 
