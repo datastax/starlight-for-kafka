@@ -62,6 +62,7 @@ import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.Lookup;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.NamespaceBundle;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
@@ -489,6 +490,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::close);
         kopEventManager.close();
+        if (schemaRegistryManager != null) {
+            schemaRegistryManager.close();
+        }
 
         KafkaTopicManager.LOOKUP_CACHE.clear();
         KopBrokerLookupManager.clear();
