@@ -926,9 +926,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         if (pulsarAddress == null) {
             log.error("[{}] failed get pulsar address, returned null.", topic.toString());
 
-            // getTopicBroker returns null. topic should be removed from LookupCache.
-            KafkaTopicManager.removeTopicManagerCache(topic.toString());
-
             returnFuture.complete(Optional.empty());
             return returnFuture;
         }
@@ -1048,7 +1045,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     if (throwable != null || stringOptional == null || !stringOptional.isPresent()) {
                         log.error("Not get advertise data for Kafka topic:{}. throwable",
                                 topic, throwable);
-                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
                         returnFuture.complete(null);
                         return;
                     }
@@ -1065,11 +1061,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 listeners, topic, advertisedListeners, listeners);
                     }
 
-                    // here we found topic broker: broker2, but this is in broker1,
-                    // how to clean the lookup cache?
-                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    }
                     topicsLeaders.put(topic.toString(), node);
                     returnFuture.complete(newPartitionMetadata(topic, node));
                 }).exceptionally(error -> {
