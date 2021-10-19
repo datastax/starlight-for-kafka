@@ -173,7 +173,6 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.loadbalance.LoadManager;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -187,9 +186,7 @@ import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
-import org.apache.pulsar.metadata.api.MetadataCache;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 
 /**
@@ -204,6 +201,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
+    private final KopBrokerLookupManager kopBrokerLookupManager;
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
@@ -212,7 +210,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
-    private final MetadataCache<LocalBrokerData> localBrokerDataCache;
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
@@ -296,14 +293,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public KafkaRequestHandler(PulsarService pulsarService,
                                KafkaServiceConfiguration kafkaConfig,
                                TenantContextManager tenantContextManager,
+                               KopBrokerLookupManager kopBrokerLookupManager,
                                AdminManager adminManager,
-                               MetadataCache<LocalBrokerData> localBrokerDataCache,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                StatsLogger statsLogger) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
+        this.kopBrokerLookupManager = kopBrokerLookupManager;
         this.clusterName = kafkaConfig.getClusterName();
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
@@ -318,7 +316,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 ? new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsarService))
                 : null;
         this.adminManager = adminManager;
-        this.localBrokerDataCache = localBrokerDataCache;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
         this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
@@ -610,7 +607,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
-            KafkaTopicManager.clearTopicManagerCache();
+            KopBrokerLookupManager.clear();
             // get all topics, filter by permissions.
             pulsarTopicsFuture = getAllTopicsAsync().thenApply((allTopicMap) -> {
                 final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
@@ -2136,7 +2133,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         InitProducerIdRequest request = (InitProducerIdRequest) kafkaHeaderAndRequest.getRequest();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         transactionCoordinator.handleInitProducerId(
-                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), this, response);
+                request.transactionalId(), request.transactionTimeoutMs(), Optional.empty(), response);
     }
 
     @Override
@@ -2212,51 +2209,76 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                          CompletableFuture<AbstractResponse> response) {
         TxnOffsetCommitRequest request = (TxnOffsetCommitRequest) kafkaHeaderAndRequest.getRequest();
 
+        if (request.offsets().isEmpty()) {
+            response.complete(new TxnOffsetCommitResponse(0, Maps.newHashMap()));
+            return;
+        }
         // TODO not process nonExistingTopic at this time.
-        Map<TopicPartition, Errors> nonExistingTopic = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> nonExistingTopicErrors = nonExistingTopicErrors();
+        Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
 
         // convert raw topic name to KoP full name
         // we need to ensure that topic name in __consumer_offsets is globally unique
-        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = new HashMap<>();
-        Map<TopicPartition, TopicPartition> replacingIndex = new HashMap<>();
-        request.offsets().entrySet().removeIf(entry -> {
-            TopicPartition tp = entry.getKey();
-            try {
-                TopicPartition newTopicPartition = new TopicPartition(
-                        new KopTopic(tp.topic()).getFullName(), tp.partition());
+        Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> convertedOffsetData = Maps.newConcurrentMap();
+        Map<TopicPartition, TopicPartition> replacingIndex = Maps.newHashMap();
 
-                convertedOffsetData.put(newTopicPartition, entry.getValue());
-                replacingIndex.put(newTopicPartition, tp);
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.offsets().size());
+
+        Consumer<Runnable> completeOne = (action) -> {
+            action.run();
+            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+                if (log.isTraceEnabled()) {
+                    StringBuffer traceInfo = new StringBuffer();
+                    replacingIndex.forEach((inner, outer) ->
+                            traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
+                    log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
+                }
+
+                getGroupCoordinator().handleTxnCommitOffsets(
+                        request.consumerGroupId(),
+                        request.producerId(),
+                        request.producerEpoch(),
+                        convertTxnOffsets(convertedOffsetData)).whenComplete((resultMap, throwable) -> {
+
+                    // recover to original topic name
+                    replaceTopicPartition(resultMap, replacingIndex);
+
+                    resultMap.putAll(nonExistingTopicErrors);
+                    resultMap.putAll(unauthorizedTopicErrors);
+                    response.complete(new TxnOffsetCommitResponse(0, resultMap));
+                });
+            }
+        };
+        request.offsets().forEach((tp, commitOffset) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(tp.topic());
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
-                nonExistingTopic.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                return;
             }
-            return true;
-        });
+            String fullTopicName = kopTopic.getFullName();
 
-        if (log.isTraceEnabled()) {
-            StringBuffer traceInfo = new StringBuffer();
-            replacingIndex.forEach((inner, outer) ->
-                    traceInfo.append(String.format("\tinnerName:%s, outerName:%s%n", inner, outer)));
-            log.trace("TXN_OFFSET_COMMIT TopicPartition relations: \n{}", traceInfo.toString());
-        }
-
-        // update the request data
-        request.offsets().putAll(convertedOffsetData);
-
-        getGroupCoordinator().handleTxnCommitOffsets(
-                request.consumerGroupId(),
-                request.producerId(),
-                request.producerEpoch(),
-                convertTxnOffsets(request.offsets())).whenComplete((resultMap, throwable) -> {
-
-            // recover to original topic name
-            replaceTopicPartition(resultMap, replacingIndex);
-
-            if (!nonExistingTopic.isEmpty()) {
-                resultMap.putAll(nonExistingTopic);
-            }
-            response.complete(new TxnOffsetCommitResponse(0, resultMap));
+            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                    .whenComplete((isAuthorized, ex) -> {
+                        if (ex != null) {
+                            log.error("TxnOffsetCommit authorize failed, topic - {}. {}",
+                                    fullTopicName, ex.getMessage());
+                            completeOne.accept(
+                                    () -> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        if (!isAuthorized) {
+                            completeOne.accept(()-> unauthorizedTopicErrors.put(tp, Errors.TOPIC_AUTHORIZATION_FAILED));
+                            return;
+                        }
+                        completeOne.accept(()->{
+                            TopicPartition newTopicPartition = new TopicPartition(fullTopicName, tp.partition());
+                            convertedOffsetData.put(newTopicPartition, commitOffset);
+                            replacingIndex.put(newTopicPartition, tp);
+                        });
+                    });
         });
     }
 
@@ -2288,7 +2310,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 request.producerId(),
                 request.producerEpoch(),
                 request.command(),
-                this,
                 response);
     }
 
@@ -2571,165 +2592,15 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ctx.close();
     }
 
-    private CompletableFuture<Optional<String>>
-    getProtocolDataToAdvertise(InetSocketAddress pulsarAddress,
-                               TopicName topic) {
-        CompletableFuture<Optional<String>> returnFuture = new CompletableFuture<>();
-
-        if (pulsarAddress == null) {
-            log.error("[{}] failed get pulsar address, returned null.", topic.toString());
-
-            // getTopicBroker returns null. topic should be removed from LookupCache.
-            KafkaTopicManager.removeTopicManagerCache(topic.toString());
-
-            returnFuture.complete(Optional.empty());
-            return returnFuture;
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Found broker for topic {} puslarAddress: {}",
-                topic, pulsarAddress);
-        }
-
-        // get kop address from cache to prevent query zk each time.
-        final CompletableFuture<Optional<String>> future = KafkaTopicManager.KOP_ADDRESS_CACHE.get(topic.toString());
-        if (future != null) {
-            return future;
-        }
-
-        if (advertisedEndPoint.isMultiListener()) {
-            // if kafkaProtocolMap is set, the lookup result is the advertised address
-            String kafkaAdvertisedAddress = String.format("%s://%s:%s", advertisedEndPoint.getSecurityProtocol().name,
-                    pulsarAddress.getHostName(), pulsarAddress.getPort());
-            KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
-            returnFuture.complete(Optional.ofNullable(kafkaAdvertisedAddress));
-            if (log.isDebugEnabled()) {
-                log.debug("{} get kafka Advertised Address through kafkaListenerName: {}",
-                        topic, pulsarAddress);
-            }
-            return returnFuture;
-        }
-
-        // advertised data is write in  /loadbalance/brokers/advertisedAddress:webServicePort
-        // here we get the broker url, need to find related webServiceUrl.
-        pulsarService.getPulsarResources()
-            .getDynamicConfigResources()
-            .getChildrenAsync(LoadManager.LOADBALANCE_BROKERS_ROOT)
-            .whenComplete((set, throwable) -> {
-                if (throwable != null) {
-                    log.error("Error in getChildrenAsync(zk://loadbalance) for {}", pulsarAddress, throwable);
-                    returnFuture.complete(Optional.empty());
-                    return;
-                }
-
-                String hostAndPort = pulsarAddress.getHostName() + ":" + pulsarAddress.getPort();
-                List<String> matchBrokers = Lists.newArrayList();
-                // match host part of url
-                for (String activeBroker : set) {
-                    if (activeBroker.startsWith(pulsarAddress.getHostName() + ":")) {
-                        matchBrokers.add(activeBroker);
-                    }
-                }
-
-                if (matchBrokers.isEmpty()) {
-                    log.error("No node for broker {} under zk://loadbalance", pulsarAddress);
-                    returnFuture.complete(Optional.empty());
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    return;
-                }
-
-                // Get a list of ServiceLookupData for each matchBroker.
-                List<CompletableFuture<Optional<LocalBrokerData>>> list = matchBrokers.stream()
-                    .map(matchBroker -> localBrokerDataCache.get(
-                            String.format("%s/%s", LoadManager.LOADBALANCE_BROKERS_ROOT, matchBroker)))
-                    .collect(Collectors.toList());
-
-                FutureUtil.waitForAll(list)
-                    .whenComplete((ignore, th) -> {
-                            if (th != null) {
-                                log.error("Error in getDataAsync() for {}", pulsarAddress, th);
-                                returnFuture.complete(Optional.empty());
-                                KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                                return;
-                            }
-
-                            try {
-                                for (CompletableFuture<Optional<LocalBrokerData>> lookupData : list) {
-                                    ServiceLookupData data = lookupData.get().get();
-                                    if (log.isDebugEnabled()) {
-                                        log.debug("Handle getProtocolDataToAdvertise for {}, pulsarUrl: {}, "
-                                                + "pulsarUrlTls: {}, webUrl: {}, webUrlTls: {} kafka: {}",
-                                            topic, data.getPulsarServiceUrl(), data.getPulsarServiceUrlTls(),
-                                            data.getWebServiceUrl(), data.getWebServiceUrlTls(),
-                                            data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                    }
-
-                                    if (lookupDataContainsAddress(data, hostAndPort)) {
-                                        KafkaTopicManager.KOP_ADDRESS_CACHE.put(topic.toString(), returnFuture);
-                                        returnFuture.complete(data.getProtocol(KafkaProtocolHandler.PROTOCOL_NAME));
-                                        return;
-                                    }
-                                }
-                            } catch (Exception e) {
-                                log.error("Error in {} lookupFuture get: ", pulsarAddress, e);
-                                returnFuture.complete(Optional.empty());
-                                KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                                return;
-                            }
-
-                            // no matching lookup data in all matchBrokers.
-                            log.error("Not able to search {} in all child of zk://loadbalance", pulsarAddress);
-                            returnFuture.complete(Optional.empty());
-                        }
-                    );
-            });
-        return returnFuture;
-    }
-
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic) {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
-
-        topicManager.getTopicBroker(topic.toString(),
-                advertisedEndPoint.isMultiListener() ? advertisedEndPoint.getListenerName() : null)
-                .thenApply(address -> getProtocolDataToAdvertise(address, topic))
-                .thenAccept(kopAddressFuture -> kopAddressFuture.thenAccept(listenersOptional -> {
-                    if (!listenersOptional.isPresent()) {
-                        log.error("Not get advertise data for Kafka topic:{}.", topic);
-                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                        returnFuture.complete(null);
-                        return;
-                    }
-
-                    // It's the `kafkaAdvertisedListeners` config that's written to ZK
-                    final String listeners = listenersOptional.get();
-                    final EndPoint endPoint =
-                            (tlsEnabled ? EndPoint.getSslEndPoint(listeners) :
-                                    EndPoint.getPlainTextEndPoint(listeners));
-                    final Node node = newNode(endPoint.getInetAddress());
-
-                    if (log.isDebugEnabled()) {
-                        log.debug("Found broker localListeners: {} for topicName: {}, "
-                                        + "localListeners: {}, found Listeners: {}",
-                                listeners, topic, advertisedListeners, listeners);
-                    }
-
-                    // here we found topic broker: broker2, but this is in broker1,
-                    // how to clean the lookup cache?
-                    if (!advertisedListeners.contains(endPoint.getOriginalListener())) {
-                        KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    }
-                    returnFuture.complete(newPartitionMetadata(topic, node));
-                })).exceptionally(throwable -> {
-                    log.error("Not get advertise data for Kafka topic:{}. throwable: [{}]",
-                            topic, throwable.getMessage());
-                    KafkaTopicManager.removeTopicManagerCache(topic.toString());
-                    returnFuture.complete(null);
-                    return null;
-                });
-        return returnFuture;
+        return kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
+                .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
+                        .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
+                        .orElse(null)
+                );
     }
 
     public static Node newNode(InetSocketAddress address) {

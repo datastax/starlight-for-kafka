@@ -14,7 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicname;
+import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getPartitionedTopicNameWithoutPartitions;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
@@ -103,7 +103,6 @@ import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import org.apache.pulsar.policies.data.loadbalancer.LocalBrokerData;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -155,8 +154,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         adminManager = new AdminManager(pulsar.getAdminClient(), conf);
         handler = new KafkaRequestHandler(
-            pulsar,
-            (KafkaServiceConfiguration) conf,
+                pulsar,
+                conf,
                 new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -168,11 +167,11 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 },
-            adminManager,
-            pulsar.getLocalMetadataStore().getMetadataCache(LocalBrokerData.class),
-            false,
-            getPlainEndPoint(),
-            NullStatsLogger.INSTANCE);
+                ((KafkaProtocolHandler) handler1).getKopBrokerLookupManager(),
+                adminManager,
+                false,
+                getPlainEndPoint(),
+                NullStatsLogger.INSTANCE);
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
@@ -314,8 +313,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         TopicName topicNamePartition =
             TopicName.get(topicString + PARTITIONED_TOPIC_SUFFIX + partitionIndex);
 
-        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicName));
-        assertEquals(localName, getKafkaTopicNameFromPulsarTopicname(topicNamePartition));
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicName(topicName));
+        assertEquals(localName, getKafkaTopicNameFromPulsarTopicName(topicNamePartition));
     }
 
     private void createTopicsByKafkaAdmin(AdminClient admin, Map<String, Integer> topicToNumPartitions)
