@@ -22,6 +22,7 @@ import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.avro.Schema;
@@ -95,37 +96,45 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         return new KafkaConsumer<>(props);
     }
 
-    @Test(timeOut = 40000)
-    public void testAvroProduceAndConsume() throws Exception {
-        String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
-        IndexedRecord avroRecord = createAvroRecord();
-        Object[] objects = new Object[]{ avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes() };
-        @Cleanup
-        KafkaProducer<Integer, Object> producer = createAvroProducer();
-        for (int i = 0; i < objects.length; i++) {
-            final Object object = objects[i];
-            producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
-                if (e != null) {
-                    log.error("Failed to send {}: {}", object, e.getMessage());
-                    fail("Failed to send " + object + ": " + e.getMessage());
-                }
-                log.info("Success send {} to {}-partition-{}@{}",
-                        object, metadata.topic(), metadata.partition(), metadata.offset());
-            }).get();
-        }
-        producer.close();
-
-        @Cleanup
-        KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
-        consumer.subscribe(Collections.singleton(topic));
-        int i = 0;
-        while (i < objects.length) {
-            for (ConsumerRecord<Integer, Object> record : consumer.poll(Duration.ofSeconds(3))) {
-                assertEquals(record.key().intValue(), i);
-                assertEquals(record.value(), objects[i]);
-                i++;
+    @Test(timeOut = 120000)
+    public void testAvroProduceAndConsume() throws Throwable {
+        try {
+            String topic = "SchemaRegistryTest-testAvroProduceAndConsume";
+            IndexedRecord avroRecord = createAvroRecord();
+            Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
+            @Cleanup
+            KafkaProducer<Integer, Object> producer = createAvroProducer();
+            for (int i = 0; i < objects.length; i++) {
+                final Object object = objects[i];
+                log.info("Sending {}", object);
+                producer.send(new ProducerRecord<>(topic, i, object), (metadata, e) -> {
+                    if (e != null) {
+                        log.error("Failed to send {}: {}", object, e.getMessage());
+                        fail("Failed to send " + object + ": " + e.getMessage());
+                    } else {
+                        log.info("Success send {} to {}-partition-{}@{}",
+                                object, metadata.topic(), metadata.partition(), metadata.offset());
+                    }
+                }).get(10, TimeUnit.SECONDS);
+                log.info("Success send final {}");
             }
+            producer.close();
+            log.info("finished sending");
+
+            @Cleanup
+            KafkaConsumer<Integer, Object> consumer = createAvroConsumer();
+            consumer.subscribe(Collections.singleton(topic));
+            int i = 0;
+            while (i < objects.length) {
+                for (ConsumerRecord<Integer, Object> record : consumer.poll(Duration.ofSeconds(3))) {
+                    assertEquals(record.key().intValue(), i);
+                    assertEquals(record.value(), objects[i]);
+                    i++;
+                }
+            }
+            consumer.close();
+        } catch (Throwable t) {
+            throw t;
         }
-        consumer.close();
     }
 }
