@@ -29,6 +29,8 @@ import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.util.CharsetUtil;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import lombok.AllArgsConstructor;
 
 public abstract class HttpRequestProcessor implements AutoCloseable {
@@ -36,9 +38,11 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
     protected static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(SerializationFeature.INDENT_OUTPUT, true);
 
-    protected abstract FullHttpResponse processRequest(FullHttpRequest request);
+    protected abstract boolean acceptRequest(FullHttpRequest request);
 
-    protected FullHttpResponse buildStringResponse(String body, String contentType) {
+    protected abstract CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request);
+
+    public static FullHttpResponse buildStringResponse(String body, String contentType) {
         FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  OK,
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
@@ -46,7 +50,7 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
         return httpResponse;
     }
 
-    protected FullHttpResponse buildErrorResponse(HttpResponseStatus error, String body, String contentType) {
+    public static FullHttpResponse buildErrorResponse(HttpResponseStatus error, String body, String contentType) {
         FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
@@ -71,7 +75,10 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
         }
     }
 
-    protected FullHttpResponse buildJsonErrorResponse(Exception err) {
+    public static FullHttpResponse buildJsonErrorResponse(Throwable err) {
+        while (err instanceof CompletionException) {
+            err = err.getCause();
+        }
         int httpStatusCode = err instanceof SchemaStorageException
                 ? ((SchemaStorageException) err).getHttpStatusCode()
                 : INTERNAL_SERVER_ERROR.code();
