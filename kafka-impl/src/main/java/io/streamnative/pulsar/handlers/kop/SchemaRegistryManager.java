@@ -130,6 +130,16 @@ public class SchemaRegistryManager {
                 KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username);
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
                 try {
+                    Boolean tenantExists =
+                            authorizer.canAccessTenantAsync(kafkaPrincipal, Resource.of(ResourceType.TENANT, tenant))
+                                    .get();
+                    if (tenantExists == null || !tenantExists) {
+                        log.debug("SchemaRegistry username {} role {} tenant {} does not exist",
+                                username, role, tenant, topicName);
+                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName+" "
+                                + "tenant "+tenant+" does not exist (wrong username?)",
+                                HttpResponseStatus.FORBIDDEN.code());
+                    }
                     Boolean hasPermission = authorizer
                             .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
                             .get();
