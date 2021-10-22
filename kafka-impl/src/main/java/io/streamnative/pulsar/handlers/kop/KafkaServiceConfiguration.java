@@ -231,6 +231,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     )
     private int failedAuthenticationDelayMs = 300;
 
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "The timeout for broker lookups (in milliseconds)"
+    )
+    private int brokerLookupTimeoutMs = 30_000;
+
     // Kafka SSL configs
     @FieldContext(
         category = CATEGORY_KOP_SSL,
@@ -350,7 +356,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
-            doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka]"
+            doc = "The format of an entry. Default: pulsar. Optional: [pulsar, kafka, mixed_kafka]"
     )
     private String entryFormat = "pulsar";
 
@@ -430,6 +436,14 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Enable TLS on the KOP Proxy Schema Registry."
     )
     private boolean kopSchemaRegistryProxyEnableTls = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "KOP server compression type. Only used for entryFormat=mixed_kafka. If it's not set to none, "
+                    + "the client messages will be used compression type which configured in here.\n"
+                    + "The supported compression types are: [\"none\", \"gzip\", \"snappy\", \"lz4\"]"
+    )
+    private String kafkaCompressionType = "none";
 
     private String checkAdvertisedListeners(String advertisedListeners) {
         StringBuilder listenersReBuilder = new StringBuilder();
