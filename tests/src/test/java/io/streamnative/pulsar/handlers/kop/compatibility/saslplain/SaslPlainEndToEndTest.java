@@ -65,9 +65,10 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
 @Slf4j
-public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBase{
+public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
     protected static final String SIMPLE_USER = "muggle_user";
     protected static final String TENANT = "public";
+
     private static final String ANOTHER_USER = "death_eater_user";
     private static final String PROXY_USER = "proxy_user";
     protected static final String ADMIN_USER = "admin_user";
@@ -92,10 +93,6 @@ public abstract class SaslPlainEndToEndTestBase extends KopProtocolHandlerTestBa
                     (k, v) -> {
                         throw new IllegalStateException("Duplicated key: " + k);
                     }, TreeMap::new));
-
-    public SaslPlainEndToEndTestBase(final String entryFormat) {
-        super(entryFormat);
-    }
 
     @BeforeClass
     @Override

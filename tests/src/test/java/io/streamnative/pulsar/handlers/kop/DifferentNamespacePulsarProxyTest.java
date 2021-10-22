@@ -13,18 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.streamnative.pulsar.handlers.kop.DifferentNamespaceTestBase;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
 /**
  * test topics in different namespaces with `entryFormat=pulsar`.
  */
-public class DifferentNamespacePulsarProxyTest extends DifferentNamespaceTestBase {
-
-    public DifferentNamespacePulsarProxyTest() {
-        super("pulsar");
-    }
+public class DifferentNamespacePulsarProxyTest extends DifferentNamespaceTest {
 
     @BeforeClass
     @Override

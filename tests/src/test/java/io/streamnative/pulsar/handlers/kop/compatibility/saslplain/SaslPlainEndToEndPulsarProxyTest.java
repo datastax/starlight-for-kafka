@@ -22,11 +22,7 @@ import org.testng.annotations.Test;
 
 import java.util.Properties;
 
-public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTestBase {
-
-    public SaslPlainEndToEndPulsarProxyTest() {
-        super("pulsar");
-    }
+public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTest {
 
     @BeforeClass
     @Override

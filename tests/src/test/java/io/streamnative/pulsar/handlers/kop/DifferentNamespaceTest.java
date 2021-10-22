@@ -53,7 +53,7 @@ import org.testng.annotations.Test;
  * test topics in different namespaces.
  */
 @Slf4j
-public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestBase {
+public class DifferentNamespaceTest extends KopProtocolHandlerTestBase {
 
     protected static final String DEFAULT_TENANT = "default-tenant";
     protected static final String DEFAULT_NAMESPACE = "default-ns";
@@ -61,10 +61,6 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
     private static final String ANOTHER_NAMESPACE = "my-ns";
     private static final String NOT_ALLOWED_TENANT = "non-kop-tenant";
     private static final String NOT_ALLOWED_NAMESPACE = "non-kop-ns";
-
-    public DifferentNamespaceTestBase(final String entryFormat) {
-        super(entryFormat);
-    }
 
     @DataProvider(name = "topics")
     public static Object[][] topics() {
@@ -189,6 +185,7 @@ public abstract class DifferentNamespaceTestBase extends KopProtocolHandlerTestB
         assertTrue(topics.contains(topic)); // no namespace prefix for topics in default namespace
         kafkaAdmin.close();
     }
+
 
     @Test(timeOut = 20000)
     void testListTopics() throws Exception {
