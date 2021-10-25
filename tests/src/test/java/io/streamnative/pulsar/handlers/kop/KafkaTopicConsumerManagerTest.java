@@ -429,13 +429,15 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
                 KafkaTopicConsumerManagerCache.getInstance().getTopicConsumerManagers(partitionName);
         assertEquals(tcmList.size(), numConsumers);
 
+        // All TCMs share the same topic, so each internal PersistentTopic of TCM has `numConsumers` cursors.
         for (int i = 0; i < numConsumers; i++) {
-            assertEquals(tcmList.get(i).getNumCreatedCursors(), 1);
+            assertEquals(tcmList.get(i).getNumCreatedCursors(), numConsumers);
         }
 
         // Since consumer close will make connection disconnected and all TCMs will be cleared, we should call it after
         // the test is verified.
         consumers.forEach(KafkaConsumer::close);
+        Awaitility.await().atMost(Duration.ofSeconds(3)).until(() -> tcmList.get(0).getNumCreatedCursors() == 0);
         for (int i = 0; i < numConsumers; i++) {
             assertEquals(tcmList.get(i).getNumCreatedCursors(), 0);
         }
