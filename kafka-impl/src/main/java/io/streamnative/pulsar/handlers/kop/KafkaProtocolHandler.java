@@ -184,11 +184,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         final NamespaceName kafkaTopicNs;
         final GroupCoordinator groupCoordinator;
         final String brokerUrl;
+        final String tenant;
 
         public OffsetAndTopicListener(BrokerService service,
                                       String tenant,
                                       KafkaServiceConfiguration kafkaConfig,
                                       GroupCoordinator groupCoordinator) {
+            this.tenant = tenant;
             this.service = service;
             this.kafkaMetaNs = NamespaceName
                 .get(tenant, kafkaConfig.getKafkaMetadataNamespace());
@@ -678,6 +680,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             .build();
 
         GroupCoordinator groupCoordinator = GroupCoordinator.of(
+            tenant,
             client,
             groupConfig,
             offsetConfig,
