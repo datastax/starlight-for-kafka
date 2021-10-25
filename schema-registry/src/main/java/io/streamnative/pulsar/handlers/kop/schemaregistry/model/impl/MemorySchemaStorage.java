@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import java.util.ArrayList;
@@ -25,8 +26,10 @@ import java.util.stream.Collectors;
 
 public class MemorySchemaStorage implements SchemaStorage {
     private final ConcurrentHashMap<Integer, Schema> schemas = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompatibilityChecker.Mode> compatibility = new ConcurrentHashMap<>();
     private final AtomicInteger schemaIdGenerator = new AtomicInteger();
     private final String tenant;
+
 
     public MemorySchemaStorage(String tenant) {
         this.tenant = tenant;
@@ -152,5 +155,16 @@ public class MemorySchemaStorage implements SchemaStorage {
 
     public void clear() {
         schemas.clear();
+    }
+
+    @Override
+    public CompletableFuture<CompatibilityChecker.Mode> getCompatibilityMode(String subject) {
+        return CompletableFuture.completedFuture(compatibility.getOrDefault(subject, CompatibilityChecker.Mode.NONE));
+    }
+
+    @Override
+    public CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode) {
+        compatibility.put(subject, mode);
+        return CompletableFuture.completedFuture(null);
     }
 }

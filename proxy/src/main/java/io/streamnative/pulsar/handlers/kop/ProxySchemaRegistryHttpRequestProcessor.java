@@ -60,7 +60,9 @@ public class ProxySchemaRegistryHttpRequestProcessor extends HttpRequestProcesso
     protected boolean acceptRequest(FullHttpRequest request) {
         String uri = request.uri();
         return uri.startsWith("/schemas")
-                || uri.startsWith("/subjects");
+                || uri.startsWith("/subjects")
+                || uri.startsWith("/config")
+                || uri.startsWith("/compatibility");
     }
 
     protected CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {

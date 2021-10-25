@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import java.io.Closeable;
@@ -22,9 +23,11 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -33,13 +36,16 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.PulsarClient;
-import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
+import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.SubscriptionMode;
+import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
@@ -50,6 +56,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     private final org.apache.pulsar.client.api.Schema<Op> avroSchema =
                             org.apache.pulsar.client.api.Schema.AVRO(Op.class);
 
+    private final ConcurrentHashMap<String, CompatibilityChecker.Mode> compatibility = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, SchemaEntry> schemas = new ConcurrentHashMap<>();
     private final PulsarClient pulsarClient;
     private final String topic;
@@ -85,7 +92,11 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         String schemaDefinition;
         SchemaStatus status;
         String type;
+        String compatibilityMode;
 
+        boolean isCompatibilityModeChange() {
+            return compatibilityMode != null;
+        }
 
         SchemaEntry toSchemaEntry() {
             return SchemaEntry
@@ -117,6 +128,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
             reader = pulsarClient.newReader(avroSchema)
                         .topic(topic)
                         .startMessageId(MessageId.earliest)
+                        .startMessageIdInclusive()
                         .subscriptionRolePrefix("kafka-schema-registry")
                         .createAsync();
         }
@@ -132,12 +144,9 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         return CompletableFuture.completedFuture(null);
                     } else {
                         CompletableFuture<Message<Op>> opMessage = reader.readNextAsync();
-                        // here we use thenApplyAsync in order to detach from the current thread
-                        return opMessage.thenApplyAsync(msg -> {
+                        return opMessage.thenCompose(msg -> {
                             Op value = msg.getValue();
-                            log.info("read {} from pulsar", value);
-                            SchemaEntry schemaEntry = value.toSchemaEntry();
-                            schemas.put(schemaEntry.id, schemaEntry);
+                            applyOpToLocalMemory(value);
                             return readNextMessageIfAvailable(reader);
                         });
                     }
@@ -285,18 +294,20 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                             Op op = action.getKey();
                             // if "op" is null, then we do not have to write to Pulsar
                             if (op != null) {
+                                log.info("writing {} to Pulsar", op);
                                 if (!op.tenant.equals(getTenant())) {
                                     sendHandles.add(FutureUtil.failedFuture(new SchemaStorageException("Invalid tenant " + op.tenant + ", expected " + tenant)));
                                 } else {
-                                    sendHandles.add(opProducer.sendAsync(op).thenRun(() -> {
+                                    sendHandles.add(opProducer.sendAsync(op).thenAccept((msgId) -> {
+                                        log.info("written {} as {} to Pulsar", op, msgId);
                                         // write to local memory
-                                        SchemaEntry schemaEntry = op.toSchemaEntry();
-                                        schemas.put(schemaEntry.id, schemaEntry);
+                                        applyOpToLocalMemory(op);
                                     }));
                                 }
                             }
                             res.add(action.getValue());
                         }
+
                         return CompletableFuture
                                 .allOf(sendHandles.toArray(new CompletableFuture[0]))
                                 .thenApply(____ -> res);
@@ -310,6 +321,19 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         });
 
 
+    }
+
+    private void applyOpToLocalMemory(Op op) {
+        if (op.isCompatibilityModeChange()) {
+            try {
+                compatibility.put(op.subject, CompatibilityChecker.Mode.valueOf(op.compatibilityMode));
+            } catch (IllegalArgumentException err) {
+                log.error("Unrecognized mode, skip op", op);
+            }
+        } else {
+            SchemaEntry schemaEntry = op.toSchemaEntry();
+            schemas.put(schemaEntry.id, schemaEntry);
+        }
     }
 
     @Override
@@ -434,5 +458,28 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
     public void close() {
         // we are not owning the PulsarClient
+    }
+
+    @Override
+    public CompletableFuture<CompatibilityChecker.Mode> getCompatibilityMode(String subject) {
+        return ensureLatestData()
+                .thenApply(___ ->  {
+                    return compatibility.getOrDefault(subject, CompatibilityChecker.Mode.NONE);
+                });
+    }
+
+    @Override
+    public CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode) {
+        return executeWriteOp(() -> {
+            return Arrays.asList(
+                new AbstractMap.SimpleImmutableEntry<>(
+                        Op.builder()
+                                .subject(subject)
+                                .tenant(tenant)
+                                .compatibilityMode(mode.name())
+                                .build(),
+                        null
+                ));
+        }).thenApply(___ -> null);
     }
 }

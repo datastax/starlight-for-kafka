@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SimpleAPIServer;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.MemorySchemaStorageAccessor;
 import java.io.FileNotFoundException;
@@ -72,9 +73,14 @@ public class SchemaResourceTest {
 
         SchemaResource schemaResource = new SchemaResource(schemaStorage, schemaRegistryRequestAuthenticator);
         SubjectResource subjectResource = new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator);
+        ConfigResource configResource = new ConfigResource(schemaStorage, schemaRegistryRequestAuthenticator);
+        CompatibilityResource compatibilityResource = new CompatibilityResource(schemaStorage,
+                schemaRegistryRequestAuthenticator);
         SchemaRegistryHandler schemaRegistryHandler = new SchemaRegistryHandler();
         schemaResource.register(schemaRegistryHandler);
         subjectResource.register(schemaRegistryHandler);
+        configResource.register(schemaRegistryHandler);
+        compatibilityResource.register(schemaRegistryHandler);
         server = new SimpleAPIServer(schemaRegistryHandler);
         server.startServer();
     }
@@ -269,6 +275,28 @@ public class SchemaResourceTest {
     @Test(expectedExceptions = FileNotFoundException.class)
     public void getDeleteSubjectsNotFound() throws Exception {
         server.executeDelete("/subjects/subject1/versions");
+    }
+
+    @Test
+    public void getSetCompatility() throws Exception {
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"NONE\"\n"
+                + "}", server.executeGet("/config/sub1"));
+        for (CompatibilityChecker.Mode mode : CompatibilityChecker.Mode.values()) {
+            assertEquals("{\n"
+                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "}", server.executeMethod("/config/sub1",
+                    "{\n"
+                            + "  \"compatibility\" : \"" + mode + "\"\n"
+                            + "}", "PUT", "application/json",
+                    null
+            ));
+
+            assertEquals("{\n"
+                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "}", server.executeGet("/config/sub1"));
+        }
+
     }
 
     @Test

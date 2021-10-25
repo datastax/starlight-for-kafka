@@ -17,6 +17,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNull;
 
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
@@ -62,6 +63,14 @@ public class SchemaStorageTestsBase {
 
         Schema lookupNonExistingSchema = storage.findSchemaById(-10).get();
         assertNull(lookupNonExistingSchema);
+
+
+        assertEquals(CompatibilityChecker.Mode.NONE, storage.getCompatibilityMode(subject1).get());
+
+        for (CompatibilityChecker.Mode mode : CompatibilityChecker.Mode.values()) {
+            storage.setCompatibilityMode(subject1, mode).get();
+            assertEquals(mode, storage.getCompatibilityMode(subject1).get());
+        }
 
     }
 

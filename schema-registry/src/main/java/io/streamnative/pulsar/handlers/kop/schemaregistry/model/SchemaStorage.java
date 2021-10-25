@@ -77,4 +77,18 @@ public interface SchemaStorage {
      */
     CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType, String schemaDefinition,
                                boolean forceCreate);
+
+    /**
+     * Get current compatibility mode for the given subject.
+     * @param subject
+     * @return the mode
+     */
+    CompletableFuture<CompatibilityChecker.Mode> getCompatibilityMode(String subject);
+
+    /**
+     * Set current compatibility mode for the given subject.
+     * @param subject
+     * @param mode the new mode
+     */
+    CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode);
 }

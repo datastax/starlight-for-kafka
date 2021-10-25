@@ -22,6 +22,8 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestA
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.PulsarSchemaStorageAccessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.CompatibilityResource;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.ConfigResource;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SchemaResource;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.resources.SubjectResource;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
@@ -221,6 +223,9 @@ public class SchemaRegistryManager {
                 kafkaConfig.getKafkaMetadataNamespace(), kafkaConfig.getKopSchemaRegistryTopicName());
         new SchemaResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
+        new ConfigResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
+        new CompatibilityResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
+
         return Optional.of(new SchemaRegistryChannelInitializer(handler));
     }
 
