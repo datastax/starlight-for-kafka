@@ -21,7 +21,6 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;

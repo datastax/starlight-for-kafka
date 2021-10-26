@@ -48,11 +48,15 @@ public class CompatibilityResource extends AbstractResource {
         private String schema;
     }
 
-    @Data
     @AllArgsConstructor
     public static final class CheckCompatibilityLatestSchemaResponse {
-        @JsonProperty("is_compatible")
+
         private final boolean isCompatible;
+
+        @JsonProperty("is_compatible")
+        public boolean getIsCompatible() {
+            return isCompatible;
+        }
     }
 
     // GET /compatibility/subjects/${subject}/versions/latest

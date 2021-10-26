@@ -63,10 +63,10 @@ public class CompatibilityChecker {
 
     private static CompletableFuture<Boolean> verifyCompatibility(Schema schema, String subject,
                                                                           SchemaStorage schemaStorage, Mode mode) {
+        log.info("verify {} {} mode ", subject, mode);
         if (mode == Mode.NONE) {
             return CompletableFuture.completedFuture(true);
         }
-        log.info("verify {} {} mode ", subject, mode);
         CompletableFuture<List<Integer>> versions = schemaStorage.getAllVersionsForSubject(subject);
         return versions.thenCompose(vv -> {
             return verifyCompatibility(schema, schemaStorage, mode, vv);

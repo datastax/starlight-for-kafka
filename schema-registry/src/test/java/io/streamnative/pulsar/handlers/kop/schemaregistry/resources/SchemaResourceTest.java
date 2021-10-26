@@ -279,6 +279,7 @@ public class SchemaResourceTest {
 
     @Test
     public void getSetCompatility() throws Exception {
+        // default is NONE in KOP
         assertEquals("{\n"
                 + "  \"compatibility\" : \"NONE\"\n"
                 + "}", server.executeGet("/config/sub1"));
@@ -297,6 +298,61 @@ public class SchemaResourceTest {
                     + "}", server.executeGet("/config/sub1"));
         }
 
+    }
+
+    @Test
+    public void getCheckCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/Kafka-value",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        assertEquals("{\n"
+                + "  \"id\" : 1\n"
+                + "}", server.executePost(
+                "/subjects/Kafka-value/versions",
+                "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // verify the same schema is compatible
+        assertEquals("{\n"
+                + "  \"is_compatible\" : true\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // verify a non-compatible schema
+        assertEquals("{\n"
+                + "  \"is_compatible\" : false\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"long\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // set NONE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
+                + "}", server.executeMethod("/config/Kafka-value",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        // verify a non-compatible schema, now the result is 'true'
+        assertEquals("{\n"
+                + "  \"is_compatible\" : true\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"long\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
     }
 
     @Test
