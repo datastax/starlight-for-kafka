@@ -23,7 +23,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.common.util.FutureUtil;
 
+@Slf4j
 public class MemorySchemaStorage implements SchemaStorage {
     private final ConcurrentHashMap<Integer, Schema> schemas = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompatibilityChecker.Mode> compatibility = new ConcurrentHashMap<>();
@@ -124,6 +127,28 @@ public class MemorySchemaStorage implements SchemaStorage {
                     .orElse(null);
             if (found != null) {
                 return CompletableFuture.completedFuture(found);
+            }
+        }
+
+        final CompatibilityChecker.Mode compatibilityMode = compatibility.getOrDefault(subject,
+                CompatibilityChecker.Mode.NONE);
+        if (compatibilityMode != CompatibilityChecker.Mode.NONE) {
+
+            // we can extract all the versions
+            // we already have them in memory
+            List<Schema> allSchemas =  schemas
+                    .values()
+                    .stream()
+                    .filter(s -> s.getSubject().equals(subject))
+                    .sorted(Comparator.comparing(Schema::getId))
+                    .collect(Collectors.toList());
+
+            boolean result = CompatibilityChecker.verify(schemaDefinition, schemaType, compatibilityMode, allSchemas);
+            log.info("schema verification result: {}", result);
+            if (!result) {
+                return FutureUtil.failedFuture(new CompatibilityChecker
+                        .IncompatibleSchemaChangeException("Schema is not compatible according to " + compatibilityMode
+                                                         + " compatibility mode"));
             }
         }
 

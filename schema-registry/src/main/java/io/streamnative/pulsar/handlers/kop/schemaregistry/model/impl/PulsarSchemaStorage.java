@@ -23,11 +23,8 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -36,16 +33,12 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.client.api.Reader;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.client.api.SubscriptionMode;
-import org.apache.pulsar.client.api.SubscriptionType;
 import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
@@ -423,6 +416,30 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     List<Map.Entry<Op, SchemaEntry>> cachedRes =
                      Arrays.asList(new AbstractMap.SimpleImmutableEntry<>((Op) null, found));
                     return cachedRes;
+                }
+            }
+
+            // we are inside the lock, so we know that every local variable is up-to-date
+            final CompatibilityChecker.Mode compatibilityMode = compatibility.getOrDefault(subject,
+                    CompatibilityChecker.Mode.NONE);
+            if (compatibilityMode != CompatibilityChecker.Mode.NONE) {
+
+                // we can extract all the versions
+                // we already have them in memory
+                List<Schema> allSchemas =  schemas
+                        .values()
+                        .stream()
+                        .filter(s -> s.getSubject().equals(subject))
+                        .sorted(Comparator.comparing(SchemaEntry::getId))
+                        .map(PulsarSchemaStorage::getSchemaFromSchemaEntry)
+                        .collect(Collectors.toList());
+
+                boolean result = CompatibilityChecker.verify(schemaDefinition, schemaType, compatibilityMode, allSchemas);
+                log.info("schema verification result: {}", result);
+                if (!result) {
+                    throw new CompatibilityChecker
+                            .IncompatibleSchemaChangeException("Schema is not compatible according to " + compatibilityMode
+                            + " compatibility mode");
                 }
             }
 

@@ -14,15 +14,19 @@
 package io.streamnative.pulsar.handlers.kop.schemaregistry.resources;
 
 import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.HttpJsonRequestProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
@@ -207,7 +211,16 @@ public class SubjectResource extends AbstractResource {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, true);
-            return schema.thenApply(s -> new CreateSchemaResponse(s.getId()));
+            return schema.thenApply(s -> new CreateSchemaResponse(s.getId())).exceptionally(err -> {
+                while (err instanceof CompletionException) {
+                    err = err.getCause();
+                }
+                if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
+                    throw new CompletionException(new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                } else {
+                    throw new CompletionException(err);
+                }
+            });
         }
 
     }
@@ -228,7 +241,16 @@ public class SubjectResource extends AbstractResource {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, false);
-            return schema.thenApply(s -> new CreateSchemaResponse(s.getId()));
+            return schema.thenApply(s -> new CreateSchemaResponse(s.getId())).exceptionally(err -> {
+                while (err instanceof CompletionException) {
+                    err = err.getCause();
+                }
+                if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
+                    throw new CompletionException(new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                } else {
+                    throw new CompletionException(err);
+                }
+            });
         }
 
     }

@@ -46,21 +46,30 @@ public class SchemaResourceTest {
             + "           {"
             + "             \\\"type\\\": \\\"string\\\","
             + "             \\\"name\\\": \\\"field1\\\""
-            + "           },"
-            + "           {"
-            + "             \\\"type\\\": \\\"com.acme.Referenced\\\","
-            + "             \\\"name\\\": \\\"int\\\""
             + "           }"
             + "          ]"
             + "     }\",\n"
-            + "  \"schemaType\": \"AVRO\",\n"
-            + "  \"references\": [\n"
-            + "    {\n"
-            + "       \"name\": \"com.acme.Referenced\",\n"
-            + "       \"subject\":  \"childSubject\",\n"
-            + "       \"version\": 1\n"
-            + "    }\n"
-            + "  ]\n"
+            + "  \"schemaType\": \"AVRO\"\n"
+            + "}";
+
+    private static final String TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD = "{\n"
+            + "  \"schema\":"
+            + "    \"{"
+            + "       \\\"type\\\": \\\"record\\\","
+            + "       \\\"name\\\": \\\"test\\\","
+            + "       \\\"fields\\\":"
+            + "         ["
+            + "           {"
+            + "             \\\"type\\\": \\\"string\\\","
+            + "             \\\"name\\\": \\\"field1\\\""
+            + "           },"
+            + "           {"
+            + "             \\\"type\\\": \\\"string\\\","
+            + "             \\\"name\\\": \\\"fieldAddedWithoutDefault\\\""
+            + "           }"
+            + "          ]"
+            + "     }\",\n"
+            + "  \"schemaType\": \"AVRO\"\n"
             + "}";
 
     private SimpleAPIServer server;
@@ -206,11 +215,9 @@ public class SchemaResourceTest {
         result = server.executeGet("/schemas/ids/" + schemaId);
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",  "
-                + "     \\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",       "
-                + "      \\\"name\\\": \\\"field1\\\"           },         "
-                + "  {             \\\"type\\\": \\\"com.acme.Referenced\\\",   "
-                + "          \\\"name\\\": \\\"int\\\"           }          ]     }\"\n"
+                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
+                + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
                 + "}");
     }
 
@@ -240,13 +247,9 @@ public class SchemaResourceTest {
         result = server.executeGet("/schemas/ids/" + schemaId);
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\","
-                + "       \\\"fields\\\":         "
-                + "[           { "
-                + "            \\\"type\\\": \\\"string\\\",             \\\"name\\\": \\\"field1\\\"           },  "
-                + "         {             \\\"type\\\": \\\"com.acme.Referenced\\\",         "
-                + "    \\\"name\\\": \\\"int\\\"    "
-                + "       }          ]     }\"\n"
+                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
+                + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
                 + "}");
     }
 
@@ -301,7 +304,7 @@ public class SchemaResourceTest {
     }
 
     @Test
-    public void getCheckCompatibility() throws Exception {
+    public void checkCompatibility() throws Exception {
 
         // set FULL_TRANSITIVE
         assertEquals("{\n"
@@ -353,6 +356,72 @@ public class SchemaResourceTest {
                 "/compatibility/subjects/Kafka-value/versions/latest",
                 "{\"schema\": \"{\\\"type\\\": \\\"long\\\"}\"}",
                 "application/vnd.schemaregistry.v1+json"));
+    }
+
+    @Test
+    public void createSchemaWithCheckCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        log.info("body {}", TEST_SCHEMA);
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA, "application/json");
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json", 409);
+
+        // set FORWARD
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json");
+
+    }
+
+    @Test
+    public void createUpdateSchemaWithCheckCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        log.info("body {}", TEST_SCHEMA);
+        server.executePost("/subjects/mysub", TEST_SCHEMA, "application/json");
+        server.executePost("/subjects/mysub", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json", 409);
+
+        // set FORWARD
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        server.executePost("/subjects/mysub", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json");
+
     }
 
     @Test

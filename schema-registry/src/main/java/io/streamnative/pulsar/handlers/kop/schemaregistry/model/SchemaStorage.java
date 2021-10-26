@@ -19,7 +19,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiConsumer;
 import lombok.AllArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 
 public interface SchemaStorage {
 
@@ -98,11 +97,11 @@ public interface SchemaStorage {
 
     /**
      * Download multiple schemas
-     * @param versions
+     * @param ids
      * @return the schemas
      */
-    default CompletableFuture<List<Schema>> downloadSchemas(List<Integer> versions) {
-        if (versions.isEmpty()) {
+    default CompletableFuture<List<Schema>> downloadSchemas(List<Integer> ids) {
+        if (ids.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyList());
         }
         CompletableFuture<List<Schema>> res = new CompletableFuture<>();
@@ -117,12 +116,12 @@ public interface SchemaStorage {
                     res.completeExceptionally(err);
                 } else {
                     schemas.add(downloadedSchema);
-                    if (index == versions.size() -1 ) {
+                    if (index == ids.size() -1 ) {
                         res.complete(schemas);
                         return;
                     }
                     // recursion
-                    int id = versions.get(index + 1);
+                    int id = ids.get(index + 1);
                     findSchemaById(id)
                             .whenComplete(new HandleSchema(index + 1));
 
@@ -131,7 +130,7 @@ public interface SchemaStorage {
         }
 
         // download the first
-        int id = versions.get(0);
+        int id = ids.get(0);
         findSchemaById(id)
                 .whenComplete(new HandleSchema(0));
         return res;

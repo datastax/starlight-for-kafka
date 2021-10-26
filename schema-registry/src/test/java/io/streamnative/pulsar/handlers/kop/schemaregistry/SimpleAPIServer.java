@@ -112,13 +112,17 @@ public class SimpleAPIServer {
             if (content instanceof InputStream) {
                 content = IOUtils.toString((InputStream) content, "utf-8");
             }
+            if (expectedError != null && expectedError != urlConnection.getResponseCode()) {
+                throw new IOException("Unexpected error code "
+                        + urlConnection.getResponseCode() + ", expected " + expectedError);
+            }
             return content.toString();
         } catch (IOException err) {
             if (expectedError == null) {
                 throw err;
             }
             if (urlConnection.getResponseCode() != expectedError.intValue()) {
-                throw new IOException("Unexpecter error code "
+                throw new IOException("Unexpected error code "
                         + urlConnection.getResponseCode() + ", expected " + expectedError);
             }
             return IOUtils.toString(urlConnection.getErrorStream(), "utf-8");

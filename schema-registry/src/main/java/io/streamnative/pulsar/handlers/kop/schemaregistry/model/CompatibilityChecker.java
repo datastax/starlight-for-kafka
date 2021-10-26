@@ -23,6 +23,7 @@ import io.apicurio.registry.rules.compatibility.ProtobufCompatibilityChecker;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -79,59 +80,75 @@ public class CompatibilityChecker {
             // no versions ?
             return CompletableFuture.completedFuture(true);
         }
-        final List<Integer> versionsToCheck;
+        final List<Integer> idsToCheck;
         if (mode == Mode.BACKWARD || mode == Mode.FORWARD) {
             // only latest
-            versionsToCheck = Arrays.asList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
+            idsToCheck = Arrays.asList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
         } else {
             // all the versions
-            versionsToCheck = versions;
+            idsToCheck = versions;
         }
-        log.info("Compare schema against {} versions", versionsToCheck);
+        log.info("Compare schema against {} ids", idsToCheck);
 
         CompletableFuture<List<Schema>>
-                res = schemaStorage.downloadSchemas(versionsToCheck);
+                res = schemaStorage.downloadSchemas(idsToCheck);
 
         return res.thenApply((downloadedSchemas) -> {
-            return verify(schema, mode, downloadedSchemas);
+            return verify(schema.getSchemaDefinition(), schema.getType(), mode, downloadedSchemas);
         });
     }
 
 
-    private static boolean verify(Schema schema, Mode mode, List<Schema> allSchemas) {
-        io.apicurio.registry.rules.compatibility.CompatibilityChecker checker = createChecker(schema.getType());
+    public static boolean verify(String schemaDefinition, String type, Mode mode, List<Schema> allSchemas) {
+        if (allSchemas.isEmpty()) {
+            return true;
+        }
+        io.apicurio.registry.rules.compatibility.CompatibilityChecker checker = createChecker(type);
+        boolean onlyLatest = false;
         CompatibilityLevel level;
         switch (mode) {
             case BACKWARD:
-                    level  = CompatibilityLevel.BACKWARD;
-                    break;
+                 level  = CompatibilityLevel.BACKWARD;
+                onlyLatest = true;
+                 break;
             case BACKWARD_TRANSITIVE:
                 level  = CompatibilityLevel.BACKWARD_TRANSITIVE;
                 break;
             case FORWARD:
                 level  = CompatibilityLevel.FORWARD;
+                onlyLatest = true;
                 break;
             case FORWARD_TRANSITIVE:
                 level  = CompatibilityLevel.FORWARD_TRANSITIVE;
                 break;
             case FULL:
                 level  = CompatibilityLevel.FULL;
+                onlyLatest = true;
                 break;
             case FULL_TRANSITIVE:
                 level  = CompatibilityLevel.FULL_TRANSITIVE;
                 break;
             default:
                 level = CompatibilityLevel.NONE;
+                onlyLatest = true;
                 break;
         }
-        List<String> schemas = allSchemas.stream().map(Schema::getSchemaDefinition).collect(Collectors.toList());
-        log.info("New schema {}", schema.getSchemaDefinition());
+        List<String> schemas = allSchemas
+                .stream()
+                .sorted(Comparator.comparingInt(Schema::getId))
+                .map(Schema::getSchemaDefinition)
+                .collect(Collectors.toList());
+        if (onlyLatest) {
+            // only latest
+            schemas = schemas.subList(schemas.size() -1, schemas.size());
+        }
+        log.info("New schema {}", schemaDefinition);
         for (String s : schemas) {
             log.info("Existing schema {}", s);
         }
         try {
             CompatibilityExecutionResult compatibilityExecutionResult =
-                    checker.testCompatibility(level, schemas, schema.getSchemaDefinition());
+                    checker.testCompatibility(level, schemas, schemaDefinition);
             log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
             if (!compatibilityExecutionResult.isCompatible()) {
                 for (CompatibilityDifference error : compatibilityExecutionResult.getIncompatibleDifferences()) {
@@ -158,5 +175,10 @@ public class CompatibilityChecker {
         }
     }
 
+    public static final class IncompatibleSchemaChangeException extends RuntimeException {
+        public IncompatibleSchemaChangeException(String message) {
+            super(message);
+        }
+    }
 
 }
