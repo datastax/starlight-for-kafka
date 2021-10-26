@@ -13,9 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
-import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiConsumer;
+import lombok.AllArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 public interface SchemaStorage {
 
@@ -91,4 +95,45 @@ public interface SchemaStorage {
      * @param mode the new mode
      */
     CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode);
+
+    /**
+     * Download multiple schemas
+     * @param versions
+     * @return the schemas
+     */
+    default CompletableFuture<List<Schema>> downloadSchemas(List<Integer> versions) {
+        if (versions.isEmpty()) {
+            return CompletableFuture.completedFuture(Collections.emptyList());
+        }
+        CompletableFuture<List<Schema>> res = new CompletableFuture<>();
+        List<Schema> schemas = new CopyOnWriteArrayList<>();
+        @AllArgsConstructor
+        class HandleSchema implements BiConsumer<Schema, Throwable> {
+
+            final int index;
+
+            public void accept(Schema downloadedSchema, Throwable err) {
+                if (err != null) {
+                    res.completeExceptionally(err);
+                } else {
+                    schemas.add(downloadedSchema);
+                    if (index == versions.size() -1 ) {
+                        res.complete(schemas);
+                        return;
+                    }
+                    // recursion
+                    int id = versions.get(index + 1);
+                    findSchemaById(id)
+                            .whenComplete(new HandleSchema(index + 1));
+
+                }
+            }
+        }
+
+        // download the first
+        int id = versions.get(0);
+        findSchemaById(id)
+                .whenComplete(new HandleSchema(0));
+        return res;
+    }
 }

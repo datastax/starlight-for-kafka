@@ -13,11 +13,19 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
+import io.apicurio.registry.rules.compatibility.AvroCompatibilityChecker;
+import io.apicurio.registry.rules.compatibility.CompatibilityDifference;
+import io.apicurio.registry.rules.compatibility.CompatibilityExecutionResult;
+import io.apicurio.registry.rules.compatibility.CompatibilityLevel;
+import io.apicurio.registry.rules.compatibility.JsonSchemaCompatibilityChecker;
+import io.apicurio.registry.rules.compatibility.NoopCompatibilityChecker;
+import io.apicurio.registry.rules.compatibility.ProtobufCompatibilityChecker;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiConsumer;
-import lombok.AllArgsConstructor;
+import java.util.stream.Collectors;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 
@@ -32,99 +40,122 @@ public class CompatibilityChecker {
         FORWARD,
         FORWARD_TRANSITIVE,
         FULL,
-        FULL_TRANSITIVE
+        FULL_TRANSITIVE;
+
+        public static final Collection<Mode> SUPPORTED_FOR_PROTOBUF =
+                Collections.unmodifiableCollection(Arrays.asList(BACKWARD, BACKWARD_TRANSITIVE, NONE));
     }
 
+    /**
+     * Verify the compatibility of a Schema, following the request mode
+     * @param schema
+     * @param subject
+     * @param schemaStorage
+     * @return
+     */
     public static CompletableFuture<Boolean> verify(Schema schema, String subject, SchemaStorage schemaStorage) {
+        log.info("verify {} {}", subject, schema.getSchemaDefinition());
         CompletableFuture<CompatibilityChecker.Mode> mode = schemaStorage.getCompatibilityMode(subject);
         return mode.thenCompose(m -> {
-            if (m == Mode.NONE) {
-                return CompletableFuture.completedFuture(true);
-            }
-            CompletableFuture<List<Integer>> versions = schemaStorage.getAllVersionsForSubject(subject);
-            return versions.thenCompose(vv -> {
-                if (vv.isEmpty()) {
-                    // no versions ?
-                    return CompletableFuture.completedFuture(false);
-                }
-               final List<Integer> versionsToCheck;
-               if (m == Mode.BACKWARD || m == Mode.FORWARD) {
-                   // only latest
-                   versionsToCheck = Arrays.asList(vv.stream().mapToInt(Integer::intValue).max().getAsInt());
-               } else {
-                   // all the versions
-                   versionsToCheck = vv;
-               }
-               log.info("Compare schema against {} versions", versionsToCheck.size());
-               CompletableFuture<Boolean> res = new CompletableFuture<>();
-
-               @AllArgsConstructor
-               class HandleSchema implements BiConsumer<Schema, Throwable> {
-
-                   final int index;
-
-                   public void accept(Schema downloadedSchema, Throwable err) {
-                       if (err != null) {
-                           res.completeExceptionally(err);
-                       } else {
-                           boolean isCompatible = CompatibilityChecker
-                                   .isCompatible(schema, downloadedSchema,
-                                           m);
-                           if (!isCompatible) {
-                               res.complete(false);
-                               return;
-                           }
-                           if (index == versionsToCheck.size() -1 ) {
-                               res.complete(true);
-                               return;
-                           }
-                           // recursion
-                           int id = versionsToCheck.get(index);
-                           schemaStorage
-                                   .findSchemaById(id)
-                                   .whenComplete(new HandleSchema(index + 1));
-
-                       }
-                   }
-               }
-
-               // verify first
-               int id = versionsToCheck.get(0);
-               schemaStorage
-                       .findSchemaById(id)
-                       .whenComplete(new HandleSchema(0));
-
-               return res;
-            });
+            return verifyCompatibility(schema, subject, schemaStorage, m);
         });
     }
 
-    public static boolean isCompatible(Schema schema1, Schema schema2, Mode mode) {
+    private static CompletableFuture<Boolean> verifyCompatibility(Schema schema, String subject,
+                                                                          SchemaStorage schemaStorage, Mode mode) {
+        if (mode == Mode.NONE) {
+            return CompletableFuture.completedFuture(true);
+        }
+        log.info("verify {} {} mode ", subject, mode);
+        CompletableFuture<List<Integer>> versions = schemaStorage.getAllVersionsForSubject(subject);
+        return versions.thenCompose(vv -> {
+            return verifyCompatibility(schema, schemaStorage, mode, vv);
+        });
+    }
+
+    private static CompletableFuture<Boolean> verifyCompatibility(Schema schema, SchemaStorage schemaStorage,
+                                                                          Mode mode, List<Integer> versions) {
+        if (versions.isEmpty()) {
+            // no versions ?
+            return CompletableFuture.completedFuture(true);
+        }
+        final List<Integer> versionsToCheck;
+        if (mode == Mode.BACKWARD || mode == Mode.FORWARD) {
+            // only latest
+            versionsToCheck = Arrays.asList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
+        } else {
+            // all the versions
+            versionsToCheck = versions;
+        }
+        log.info("Compare schema against {} versions", versionsToCheck);
+
+        CompletableFuture<List<Schema>>
+                res = schemaStorage.downloadSchemas(versionsToCheck);
+
+        return res.thenApply((downloadedSchemas) -> {
+            return verify(schema, mode, downloadedSchemas);
+        });
+    }
+
+
+    private static boolean verify(Schema schema, Mode mode, List<Schema> allSchemas) {
+        io.apicurio.registry.rules.compatibility.CompatibilityChecker checker = createChecker(schema.getType());
+        CompatibilityLevel level;
         switch (mode) {
             case BACKWARD:
+                    level  = CompatibilityLevel.BACKWARD;
+                    break;
             case BACKWARD_TRANSITIVE:
-                    return isBackwardCompatible(schema1, schema2);
+                level  = CompatibilityLevel.BACKWARD_TRANSITIVE;
+                break;
             case FORWARD:
+                level  = CompatibilityLevel.FORWARD;
+                break;
             case FORWARD_TRANSITIVE:
-                return isForwardCompatible(schema1, schema2);
-
+                level  = CompatibilityLevel.FORWARD_TRANSITIVE;
+                break;
             case FULL:
+                level  = CompatibilityLevel.FULL;
+                break;
             case FULL_TRANSITIVE:
-                return isForwardCompatible(schema1, schema2)
-                        && isBackwardCompatible(schema1, schema2);
-            case NONE:
-                return true;
+                level  = CompatibilityLevel.FULL_TRANSITIVE;
+                break;
             default:
-                throw new IllegalStateException();
+                level = CompatibilityLevel.NONE;
+                break;
+        }
+        List<String> schemas = allSchemas.stream().map(Schema::getSchemaDefinition).collect(Collectors.toList());
+        log.info("New schema {}", schema.getSchemaDefinition());
+        for (String s : schemas) {
+            log.info("Existing schema {}", s);
+        }
+        try {
+            CompatibilityExecutionResult compatibilityExecutionResult =
+                    checker.testCompatibility(level, schemas, schema.getSchemaDefinition());
+            log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
+            if (!compatibilityExecutionResult.isCompatible()) {
+                for (CompatibilityDifference error : compatibilityExecutionResult.getIncompatibleDifferences()) {
+                    log.info("CompatibilityExecutionResult error {}", error);
+                }
+            }
+            return compatibilityExecutionResult.isCompatible();
+        } catch (java.lang.IllegalStateException notSupported) {
+            return false;
         }
     }
 
-    public static boolean isBackwardCompatible(Schema schema1, Schema schema2) {
-        return true;
-    }
 
-    public static boolean isForwardCompatible(Schema schema1, Schema schema2) {
-        return true;
+    private static io.apicurio.registry.rules.compatibility.CompatibilityChecker createChecker(String type) {
+        switch (type) {
+            case Schema.TYPE_AVRO:
+                return new AvroCompatibilityChecker();
+            case Schema.TYPE_JSON:
+                return new JsonSchemaCompatibilityChecker();
+            case Schema.TYPE_PROTOBUF:
+                return new ProtobufCompatibilityChecker();
+            default:
+                return new NoopCompatibilityChecker();
+        }
     }
 
 
