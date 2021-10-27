@@ -137,7 +137,9 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         return CompletableFuture.completedFuture(null);
                     } else {
                         CompletableFuture<Message<Op>> opMessage = reader.readNextAsync();
-                        return opMessage.thenCompose(msg -> {
+                        // we cannot perform this inside the Netty thread
+                        // so we are using here thenComposeAsync
+                        return opMessage.thenComposeAsync(msg -> {
                             Op value = msg.getValue();
                             applyOpToLocalMemory(value);
                             return readNextMessageIfAvailable(reader);
