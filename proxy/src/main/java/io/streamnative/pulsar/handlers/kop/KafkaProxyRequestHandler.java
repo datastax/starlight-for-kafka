@@ -956,10 +956,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         return topic != null && topic.contains(transactionTopic);
     }
 
-    private CompletableFuture<PulsarAdmin> getPulsarAdmin() {
-        return getPulsarAdmin(false);
-    }
-
     String currentUser() {
         if (authenticator != null
                 && authenticator.session() != null
@@ -1067,7 +1063,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     log.error("bad error for findBroker for topic {}", topic, error);
                     invalidateCurrentPulsarAdminForError(pulsarAdminAtomicReference.get(), error, system);
                     returnFuture.completeExceptionally(error);
-                    return null;
+                    return Optional.empty();
                 });
         return returnFuture;
     }

@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import java.util.ArrayList;
@@ -22,11 +23,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.common.util.FutureUtil;
 
+@Slf4j
 public class MemorySchemaStorage implements SchemaStorage {
     private final ConcurrentHashMap<Integer, Schema> schemas = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompatibilityChecker.Mode> compatibility = new ConcurrentHashMap<>();
     private final AtomicInteger schemaIdGenerator = new AtomicInteger();
     private final String tenant;
+
 
     public MemorySchemaStorage(String tenant) {
         this.tenant = tenant;
@@ -124,6 +130,28 @@ public class MemorySchemaStorage implements SchemaStorage {
             }
         }
 
+        final CompatibilityChecker.Mode compatibilityMode = compatibility.getOrDefault(subject,
+                CompatibilityChecker.Mode.NONE);
+        if (compatibilityMode != CompatibilityChecker.Mode.NONE) {
+
+            // we can extract all the versions
+            // we already have them in memory
+            List<Schema> allSchemas =  schemas
+                    .values()
+                    .stream()
+                    .filter(s -> s.getSubject().equals(subject))
+                    .sorted(Comparator.comparing(Schema::getId))
+                    .collect(Collectors.toList());
+
+            boolean result = CompatibilityChecker.verify(schemaDefinition, schemaType, compatibilityMode, allSchemas);
+            log.info("schema verification result: {}", result);
+            if (!result) {
+                return FutureUtil.failedFuture(new CompatibilityChecker
+                        .IncompatibleSchemaChangeException("Schema is not compatible according to " + compatibilityMode
+                                                         + " compatibility mode"));
+            }
+        }
+
         int newId = schemaIdGenerator.incrementAndGet();
         int newVersion = schemas
                 .values()
@@ -152,5 +180,16 @@ public class MemorySchemaStorage implements SchemaStorage {
 
     public void clear() {
         schemas.clear();
+    }
+
+    @Override
+    public CompletableFuture<CompatibilityChecker.Mode> getCompatibilityMode(String subject) {
+        return CompletableFuture.completedFuture(compatibility.getOrDefault(subject, CompatibilityChecker.Mode.NONE));
+    }
+
+    @Override
+    public CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode) {
+        compatibility.put(subject, mode);
+        return CompletableFuture.completedFuture(null);
     }
 }

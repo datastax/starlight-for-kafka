@@ -16,18 +16,22 @@ package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 import static org.testng.Assert.assertEquals;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
+import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 
+@Slf4j
 public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
 
 
     @Test
     public void testUsingSchemaStorageTestsBase() throws Exception {
+        admin.topics().createNonPartitionedTopic("persistent://public/default/__schemaregistry");
         SchemaStorageTestsBase tester = new SchemaStorageTestsBase(new SchemaStorageAccessor() {
             @Override
             public SchemaStorage getSchemaStorageForTenant(String tenant) throws SchemaStorageException {
@@ -50,10 +54,13 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
     @Test
     public void testTwoInstances() throws Exception {
         String subject1 = "cccc";
+        admin.topics().createNonPartitionedTopic("persistent://public/default/__schemaregistry-2");
+
         try (PulsarSchemaStorage instance1 = new PulsarSchemaStorage(tenant, pulsarClient,
                 "persistent://public/default/__schemaregistry-2");
             PulsarSchemaStorage instance2 = new PulsarSchemaStorage(tenant, pulsarClient,
                     "persistent://public/default/__schemaregistry-2");) {
+
             // writing using instance1
             Schema schemaVersion = instance1.createSchemaVersion(subject1,
                     Schema.TYPE_AVRO, "{test}", true).get();
@@ -65,6 +72,22 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
             // read using instance1
             Schema lookup1 = instance2.findSchemaById(schemaVersion.getId()).get();
             assertEquals(schemaVersion, lookup1);
+
+            // again, but write from instance2
+            schemaVersion = instance2.createSchemaVersion(subject1,
+                    Schema.TYPE_AVRO, "{test2}", true).get();
+            lookup2 = instance2.findSchemaById(schemaVersion.getId()).get();
+            assertEquals(schemaVersion, lookup2);
+            lookup1 = instance1.findSchemaById(schemaVersion.getId()).get();
+            assertEquals(schemaVersion, lookup1);
+
+            // write using instance2
+            instance2.setCompatibilityMode(subject1, CompatibilityChecker.Mode.FULL_TRANSITIVE).get();
+            assertEquals(CompatibilityChecker.Mode.FULL_TRANSITIVE, instance2.getCompatibilityMode(subject1).get());
+
+            // read using instance1
+            assertEquals(CompatibilityChecker.Mode.FULL_TRANSITIVE, instance1.getCompatibilityMode(subject1).get());
+
         }
     }
 

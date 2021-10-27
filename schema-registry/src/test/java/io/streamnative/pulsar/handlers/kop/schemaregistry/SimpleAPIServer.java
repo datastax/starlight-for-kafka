@@ -94,10 +94,16 @@ public class SimpleAPIServer {
 
     public String executePost(String base, String requestContent,
                               String requestContentType, Integer expectedError) throws Exception {
+        return executeMethod(base, requestContent, "POST", requestContentType, expectedError);
+    }
+
+    public String executeMethod(String base, String requestContent, String method,
+                              String requestContentType, Integer expectedError) throws Exception {
         URL url = url(base);
         HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
         try {
             urlConnection.setDoOutput(true);
+            urlConnection.setRequestMethod(method);
             urlConnection.setRequestProperty("Content-Type", requestContentType);
             urlConnection.setRequestProperty("Content-Length", requestContent.length() + "");
             urlConnection.getOutputStream().write(requestContent.getBytes(StandardCharsets.UTF_8));
@@ -106,13 +112,17 @@ public class SimpleAPIServer {
             if (content instanceof InputStream) {
                 content = IOUtils.toString((InputStream) content, "utf-8");
             }
+            if (expectedError != null && expectedError != urlConnection.getResponseCode()) {
+                throw new IOException("Unexpected error code "
+                        + urlConnection.getResponseCode() + ", expected " + expectedError);
+            }
             return content.toString();
         } catch (IOException err) {
             if (expectedError == null) {
                 throw err;
             }
             if (urlConnection.getResponseCode() != expectedError.intValue()) {
-                throw new IOException("Unexpecter error code "
+                throw new IOException("Unexpected error code "
                         + urlConnection.getResponseCode() + ", expected " + expectedError);
             }
             return IOUtils.toString(urlConnection.getErrorStream(), "utf-8");

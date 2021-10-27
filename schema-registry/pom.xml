@@ -33,6 +33,37 @@
   <!-- include the dependencies -->
   <dependencies>
     <!-- runtime dependencies -->
+    <dependency>
+      <groupId>io.apicurio</groupId>
+      <artifactId>apicurio-registry-app</artifactId>
+      <version>${apicurio.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.apicurio</groupId>
+      <artifactId>apicurio-registry-schema-compatibility-protobuf</artifactId>
+      <version>${apicurio.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>org.junit.jupiter</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.jimfs</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.apicurio</groupId>
+      <artifactId>apicurio-registry-schema-compatibility-json</artifactId>
+      <version>${apicurio.version}</version>
+    </dependency>
   </dependencies>
 
 </project>

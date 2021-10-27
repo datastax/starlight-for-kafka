@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SimpleAPIServer;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.MemorySchemaStorageAccessor;
 import java.io.FileNotFoundException;
@@ -45,21 +46,30 @@ public class SchemaResourceTest {
             + "           {"
             + "             \\\"type\\\": \\\"string\\\","
             + "             \\\"name\\\": \\\"field1\\\""
-            + "           },"
-            + "           {"
-            + "             \\\"type\\\": \\\"com.acme.Referenced\\\","
-            + "             \\\"name\\\": \\\"int\\\""
             + "           }"
             + "          ]"
             + "     }\",\n"
-            + "  \"schemaType\": \"AVRO\",\n"
-            + "  \"references\": [\n"
-            + "    {\n"
-            + "       \"name\": \"com.acme.Referenced\",\n"
-            + "       \"subject\":  \"childSubject\",\n"
-            + "       \"version\": 1\n"
-            + "    }\n"
-            + "  ]\n"
+            + "  \"schemaType\": \"AVRO\"\n"
+            + "}";
+
+    private static final String TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD = "{\n"
+            + "  \"schema\":"
+            + "    \"{"
+            + "       \\\"type\\\": \\\"record\\\","
+            + "       \\\"name\\\": \\\"test\\\","
+            + "       \\\"fields\\\":"
+            + "         ["
+            + "           {"
+            + "             \\\"type\\\": \\\"string\\\","
+            + "             \\\"name\\\": \\\"field1\\\""
+            + "           },"
+            + "           {"
+            + "             \\\"type\\\": \\\"string\\\","
+            + "             \\\"name\\\": \\\"fieldAddedWithoutDefault\\\""
+            + "           }"
+            + "          ]"
+            + "     }\",\n"
+            + "  \"schemaType\": \"AVRO\"\n"
             + "}";
 
     private SimpleAPIServer server;
@@ -72,9 +82,14 @@ public class SchemaResourceTest {
 
         SchemaResource schemaResource = new SchemaResource(schemaStorage, schemaRegistryRequestAuthenticator);
         SubjectResource subjectResource = new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator);
+        ConfigResource configResource = new ConfigResource(schemaStorage, schemaRegistryRequestAuthenticator);
+        CompatibilityResource compatibilityResource = new CompatibilityResource(schemaStorage,
+                schemaRegistryRequestAuthenticator);
         SchemaRegistryHandler schemaRegistryHandler = new SchemaRegistryHandler();
         schemaResource.register(schemaRegistryHandler);
         subjectResource.register(schemaRegistryHandler);
+        configResource.register(schemaRegistryHandler);
+        compatibilityResource.register(schemaRegistryHandler);
         server = new SimpleAPIServer(schemaRegistryHandler);
         server.startServer();
     }
@@ -200,11 +215,9 @@ public class SchemaResourceTest {
         result = server.executeGet("/schemas/ids/" + schemaId);
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",  "
-                + "     \\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",       "
-                + "      \\\"name\\\": \\\"field1\\\"           },         "
-                + "  {             \\\"type\\\": \\\"com.acme.Referenced\\\",   "
-                + "          \\\"name\\\": \\\"int\\\"           }          ]     }\"\n"
+                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
+                + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
                 + "}");
     }
 
@@ -234,13 +247,9 @@ public class SchemaResourceTest {
         result = server.executeGet("/schemas/ids/" + schemaId);
         log.info("result {}", result);
         assertEquals(result, "{\n"
-                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\","
-                + "       \\\"fields\\\":         "
-                + "[           { "
-                + "            \\\"type\\\": \\\"string\\\",             \\\"name\\\": \\\"field1\\\"           },  "
-                + "         {             \\\"type\\\": \\\"com.acme.Referenced\\\",         "
-                + "    \\\"name\\\": \\\"int\\\"    "
-                + "       }          ]     }\"\n"
+                + "  \"schema\" : \"{       \\\"type\\\": \\\"record\\\",       \\\"name\\\": \\\"test\\\",       "
+                + "\\\"fields\\\":         [           {             \\\"type\\\": \\\"string\\\",             "
+                + "\\\"name\\\": \\\"field1\\\"           }          ]     }\"\n"
                 + "}");
     }
 
@@ -269,6 +278,150 @@ public class SchemaResourceTest {
     @Test(expectedExceptions = FileNotFoundException.class)
     public void getDeleteSubjectsNotFound() throws Exception {
         server.executeDelete("/subjects/subject1/versions");
+    }
+
+    @Test
+    public void getSetCompatility() throws Exception {
+        // default is NONE in KOP
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"NONE\"\n"
+                + "}", server.executeGet("/config/sub1"));
+        for (CompatibilityChecker.Mode mode : CompatibilityChecker.Mode.values()) {
+            assertEquals("{\n"
+                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "}", server.executeMethod("/config/sub1",
+                    "{\n"
+                            + "  \"compatibility\" : \"" + mode + "\"\n"
+                            + "}", "PUT", "application/json",
+                    null
+            ));
+
+            assertEquals("{\n"
+                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "}", server.executeGet("/config/sub1"));
+        }
+
+    }
+
+    @Test
+    public void checkCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/Kafka-value",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        assertEquals("{\n"
+                + "  \"id\" : 1\n"
+                + "}", server.executePost(
+                "/subjects/Kafka-value/versions",
+                "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // verify the same schema is compatible
+        assertEquals("{\n"
+                + "  \"is_compatible\" : true\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // verify a non-compatible schema
+        assertEquals("{\n"
+                + "  \"is_compatible\" : false\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"long\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        // set NONE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
+                + "}", server.executeMethod("/config/Kafka-value",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        // verify a non-compatible schema, now the result is 'true'
+        assertEquals("{\n"
+                + "  \"is_compatible\" : true\n"
+                + "}", server.executePost(
+                "/compatibility/subjects/Kafka-value/versions/latest",
+                "{\"schema\": \"{\\\"type\\\": \\\"long\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+    }
+
+    @Test
+    public void createSchemaWithCheckCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        log.info("body {}", TEST_SCHEMA);
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA, "application/json");
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json", 409);
+
+        // set FORWARD
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        server.executePost("/subjects/mysub/versions", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json");
+
+    }
+
+    @Test
+    public void createUpdateSchemaWithCheckCompatibility() throws Exception {
+
+        // set FULL_TRANSITIVE
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        log.info("body {}", TEST_SCHEMA);
+        server.executePost("/subjects/mysub", TEST_SCHEMA, "application/json");
+        server.executePost("/subjects/mysub", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json", 409);
+
+        // set FORWARD
+        assertEquals("{\n"
+                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "}", server.executeMethod("/config/mysub",
+                "{\n"
+                        + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                        + "}", "PUT", "application/json",
+                null
+        ));
+
+        server.executePost("/subjects/mysub", TEST_SCHEMA_WITH_ADDED_NON_DEFAULT_FIELD,
+                "application/json");
+
     }
 
     @Test
