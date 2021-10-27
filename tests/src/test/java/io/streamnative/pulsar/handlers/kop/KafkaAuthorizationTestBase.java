@@ -332,7 +332,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                 TENANT + "/" + NAMESPACE, "token:" + anotherToken, "DemoAnotherKafkaOnPulsarConsumer");
         anotherConsumer.getConsumer().subscribe(Collections.singleton(fullNewTopicName));
         try {
-            anotherConsumer.getConsumer().poll(Duration.ofSeconds(2));
+            anotherConsumer.getConsumer().poll(Duration.ofSeconds(10));
             fail("expected TopicAuthorizationException");
         } catch (TopicAuthorizationException ignore) {
             log.info("Has TopicAuthorizationException.");
@@ -579,7 +579,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
                     newTenant + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
             kConsumer.getConsumer().subscribe(Collections.singleton(testTopic));
             try {
-                kConsumer.getConsumer().poll(Duration.ofSeconds(1));
+                kConsumer.getConsumer().poll(Duration.ofSeconds(10));
                 fail("expected TopicAuthorizationException");
             } catch (TopicAuthorizationException ignore) {
                 log.info("Has TopicAuthorizationException.");
