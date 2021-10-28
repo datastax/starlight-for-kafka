@@ -591,6 +591,10 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
+            if (schemaRegistryChannelInitializer.isPresent()) {
+                builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
+            }
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
