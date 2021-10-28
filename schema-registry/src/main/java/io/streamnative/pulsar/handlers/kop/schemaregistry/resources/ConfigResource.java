@@ -37,6 +37,7 @@ public class ConfigResource extends AbstractResource {
         schemaRegistryHandler.addProcessor(new PutConfig());
         schemaRegistryHandler.addProcessor(new GetSubjectConfig());
         schemaRegistryHandler.addProcessor(new GetConfig());
+        schemaRegistryHandler.addProcessor(new GetMode());
     }
 
     @Data
@@ -73,6 +74,27 @@ public class ConfigResource extends AbstractResource {
         protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             return CompletableFuture.completedFuture(new GetConfigResponse(CompatibilityChecker.Mode.NONE.name()));
+        }
+
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static final class GetModeResponse {
+        private String mode;
+    }
+
+    // GET /mode
+    public static class GetMode extends HttpJsonRequestProcessor<Void, GetModeResponse> {
+
+        public GetMode() {
+            super(Void.class, "/mode", GET);
+        }
+
+        @Override
+        protected CompletableFuture<GetModeResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+                throws Exception {
+            return CompletableFuture.completedFuture(new GetModeResponse("READWRITE"));
         }
 
     }

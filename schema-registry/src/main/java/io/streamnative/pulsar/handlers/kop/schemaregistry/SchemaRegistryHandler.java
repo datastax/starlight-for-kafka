@@ -87,6 +87,8 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
                         resp);
             }
+            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(), ctx.channel().localAddress(),
+                    resp.status().code(), resp.status().reasonPhrase());
             ctx.writeAndFlush(resp);
         }).exceptionally(err -> {
             FullHttpResponse resp = HttpRequestProcessor.buildJsonErrorResponse(err);
@@ -94,6 +96,8 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
                         resp);
             }
+            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(), ctx.channel().localAddress(),
+                    resp.status().code(), resp.status().reasonPhrase());
             ctx.writeAndFlush(resp);
             return null;
         });

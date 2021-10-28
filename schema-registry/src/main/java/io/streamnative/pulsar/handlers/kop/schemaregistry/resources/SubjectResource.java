@@ -90,24 +90,15 @@ public class SubjectResource extends AbstractResource {
 
     }
 
-    @Data
-    @AllArgsConstructor
-    public static final class GetLatestVersionResponse {
-        private String schema;
-        private String subject;
-        private int version;
-        private String type;
-    }
-
     // GET /subjects/test/versions/latest
-    public class GetLatestVersion extends HttpJsonRequestProcessor<Void, GetLatestVersionResponse> {
+    public class GetLatestVersion extends HttpJsonRequestProcessor<Void, GetSchemaBySubjectAndVersionResponse> {
 
         public GetLatestVersion() {
             super(Void.class, "/subjects/" + STRING_PATTERN + "/versions/latest", GET);
         }
 
         @Override
-        protected CompletableFuture<GetLatestVersionResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetSchemaBySubjectAndVersionResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
@@ -117,7 +108,9 @@ public class SubjectResource extends AbstractResource {
                     return CompletableFuture.completedFuture(null);
                 }
                 return schemaStorage.findSchemaBySubjectAndVersion(subject, v.get(v.size() -1))
-                        .thenApply(s -> s == null ? null : new GetLatestVersionResponse(s.getSchemaDefinition(),
+                        .thenApply(s -> s == null ? null : new GetSchemaBySubjectAndVersionResponse(
+                                s.getId(),
+                                s.getSchemaDefinition(),
                                 s.getSubject(), s.getVersion(), s.getType()));
             });
         }
@@ -151,9 +144,11 @@ public class SubjectResource extends AbstractResource {
     @AllArgsConstructor
     @Getter
     public static class GetSchemaBySubjectAndVersionResponse {
-        private String name;
-        private int version;
+        private int id;
         private String schema;
+        private String subject;
+        private int version;
+        private String type;
     }
 
     // GET /subjects/(string: subject)/versions/(versionId: version)
@@ -177,8 +172,8 @@ public class SubjectResource extends AbstractResource {
                 if (s == null) {
                     return null;
                 }
-                return new GetSchemaBySubjectAndVersionResponse(s.getSubject(),
-                        s.getVersion(), s.getSchemaDefinition());
+                return new GetSchemaBySubjectAndVersionResponse(s.getId(), s.getSchemaDefinition(), s.getSubject(),
+                        s.getVersion(), s.getType());
             });
         }
 

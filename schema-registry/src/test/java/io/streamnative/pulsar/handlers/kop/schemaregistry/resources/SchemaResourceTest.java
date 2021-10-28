@@ -139,9 +139,11 @@ public class SchemaResourceTest {
         String result = server.executeGet("/subjects/aaa/versions/17");
 
         assertEquals(result, "{\n"
-                + "  \"name\" : \"aaa\",\n"
+                + "  \"id\" : 1,\n"
+                + "  \"schema\" : \"{SCHEMA-1}\",\n"
+                + "  \"subject\" : \"aaa\",\n"
                 + "  \"version\" : 17,\n"
-                + "  \"schema\" : \"{SCHEMA-1}\"\n"
+                + "  \"type\" : \"AVRO\"\n"
                 + "}");
     }
 
@@ -212,6 +214,7 @@ public class SchemaResourceTest {
         String result = server.executeGet("/subjects/subject1/versions/latest");
         log.info("result {}", result);
         assertEquals(result, "{\n"
+                + "  \"id\" : 3,\n"
                 + "  \"schema\" : \"{SCHEMA3}\",\n"
                 + "  \"subject\" : \"subject1\",\n"
                 + "  \"version\" : 8,\n"
@@ -339,6 +342,15 @@ public class SchemaResourceTest {
         assertEquals("{\n"
                 + "  \"compatibilityLevel\" : \"NONE\"\n"
                 + "}", server.executeGet("/config/"));
+
+    }
+
+    @Test
+    public void getMode() throws Exception {
+
+        assertEquals("{\n"
+                + "  \"mode\" : \"READWRITE\"\n"
+                + "}", server.executeGet("/mode"));
     }
 
     @Test

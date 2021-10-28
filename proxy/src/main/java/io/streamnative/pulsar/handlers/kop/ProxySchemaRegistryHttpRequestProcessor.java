@@ -75,6 +75,7 @@ public class ProxySchemaRegistryHttpRequestProcessor extends HttpRequestProcesso
         return uri.startsWith("/schemas")
                 || uri.startsWith("/subjects")
                 || uri.startsWith("/config")
+                || uri.startsWith("/mode")
                 || uri.startsWith("/compatibility");
     }
 
