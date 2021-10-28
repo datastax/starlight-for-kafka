@@ -13,16 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry;
 
-import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
 import static io.netty.handler.codec.http.HttpResponseStatus.NOT_FOUND;
 
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.SchemaStorageException;
 import java.io.DataInput;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -94,6 +91,10 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
         int questionMark = uri.lastIndexOf('?');
         if (questionMark > 0) {
             uri = uri.substring(0, questionMark);
+        }
+        if (uri.endsWith("/")) {
+            // compatibility with Confluent Schema registry
+            uri = uri.substring(0, uri.length() - 1);
         }
         Matcher matcher = pattern.matcher(uri);
         if (!matcher.matches()) {

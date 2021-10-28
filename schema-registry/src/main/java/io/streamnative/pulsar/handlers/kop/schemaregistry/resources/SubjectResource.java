@@ -42,6 +42,7 @@ public class SubjectResource extends AbstractResource {
     public void register(SchemaRegistryHandler schemaRegistryHandler) {
         schemaRegistryHandler.addProcessor(new CreateNewSchema());
         schemaRegistryHandler.addProcessor(new GetAllSubjects());
+        schemaRegistryHandler.addProcessor(new GetLatestVersion());
         schemaRegistryHandler.addProcessor(new GetAllVersions());
         schemaRegistryHandler.addProcessor(new DeleteSubject());
         schemaRegistryHandler.addProcessor(new GetSchemaBySubjectAndVersion());
@@ -84,6 +85,40 @@ public class SubjectResource extends AbstractResource {
                     return null;
                 }
                 return v;
+            });
+        }
+
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static final class GetLatestVersionResponse {
+        private String schema;
+        private String subject;
+        private int version;
+        private String type;
+    }
+
+    // GET /subjects/test/versions/latest
+    public class GetLatestVersion extends HttpJsonRequestProcessor<Void, GetLatestVersionResponse> {
+
+        public GetLatestVersion() {
+            super(Void.class, "/subjects/" + STRING_PATTERN + "/versions/latest", GET);
+        }
+
+        @Override
+        protected CompletableFuture<GetLatestVersionResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+                throws Exception {
+            SchemaStorage schemaStorage = getSchemaStorage(request);
+            String subject = getString(0, patternGroups);
+            CompletableFuture<List<Integer>> versions = schemaStorage.getAllVersionsForSubject(subject);
+            return versions.thenCompose(v -> {
+                if (v.isEmpty()) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                return schemaStorage.findSchemaBySubjectAndVersion(subject, v.get(v.size() -1))
+                        .thenApply(s -> s == null ? null : new GetLatestVersionResponse(s.getSchemaDefinition(),
+                                s.getSubject(), s.getVersion(), s.getType()));
             });
         }
 

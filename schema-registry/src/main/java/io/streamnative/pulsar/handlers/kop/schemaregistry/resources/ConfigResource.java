@@ -35,19 +35,20 @@ public class ConfigResource extends AbstractResource {
     @Override
     public void register(SchemaRegistryHandler schemaRegistryHandler) {
         schemaRegistryHandler.addProcessor(new PutConfig());
+        schemaRegistryHandler.addProcessor(new GetSubjectConfig());
         schemaRegistryHandler.addProcessor(new GetConfig());
     }
 
     @Data
     @AllArgsConstructor
     public static final class GetConfigResponse {
-        private String compatibility;
+        private String compatibilityLevel;
     }
 
     // GET /config/${subject}
-    public class GetConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
+    public class GetSubjectConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
 
-        public GetConfig() {
+        public GetSubjectConfig() {
             super(Void.class, "/config/" + STRING_PATTERN, GET);
         }
 
@@ -61,6 +62,20 @@ public class ConfigResource extends AbstractResource {
 
     }
 
+    // GET /config
+    public static class GetConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
+
+        public GetConfig() {
+            super(Void.class, "/config", GET);
+        }
+
+        @Override
+        protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+                throws Exception {
+            return CompletableFuture.completedFuture(new GetConfigResponse(CompatibilityChecker.Mode.NONE.name()));
+        }
+
+    }
 
     @Data
     public static final class PutConfigRequest {

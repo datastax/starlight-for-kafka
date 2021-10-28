@@ -31,8 +31,10 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.IOUtils;
 
+@Slf4j
 public class SimpleAPIServer {
     private EventLoopGroup group;
     private ServerSocketChannel serverChannel;
@@ -102,10 +104,12 @@ public class SimpleAPIServer {
         URL url = url(base);
         HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
         try {
-            urlConnection.setDoOutput(true);
             urlConnection.setRequestMethod(method);
-            urlConnection.setRequestProperty("Content-Type", requestContentType);
-            urlConnection.setRequestProperty("Content-Length", requestContent.length() + "");
+            if (requestContent != null) {
+                urlConnection.setDoOutput(true);
+                urlConnection.setRequestProperty("Content-Type", requestContentType);
+                urlConnection.setRequestProperty("Content-Length", requestContent.length() + "");
+            }
             urlConnection.getOutputStream().write(requestContent.getBytes(StandardCharsets.UTF_8));
             urlConnection.getOutputStream().close();
             Object content = urlConnection.getContent();
@@ -118,6 +122,7 @@ public class SimpleAPIServer {
             }
             return content.toString();
         } catch (IOException err) {
+            log.info("error", err);
             if (expectedError == null) {
                 throw err;
             }
@@ -125,7 +130,11 @@ public class SimpleAPIServer {
                 throw new IOException("Unexpected error code "
                         + urlConnection.getResponseCode() + ", expected " + expectedError);
             }
-            return IOUtils.toString(urlConnection.getErrorStream(), "utf-8");
+            InputStream errorStream = urlConnection.getErrorStream();
+            if (errorStream == null) {
+                return "";
+            }
+            return IOUtils.toString(errorStream, "utf-8");
         } finally {
             urlConnection.disconnect();
         }

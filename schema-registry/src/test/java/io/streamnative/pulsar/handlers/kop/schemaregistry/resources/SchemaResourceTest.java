@@ -18,6 +18,7 @@ import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertThrows;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.DummyOptionsCORSProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SimpleAPIServer;
@@ -90,6 +91,7 @@ public class SchemaResourceTest {
         subjectResource.register(schemaRegistryHandler);
         configResource.register(schemaRegistryHandler);
         compatibilityResource.register(schemaRegistryHandler);
+        schemaRegistryHandler.addProcessor(new DummyOptionsCORSProcessor());
         server = new SimpleAPIServer(schemaRegistryHandler);
         server.startServer();
     }
@@ -202,6 +204,25 @@ public class SchemaResourceTest {
     }
 
     @Test
+    public void getLatestVersionSubject() throws Exception {
+        putSchema(1, "subject1", "{SCHEMA1}", 6);
+        putSchema(2, "subject2", "{SCHEMA2}", 7);
+        putSchema(3, "subject1", "{SCHEMA3}", 8);
+
+        String result = server.executeGet("/subjects/subject1/versions/latest");
+        log.info("result {}", result);
+        assertEquals(result, "{\n"
+                + "  \"schema\" : \"{SCHEMA3}\",\n"
+                + "  \"subject\" : \"subject1\",\n"
+                + "  \"version\" : 8,\n"
+                + "  \"type\" : \"AVRO\"\n"
+                + "}");
+
+        server.executeMethod("/subjects/subjectnotexists/versions/latest", "GET",
+                null, null, 404);
+    }
+
+    @Test
     public void createSchemaTest() throws Exception {
 
         log.info("body {}", TEST_SCHEMA);
@@ -281,14 +302,22 @@ public class SchemaResourceTest {
     }
 
     @Test
+    public void testOptionsAndCORS() throws Exception {
+        assertEquals("",
+                    server.executeMethod("/subjects/test/versions", "",
+                            "OPTIONS", "tet/plain", 204));
+
+    }
+
+    @Test
     public void getSetCompatility() throws Exception {
         // default is NONE in KOP
         assertEquals("{\n"
-                + "  \"compatibility\" : \"NONE\"\n"
+                + "  \"compatibilityLevel\" : \"NONE\"\n"
                 + "}", server.executeGet("/config/sub1"));
         for (CompatibilityChecker.Mode mode : CompatibilityChecker.Mode.values()) {
             assertEquals("{\n"
-                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "  \"compatibilityLevel\" : \"" + mode + "\"\n"
                     + "}", server.executeMethod("/config/sub1",
                     "{\n"
                             + "  \"compatibility\" : \"" + mode + "\"\n"
@@ -297,10 +326,19 @@ public class SchemaResourceTest {
             ));
 
             assertEquals("{\n"
-                    + "  \"compatibility\" : \"" + mode + "\"\n"
+                    + "  \"compatibilityLevel\" : \"" + mode + "\"\n"
                     + "}", server.executeGet("/config/sub1"));
         }
 
+
+        // Global configuration
+        assertEquals("{\n"
+                + "  \"compatibilityLevel\" : \"NONE\"\n"
+                + "}", server.executeGet("/config"));
+
+        assertEquals("{\n"
+                + "  \"compatibilityLevel\" : \"NONE\"\n"
+                + "}", server.executeGet("/config/"));
     }
 
     @Test
@@ -308,7 +346,7 @@ public class SchemaResourceTest {
 
         // set FULL_TRANSITIVE
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
                 + "}", server.executeMethod("/config/Kafka-value",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
@@ -341,7 +379,7 @@ public class SchemaResourceTest {
 
         // set NONE
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
                 + "}", server.executeMethod("/config/Kafka-value",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.NONE + "\"\n"
@@ -363,7 +401,7 @@ public class SchemaResourceTest {
 
         // set FULL_TRANSITIVE
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
                 + "}", server.executeMethod("/config/mysub",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
@@ -378,7 +416,7 @@ public class SchemaResourceTest {
 
         // set FORWARD
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
                 + "}", server.executeMethod("/config/mysub",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
@@ -396,7 +434,7 @@ public class SchemaResourceTest {
 
         // set FULL_TRANSITIVE
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
                 + "}", server.executeMethod("/config/mysub",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FULL_TRANSITIVE + "\"\n"
@@ -411,7 +449,7 @@ public class SchemaResourceTest {
 
         // set FORWARD
         assertEquals("{\n"
-                + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
+                + "  \"compatibilityLevel\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"
                 + "}", server.executeMethod("/config/mysub",
                 "{\n"
                         + "  \"compatibility\" : \"" + CompatibilityChecker.Mode.FORWARD + "\"\n"

@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.schemaregistry;
 
 import static io.netty.handler.codec.http.HttpResponseStatus.INTERNAL_SERVER_ERROR;
+import static io.netty.handler.codec.http.HttpResponseStatus.NO_CONTENT;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
@@ -47,6 +48,15 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
         httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+        addCORSHeaders(httpResponse);
+        return httpResponse;
+    }
+
+    public static FullHttpResponse buildEmptyResponseNoContentResponse() {
+        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  NO_CONTENT, Unpooled.EMPTY_BUFFER);
+        httpResponse.headers().set(HttpHeaderNames.ALLOW, "GET, POST, PUT, DELETE");
+        httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
+        addCORSHeaders(httpResponse);
         return httpResponse;
     }
 
@@ -55,6 +65,7 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
         httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+        addCORSHeaders(httpResponse);
         return httpResponse;
     }
 
@@ -91,14 +102,23 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
             httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            addCORSHeaders(httpResponse);
         } catch (JsonProcessingException impossible) {
             String body = "Error " + err;
             httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain");
             httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            addCORSHeaders(httpResponse);
         }
         return httpResponse;
+    }
+
+    public static void addCORSHeaders(FullHttpResponse httpResponse) {
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_CREDENTIALS, true);
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "PUT, POST, GET, DELETE");
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "content-type");
     }
 
     protected FullHttpResponse buildJsonResponse(Object content, String contentType) {

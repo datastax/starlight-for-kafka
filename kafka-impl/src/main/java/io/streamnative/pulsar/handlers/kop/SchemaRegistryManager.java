@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.DummyOptionsCORSProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
@@ -225,6 +226,7 @@ public class SchemaRegistryManager {
         new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new ConfigResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new CompatibilityResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
+        handler.addProcessor(new DummyOptionsCORSProcessor());
 
         return Optional.of(new SchemaRegistryChannelInitializer(handler));
     }

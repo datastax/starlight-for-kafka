@@ -71,6 +71,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                     Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
             httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
             httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            HttpRequestProcessor.addCORSHeaders(httpResponse);
             log.info("not found {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
             if (log.isDebugEnabled()) {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
