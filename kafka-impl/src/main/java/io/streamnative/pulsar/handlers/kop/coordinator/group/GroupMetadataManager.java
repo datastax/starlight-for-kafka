@@ -32,6 +32,7 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.CommitRecordMetadataAndOffset;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MessageIdUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -75,7 +76,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
-import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.Message;
@@ -96,7 +96,7 @@ public class GroupMetadataManager {
     /**
      * The key interface.
      */
-    interface BaseKey {
+    public interface BaseKey {
         short version();
         Object key();
     }
@@ -123,7 +123,7 @@ public class GroupMetadataManager {
      */
     @Data
     @Accessors(fluent = true)
-    static class OffsetKey implements BaseKey {
+    public static class OffsetKey implements BaseKey {
 
         private final short version;
         private final GroupTopicPartition key;
@@ -620,11 +620,7 @@ public class GroupMetadataManager {
                 .stream()
                 .collect(Collectors.toMap(
                     tp -> tp,
-                    tp -> new PartitionData(
-                        OffsetFetchResponse.INVALID_OFFSET,
-                        "",
-                        Errors.NONE
-                    )
+                    __ -> KafkaResponseUtils.newOffsetFetchPartition()
                 ));
         }
 
@@ -634,11 +630,7 @@ public class GroupMetadataManager {
                     .stream()
                     .collect(Collectors.toMap(
                         tp -> tp,
-                        tp -> new PartitionData(
-                            OffsetFetchResponse.INVALID_OFFSET,
-                            "",
-                            Errors.NONE
-                        )
+                        tp -> KafkaResponseUtils.newOffsetFetchPartition()
                     ));
             }
 
@@ -648,16 +640,12 @@ public class GroupMetadataManager {
                         tp -> tp,
                         topicPartition ->
                             group.offset(topicPartition)
-                                .map(offsetAndMetadata -> new PartitionData(
+                                .map(offsetAndMetadata -> KafkaResponseUtils.newOffsetFetchPartition(
                                     offsetAndMetadata.offset(),
-                                    offsetAndMetadata.metadata(),
-                                    Errors.NONE
-                                ))
-                                .orElseGet(() -> new PartitionData(
-                                    OffsetFetchResponse.INVALID_OFFSET,
-                                    "",
-                                    Errors.NONE
-                                ))))
+                                    offsetAndMetadata.metadata())
+                                )
+                                .orElseGet(KafkaResponseUtils::newOffsetFetchPartition)
+                    ))
             ).orElseGet(() ->
                 group.allOffsets().entrySet()
                     .stream()
@@ -665,10 +653,9 @@ public class GroupMetadataManager {
                         e -> e.getKey(),
                         e -> {
                             OffsetAndMetadata oam = e.getValue();
-                            return new PartitionData(
+                            return KafkaResponseUtils.newOffsetFetchPartition(
                                 oam.offset(),
-                                oam.metadata(),
-                                Errors.NONE
+                                oam.metadata()
                             );
                         }
                     ))
