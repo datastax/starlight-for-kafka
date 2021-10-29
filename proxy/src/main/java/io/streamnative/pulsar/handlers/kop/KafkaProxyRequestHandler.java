@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 
+import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -912,6 +913,190 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 null);
     }
 
+    @Override
+    protected void handleDeleteRecords(KafkaHeaderAndRequest deleteRecords,
+                                       CompletableFuture<AbstractResponse> resultFuture) {
+
+        DeleteRecordsRequest request = (DeleteRecordsRequest) deleteRecords.getRequest();
+        Map<TopicPartition, Long> partitionOffsets = request.partitionOffsets();
+        if (partitionOffsets.isEmpty()) {
+            resultFuture.complete(KafkaResponseUtils.newDeleteRecords(Collections.emptyMap()));
+            return;
+        }
+
+
+        Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+        int numPartitions = partitionOffsets.size();
+        Map<String, PartitionMetadata> brokers = new ConcurrentHashMap<>();
+        List<CompletableFuture<?>> lookups = new ArrayList<>(numPartitions);
+        partitionOffsets.forEach((topicPartition, offset) -> {
+            final String fullPartitionName = KopTopic.toString(topicPartition);
+            lookups.add(findBroker(TopicName.get(fullPartitionName))
+                    .thenAccept(p -> brokers.put(fullPartitionName, p)));
+        });
+        AtomicInteger topicPartitionNum = new AtomicInteger(numPartitions);
+
+        // here we can perform the last part of the processing in a separate thread
+        // because one client usually won't perform many
+        // deleteRequests concurrently
+        // without waiting for the results of the previous delete
+        FutureUtil.waitForAll(lookups)
+                .whenComplete((result, error) -> {
+                    // TODO: report errors for specific partitions and continue for non failed lookups
+                    if (error != null) {
+                        Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> errorsMap =
+                                partitionOffsets
+                                        .keySet()
+                                        .stream()
+                                        .collect(Collectors.toMap(Function.identity(),
+                                                p -> new DeleteRecordsResponse.PartitionResponse(0, Errors.UNKNOWN_SERVER_ERROR)));
+                        resultFuture.complete(KafkaResponseUtils.newDeleteRecords(errorsMap));
+                    } else {
+                        boolean multipleBrokers = false;
+
+                        // check if all the partitions are for the same broker
+                        PartitionMetadata first = null;
+                        for (PartitionMetadata md : brokers.values()) {
+                            if (first == null) {
+                                first = md;
+                            } else if (!first.leader().equals(md.leader())) {
+                                multipleBrokers = true;
+                                break;
+                            }
+                        }
+
+
+                        if (!multipleBrokers) {
+                            // all the partitions are owned by one single broker,
+                            // we can forward the whole request to the only broker
+                            log.debug("forward FULL DeleteRecords of {} parts to {}", numPartitions, first);
+                            grabConnectionToBroker(first.leader().host(), first.leader().port()).
+                                    forwardRequest(deleteRecords)
+                                    .thenAccept(response -> {
+                                        resultFuture.complete(response);
+                                    }).exceptionally(badError -> {
+                                        log.error("bad error for FULL DeleteRecords", badError);
+                                        Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> errorsMap =
+                                                partitionOffsets
+                                                        .keySet()
+                                                        .stream()
+                                                        .collect(Collectors.toMap(Function.identity(),
+                                                                p -> new DeleteRecordsResponse.PartitionResponse(0, Errors.UNKNOWN_SERVER_ERROR)));
+                                        resultFuture.complete(KafkaResponseUtils.newDeleteRecords(errorsMap));
+                                        return null;
+                                    });
+                        } else {
+                            log.debug("Split DeleteRecords of {} parts to {}", numPartitions, brokers);
+                            // we have to create multiple FetchRequest
+                            // this is a prototype, let's create a FetchRequest per each partition
+                            // we could group requests per broker
+
+                            Runnable complete = () -> {
+                                log.debug("complete fetch {}", deleteRecords);
+                                topicPartitionNum.set(0);
+                                if (resultFuture.isDone()) {
+                                    // It may be triggered again in DelayedProduceAndFetch
+                                    return;
+                                }
+                                // add the topicPartition with timeout error if it's not existed in responseMap
+                                partitionOffsets.keySet().forEach(topicPartition -> {
+                                    if (!responseMap.containsKey(topicPartition)) {
+                                        responseMap.put(topicPartition,
+                                                new DeleteRecordsResponse.PartitionResponse(0, Errors.UNKNOWN_SERVER_ERROR));
+                                    }
+                                });
+                                if (log.isDebugEnabled()) {
+                                    log.debug("[{}] Request {}: Complete handle DeleteRecords.", ctx.channel(), deleteRecords);
+                                }
+                                final LinkedHashMap<TopicPartition, DeleteRecordsResponse.PartitionResponse> responseMapRaw =
+                                        new LinkedHashMap<>(responseMap);
+                                resultFuture.complete(KafkaResponseUtils.newDeleteRecords(responseMapRaw));
+                            };
+                            BiConsumer<TopicPartition, DeleteRecordsResponse.PartitionResponse> addDeletePartitionResponse
+                                    = (topicPartition, response) -> {
+
+                                responseMap.put(topicPartition, response);
+                                // reset topicPartitionNum
+                                int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+                                log.debug("addDeletePartitionResponse {} {} restTopicPartitionNum {}", topicPartition, response,
+                                        restTopicPartitionNum);
+                                if (restTopicPartitionNum < 0) {
+                                    return;
+                                }
+                                if (restTopicPartitionNum == 0) {
+                                    complete.run();
+                                }
+                            };
+
+                            final BiConsumer<TopicPartition, DeleteRecordsResponse.PartitionResponse> resultConsumer = (topicPartition, data) -> addDeletePartitionResponse.accept(
+                                    topicPartition, data);
+                            final BiConsumer<TopicPartition, Errors> errorsConsumer =
+                                    (topicPartition, errors) -> addDeletePartitionResponse.accept(topicPartition,
+                                            new DeleteRecordsResponse.PartitionResponse(0, errors));
+
+                            Map<Node, DeleteRecordsRequest> requestsByBroker = new HashMap<>();
+
+                            partitionOffsets.forEach((topicPartition, offset) -> {
+                                final String fullPartitionName = KopTopic.toString(topicPartition);
+                                PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
+                                Node kopBroker = topicMetadata.leader();
+                                DeleteRecordsRequest requestForSinglePartition = requestsByBroker
+                                        .computeIfAbsent(kopBroker, ___ -> new DeleteRecordsRequest
+                                                .Builder(request.timeout(), new HashMap<>()).build());
+
+                                requestForSinglePartition.partitionOffsets().put(topicPartition, offset);
+                            });
+
+                            requestsByBroker.forEach((kopBroker, requestForSingleBroker) -> {
+                                int dummyCorrelationId = getDummyCorrelationId();
+                                RequestHeader header = new RequestHeader(
+                                        deleteRecords.getHeader().apiKey(),
+                                        deleteRecords.getHeader().apiVersion(),
+                                        deleteRecords.getHeader().clientId(),
+                                        dummyCorrelationId
+                                );
+                                ByteBuffer buffer = requestForSingleBroker.serialize(header);
+                                KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                                        header,
+                                        requestForSingleBroker,
+                                        Unpooled.wrappedBuffer(buffer),
+                                        null
+                                );
+
+                                if (log.isDebugEnabled()) {
+                                    log.debug("forward DeleteRequest for {} to {}", requestForSingleBroker.partitionOffsets().keySet(), kopBroker);
+                                }
+                                grabConnectionToBroker(kopBroker.host(), kopBroker.port())
+                                        .forwardRequest(singlePartitionRequest)
+                                        .thenAccept(response -> {
+                                            DeleteRecordsResponse resp = (DeleteRecordsResponse) response;
+                                            resp.responses()
+                                                    .forEach((topicPartition, partitionResponse) -> {
+                                                        if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
+                                                            String fullTopicName = KopTopic.toString(topicPartition);
+                                                            log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
+                                                            topicsLeaders.remove(fullTopicName);
+                                                        }
+                                                        if (log.isDebugEnabled()) {
+                                                            final String fullPartitionName = KopTopic.toString(topicPartition);
+                                                            log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
+                                                                    partitionResponse);
+                                                        }
+                                                        addDeletePartitionResponse.accept(topicPartition, partitionResponse);
+                                                    });
+                                        }).exceptionally(badError -> {
+                                            log.error("bad error while fetching for {} from {}", requestForSingleBroker.partitionOffsets().keySet(), badError, kopBroker);
+                                            requestForSingleBroker.partitionOffsets().keySet().forEach(topicPartition ->
+                                                    errorsConsumer.accept(topicPartition, Errors.UNKNOWN_SERVER_ERROR)
+                                            );
+                                            return null;
+                                        });
+                            });
+                        }
+                    }
+                });
+
+    }
 
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("Caught error in handler, closing channel", cause);
