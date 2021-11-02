@@ -76,6 +76,12 @@
     </license>
   </licenses>
 
+  <scm>
+    <connection>scm:git:git@github.com:datastax/kop.git</connection>
+    <developerConnection>scm:git:git@github.com:datastax/kop.git</developerConnection>
+    <url>https://github.com/datastax/kop</url>
+  </scm>
+
   <modules>
     <module>kafka-0-9</module>
     <module>kafka-0-10</module>
