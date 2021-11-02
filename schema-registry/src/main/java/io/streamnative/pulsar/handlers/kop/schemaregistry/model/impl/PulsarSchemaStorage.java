@@ -13,10 +13,14 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import java.io.Closeable;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,17 +48,14 @@ import org.apache.pulsar.common.util.FutureUtil;
 @Slf4j
 public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
-    // Pulsar Schema instances are stateful, you cannot
-    // use them as constants
-    private final org.apache.pulsar.client.api.Schema<Op> avroSchema =
-                            org.apache.pulsar.client.api.Schema.AVRO(Op.class);
+    private final static ObjectMapper MAPPER = new ObjectMapper();
 
     private final ConcurrentHashMap<String, CompatibilityChecker.Mode> compatibility = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, SchemaEntry> schemas = new ConcurrentHashMap<>();
     private final PulsarClient pulsarClient;
     private final String topic;
     private final String tenant;
-    private CompletableFuture<Reader<Op>> reader;
+    private CompletableFuture<Reader<byte[]>> reader;
 
     private enum SchemaStatus {
         ACTIVE,
@@ -116,9 +117,9 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         return tenant;
     }
 
-    private synchronized CompletableFuture<Reader<Op>> getReaderHandle() {
+    private synchronized CompletableFuture<Reader<byte[]>> getReaderHandle() {
         if (reader == null) {
-            reader = pulsarClient.newReader(avroSchema)
+            reader = pulsarClient.newReader()
                         .topic(topic)
                         .startMessageId(MessageId.earliest)
                         .startMessageIdInclusive()
@@ -128,7 +129,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         return reader;
     }
 
-    private CompletableFuture<?> readNextMessageIfAvailable(Reader<Op> reader) {
+    private CompletableFuture<?> readNextMessageIfAvailable(Reader<byte[]> reader) {
         return reader
                 .hasMessageAvailableAsync()
                 .thenCompose(hasMessageAvailable -> {
@@ -136,11 +137,11 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                             || !hasMessageAvailable) {
                         return CompletableFuture.completedFuture(null);
                     } else {
-                        CompletableFuture<Message<Op>> opMessage = reader.readNextAsync();
+                        CompletableFuture<Message<byte[]>> opMessage = reader.readNextAsync();
                         // we cannot perform this inside the Netty thread
                         // so we are using here thenComposeAsync
-                        return opMessage.thenComposeAsync(msg -> {
-                            Op value = msg.getValue();
+                        return opMessage.thenCompose(msg -> {
+                            byte[] value = msg.getValue();
                             applyOpToLocalMemory(value);
                             return readNextMessageIfAvailable(reader);
                         });
@@ -149,7 +150,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     }
 
     private CompletableFuture<?> ensureLatestData() {
-        CompletableFuture<Reader<Op>> readerHandle = getReaderHandle();
+        CompletableFuture<Reader<byte[]>> readerHandle = getReaderHandle();
         return readerHandle.thenCompose(this::readNextMessageIfAvailable);
     }
 
@@ -241,34 +242,30 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
     @Override
     public CompletableFuture<List<String>> getAllSubjects() {
-        return fetch(
-                () -> schemas
+        return ensureLatestData().thenApply(___ ->
+                schemas
                         .values()
                         .stream()
                         .map(SchemaEntry::getSubject)
                         .distinct()
-                        .collect(Collectors.toList()),
-                (res) -> false, // not applicable
-                (res) -> res.isEmpty()); // fetch again if nothing found, useful for demos/testing
+                        .sorted() // this is good for unit tests
+                        .collect(Collectors.toList()));
     }
 
     @Override
     public CompletableFuture<List<Integer>> getAllVersionsForSubject(String subject) {
-        return fetch(
-                () -> schemas
+        return ensureLatestData().thenApply(___ -> schemas
                 .values()
                 .stream()
                 .filter(s -> s.getSubject().equals(subject) && s.status != SchemaStatus.DELETED)
                 .map(SchemaEntry::getVersion)
-                .sorted() // this is goodfor unit tests
-                .collect(Collectors.toList()),
-                (res) -> false,  // not applicable
-                (res) -> res.isEmpty()); // fetch again if nothing found, useful for demos/testing
+                .sorted() // this is good for unit tests
+                .collect(Collectors.toList()));
     }
 
     private synchronized <T> CompletableFuture<List<T>> executeWriteOp(Supplier<List<Map.Entry<Op, T>>> opBuilder) {
         log.info("opening exclusive producer to {}", topic);
-        CompletableFuture<Producer<Op>> producerHandle = pulsarClient.newProducer(avroSchema)
+        CompletableFuture<Producer<byte[]>> producerHandle = pulsarClient.newProducer()
                 .enableBatching(false)
                 .topic(topic)
                 .accessMode(ProducerAccessMode.WaitForExclusive)
@@ -293,7 +290,8 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                                 if (!op.tenant.equals(getTenant())) {
                                     sendHandles.add(FutureUtil.failedFuture(new SchemaStorageException("Invalid tenant " + op.tenant + ", expected " + tenant)));
                                 } else {
-                                    sendHandles.add(opProducer.sendAsync(op).thenAccept((msgId) -> {
+                                    byte[] serialized = serializeOp(op);
+                                    sendHandles.add(opProducer.sendAsync(serialized).thenAccept((msgId) -> {
                                         log.info("written {} as {} to Pulsar", op, msgId);
                                         // write to local memory
                                         applyOpToLocalMemory(op);
@@ -318,6 +316,23 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
 
     }
 
+    private byte[] serializeOp(Op op) {
+        try {
+            return MAPPER.writeValueAsBytes(op);
+        } catch (JsonProcessingException err) {
+            throw new RuntimeException(err);
+        }
+    }
+
+
+    private void applyOpToLocalMemory(byte[] serialized) {
+        try {
+            Op op = MAPPER.readValue(serialized, Op.class);
+            applyOpToLocalMemory(op);
+        } catch (IOException err) {
+            log.error("Ignoring malformed entry {}", new String(serialized, StandardCharsets.UTF_8));
+        }
+    }
     private void applyOpToLocalMemory(Op op) {
         if (op.isCompatibilityModeChange()) {
             try {
