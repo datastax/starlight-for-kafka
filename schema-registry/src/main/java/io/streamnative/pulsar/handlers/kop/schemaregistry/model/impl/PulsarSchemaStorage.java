@@ -475,8 +475,17 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         };
     }
 
-    public void close() {
-        // we are not owning the PulsarClient
+    @Override
+    public synchronized void close() {
+        if (reader != null) {
+            reader.thenAccept(reader -> {
+                try {
+                    reader.close();
+                } catch (Exception err) {
+                    // ignore
+                }
+            });
+        }
     }
 
     @Override
