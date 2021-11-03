@@ -265,8 +265,6 @@ class AdminManager {
 
     }
 
-
-
     CompletableFuture<Map<String, ApiError>> createPartitionsAsync(Map<String, NewPartitions> createInfo,
                                                                    int timeoutMs) {
         final Map<String, CompletableFuture<ApiError>> futureMap = new ConcurrentHashMap<>();

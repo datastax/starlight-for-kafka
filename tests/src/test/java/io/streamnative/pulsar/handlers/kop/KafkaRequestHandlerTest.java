@@ -419,12 +419,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         AtomicInteger count = new AtomicInteger();
         final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-        topicToNumPartitions.forEach( (topic, numPartitions) -> {
+        topicToNumPartitions.forEach((topic, numPartitions) -> {
             for (int i = 0; i < numPartitions; i++) {
                 producer.send(new ProducerRecord<>(topic, i, count + "", count + ""));
                 count.incrementAndGet();
             }
         });
+
         producer.close();
 
         // delete
