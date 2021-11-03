@@ -2002,6 +2002,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     String fullTopicName = kopTopic.getFullName();
                     authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, fullTopicName))
                             .whenComplete((isAuthorized, ex) -> {
+                                log.info("authorize {}{}", fullTopicName, isAuthorized, ex);
                                 if (ex != null) {
                                     log.error("DescribeConfigs in topic authorize failed, topic - {}. {}",
                                             fullTopicName, ex.getMessage());
@@ -2023,6 +2024,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     break;
                 case BROKER:
                     // Current KoP don't support Broker Resource.
+                    // but we are not exposing anything to the client, so it is fine to serve requests.
+                    completeOne.accept(() -> authorizedResources.add(configResource));
+                    break;
                 case UNKNOWN:
                 default:
                     completeOne.accept(() -> log.error("KoP doesn't support resource type: " + configResource.type()));

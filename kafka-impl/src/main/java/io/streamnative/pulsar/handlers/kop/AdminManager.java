@@ -50,6 +50,7 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DescribeConfigsResponse;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.ObjectMapperFactory;
 
 @Slf4j
@@ -202,9 +203,11 @@ class AdminManager {
                                         });
                                 break;
                             case BROKER:
-                                throw new RuntimeException("KoP doesn't support resource type: " + resource.type());
+                                future.complete(new DescribeConfigsResponse.Config(
+                                        ApiError.NONE, Collections.emptyList()));
+                                break;
                             default:
-                                throw new InvalidRequestException("Unsupported resource type: " + resource.type());
+                                return FutureUtil.failedFuture(new InvalidRequestException("Unsupported resource type: " + resource.type()));
                         }
                         return future;
                     } catch (Exception e) {
@@ -214,6 +217,10 @@ class AdminManager {
                 }));
         CompletableFuture<Map<ConfigResource, DescribeConfigsResponse.Config>> resultFuture = new CompletableFuture<>();
         CompletableFuture.allOf(futureMap.values().toArray(new CompletableFuture[0])).whenComplete((ignored, e) -> {
+            if (e != null) {
+                resultFuture.completeExceptionally(e);
+                return;
+            }
             resultFuture.complete(futureMap.entrySet().stream().collect(
                     Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().getNow(null))
             ));
