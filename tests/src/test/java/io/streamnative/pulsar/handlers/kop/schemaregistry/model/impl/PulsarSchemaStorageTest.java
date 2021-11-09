@@ -20,6 +20,9 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChe
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
@@ -88,6 +91,29 @@ public class PulsarSchemaStorageTest extends KopProtocolHandlerTestBase {
             // read using instance1
             assertEquals(CompatibilityChecker.Mode.FULL_TRANSITIVE, instance1.getCompatibilityMode(subject1).get());
 
+        }
+    }
+
+    @Test
+    public void testMultipleEnsureLatestData() throws Exception {
+        admin.topics().createNonPartitionedTopic("persistent://public/default/__schemaregistry-3");
+
+        try (PulsarSchemaStorage instance1 = new PulsarSchemaStorage(tenant, pulsarClient,
+                "persistent://public/default/__schemaregistry-3");) {
+            instance1.setCompatibilityMode("aaa", CompatibilityChecker.Mode.FULL_TRANSITIVE);
+            // ensure that we are able to not deadlock while issueing many ensureLatestData()
+            // concurrently
+            List<CompletableFuture<?>> handles = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                handles.add(instance1.ensureLatestData());
+                if (i % 5 == 0) {
+                    // add some writes
+                    instance1
+                            .setCompatibilityMode("aaa", CompatibilityChecker.Mode.FULL_TRANSITIVE);
+                }
+            }
+            CompletableFuture.allOf(handles.toArray(new CompletableFuture[0]))
+                    .get();
         }
     }
 

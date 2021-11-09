@@ -28,6 +28,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -56,6 +57,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     private final String topic;
     private final String tenant;
     private CompletableFuture<Reader<byte[]>> reader;
+    private CompletableFuture<?> currentReadHandle;
 
     private enum SchemaStatus {
         ACTIVE,
@@ -118,6 +120,10 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     }
 
     private synchronized CompletableFuture<Reader<byte[]>> getReaderHandle() {
+        return reader;
+    }
+
+    private synchronized CompletableFuture<Reader<byte[]>> ensureReaderHandle() {
         if (reader == null) {
             reader = pulsarClient.newReader()
                         .topic(topic)
@@ -138,8 +144,6 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         return CompletableFuture.completedFuture(null);
                     } else {
                         CompletableFuture<Message<byte[]>> opMessage = reader.readNextAsync();
-                        // we cannot perform this inside the Netty thread
-                        // so we are using here thenComposeAsync
                         return opMessage.thenCompose(msg -> {
                             byte[] value = msg.getValue();
                             applyOpToLocalMemory(value);
@@ -149,9 +153,43 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                 });
     }
 
-    private CompletableFuture<?> ensureLatestData() {
-        CompletableFuture<Reader<byte[]>> readerHandle = getReaderHandle();
-        return readerHandle.thenCompose(this::readNextMessageIfAvailable);
+    // visible for testing
+    synchronized CompletableFuture<?> ensureLatestData() {
+        return ensureLatestData(false);
+    }
+
+    synchronized CompletableFuture<?> ensureLatestData(boolean beforeWrite) {
+        if (currentReadHandle != null) {
+            if (beforeWrite) {
+                // we are inside a write loop, so
+                // we must ensure that we start to read now
+                // otherwise the write would use non up-to-date data
+                // so let's finish the current loop
+                log.info("A read was already pending, starting a new one in order to ensure consistency");
+                return currentReadHandle
+                        .thenCompose(___ -> ensureLatestData(false));
+            }
+            // if there is an ongoing read operation then complete it
+            return currentReadHandle;
+        }
+        // please note that the read operation is async,
+        // and it is not execute inside this synchronized block
+        CompletableFuture<Reader<byte[]>> readerHandle = ensureReaderHandle();
+        final CompletableFuture<?> newReadHandle
+                = readerHandle.thenCompose(this::readNextMessageIfAvailable);
+        currentReadHandle = newReadHandle;
+        return newReadHandle.whenComplete((a, b) -> {
+            endReadLoop(newReadHandle);
+            if (b != null) {
+                throw new CompletionException(b);
+            }
+        });
+    }
+
+    private synchronized void endReadLoop(CompletableFuture<?> handle) {
+        if (handle == currentReadHandle) {
+            currentReadHandle = null;
+        }
     }
 
     @Override
@@ -274,7 +312,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         return producerHandle.thenCompose(opProducer -> {
             // nobody can write now to the topic
             // wait for local cache to be up-to-date
-            CompletableFuture<List<T>> dummy =  ensureLatestData()
+            CompletableFuture<List<T>> dummy =  ensureLatestData(true)
                     .thenCompose((___) -> {
                         // build the Op, this will usually use the contents of the local cache
                         List<Map.Entry<Op, T>> ops = opBuilder.get();
@@ -491,9 +529,10 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
     }
 
     @Override
-    public synchronized void close() {
-        if (reader != null) {
-            reader.thenAccept(reader -> {
+    public void close() {
+        CompletableFuture<Reader<byte[]>> currentReadHandle = getReaderHandle();
+        if (currentReadHandle != null) {
+            currentReadHandle.thenAccept(reader -> {
                 try {
                     reader.close();
                 } catch (Exception err) {
