@@ -354,6 +354,24 @@ public class SchemaResourceTest {
     }
 
     @Test
+    public void checkCreateVersions() throws Exception {
+        assertEquals("{\n"
+                + "  \"id\" : 1\n"
+                + "}", server.executePost(
+                "/subjects/Kafka-value/versions",
+                "{\"schema\": \"{\\\"type\\\": \\\"string\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+
+        assertEquals("{\n"
+                + "  \"id\" : 2,\n"
+                + "  \"version\" : 2\n"
+                + "}", server.executePost(
+                "/subjects/Kafka-value",
+                "{\"schema\": \"{\\\"type\\\": \\\"int\\\"}\"}",
+                "application/vnd.schemaregistry.v1+json"));
+    }
+
+    @Test
     public void checkCompatibility() throws Exception {
 
         // set FULL_TRANSITIVE

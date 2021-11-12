@@ -225,7 +225,6 @@ public class SubjectResource extends AbstractResource {
         int id;
     }
 
-
     // POST /subjects/(string: subject)/versions
     public class CreateNewSchema extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponse> {
 
@@ -255,23 +254,30 @@ public class SubjectResource extends AbstractResource {
 
     }
 
+    @Data
+    @AllArgsConstructor
+    public static final class CreateSchemaResponseForSubject {
+        int id;
+        int version;
+    }
+
 
     // POST /subjects/(string: subject)
-    public class CreateOrUpdateSchema extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponse> {
+    public class CreateOrUpdateSchema extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponseForSubject> {
 
         public CreateOrUpdateSchema() {
             super(CreateSchemaRequest.class, "/subjects/" + STRING_PATTERN, POST);
         }
 
         @Override
-        protected CompletableFuture<CreateSchemaResponse> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
+        protected CompletableFuture<CreateSchemaResponseForSubject> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
                                                       FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, false);
-            return schema.thenApply(s -> new CreateSchemaResponse(s.getId())).exceptionally(err -> {
+            return schema.thenApply(s -> new CreateSchemaResponseForSubject(s.getId(), s.getVersion())).exceptionally(err -> {
                 while (err instanceof CompletionException) {
                     err = err.getCause();
                 }
