@@ -905,6 +905,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 null);
     }
 
+    protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        handleRequestWithCoordinator(describeConfigs, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                DescribeConfigsRequest.class, (metadataRequest) -> "system",
+                null);
+    }
+
     @Override
     protected void handleDeleteTopics(KafkaHeaderAndRequest deleteTopics,
                                       CompletableFuture<AbstractResponse> resultFuture) {

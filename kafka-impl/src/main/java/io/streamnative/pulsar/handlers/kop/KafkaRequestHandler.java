@@ -119,6 +119,8 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
+import org.apache.kafka.common.requests.AlterConfigsRequest;
+import org.apache.kafka.common.requests.AlterConfigsResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
 import org.apache.kafka.common.requests.CreatePartitionsRequest;
@@ -1946,6 +1948,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         });
 
 
+    }
+
+    @Override
+    protected void handleAlterConfigs(KafkaHeaderAndRequest alterConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+        checkArgument(alterConfigs.getRequest() instanceof AlterConfigsRequest);
+        AlterConfigsRequest request = (AlterConfigsRequest) alterConfigs.getRequest();
+
+        if (request.configs().isEmpty()) {
+            resultFuture.complete(new AlterConfigsResponse(0, Maps.newHashMap()));
+            return;
+        }
+
+        Map<ConfigResource, ApiError> results = new HashMap<>();
+        request.configs().forEach((ConfigResource configResource, AlterConfigsRequest.Config newConfig) -> {
+            newConfig.entries().forEach(entry -> {
+                log.info("Ignoring ALTER_CONFIG for {} {} = {}", configResource, entry.name(), entry.value());
+            });
+            results.put(configResource, ApiError.NONE);
+        });
+        resultFuture.complete(new AlterConfigsResponse(0, results));
     }
 
     @Override
