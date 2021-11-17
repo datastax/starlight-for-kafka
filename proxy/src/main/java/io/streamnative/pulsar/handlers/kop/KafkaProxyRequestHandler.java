@@ -908,7 +908,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
         handleRequestWithCoordinator(describeConfigs, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
-                DescribeConfigsRequest.class, (metadataRequest) -> "system",
+                AlterConfigsRequest.class, (metadataRequest) -> "system",
                 null);
     }
 
