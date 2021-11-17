@@ -101,8 +101,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
             new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
-        ch.pipeline().addLast("handler",
-                newCnx());
+        ch.pipeline().addLast("handler", newCnx());
     }
 
     @VisibleForTesting

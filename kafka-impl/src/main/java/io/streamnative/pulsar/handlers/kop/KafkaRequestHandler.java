@@ -105,6 +105,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
+import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -116,6 +117,7 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
+import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.AlterConfigsRequest;
@@ -206,7 +208,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
-    private final String advertisedListeners;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
@@ -307,7 +308,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.fetchPurgatory = fetchPurgatory;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.advertisedListeners = kafkaConfig.getKafkaAdvertisedListeners();
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -1038,6 +1038,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+
     private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
                                         final TopicPartition topicPartition,
                                         final MemoryRecords records,
@@ -1058,6 +1059,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             final long beforeRecordsProcess = MathUtils.nowInNano();
             final MemoryRecords validRecords =
                     validateRecords(produceHar.getHeader().apiVersion(), topicPartition, records);
+
+            validRecords.batches().forEach(batch->{
+                if (batch.sizeInBytes() > kafkaConfig.getMaxMessageSize()) {
+                    throw new RecordTooLargeException(String.format("Message batch size is %s "
+                                    + "in append to partition %s which exceeds the maximum configured size of %s .",
+                            batch.sizeInBytes(), topicPartition, kafkaConfig.getMaxMessageSize()));
+                }
+            });
 
             final CompletableFuture<Optional<PersistentTopic>> topicFuture =
                     topicManager.getTopic(fullPartitionName);
@@ -1303,6 +1312,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             PersistentTopic perTopic = perTopicOpt.get();
             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) perTopic.getManagedLedger();
             PositionImpl lac = (PositionImpl) managedLedger.getLastConfirmedEntry();
+            if (lac == null) {
+                log.error("[{}] Unexpected LastConfirmedEntry for topic {}, managed ledger: {}",
+                        ctx, perTopic.getName(), managedLedger.getName());
+                partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
+                return;
+            }
             if (timestamp == ListOffsetRequest.LATEST_TIMESTAMP) {
                 PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
@@ -1314,14 +1329,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
             } else if (timestamp == ListOffsetRequest.EARLIEST_TIMESTAMP) {
                 PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
+                if (position == null) {
+                    log.error("[{}] Failed to find first valid position for topic {}", ctx, perTopic.getName());
+                    partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
+                    return;
+                }
 
                 if (log.isDebugEnabled()) {
-                    log.debug("Get earliest position for topic {} time {}. result: {}",
-                        perTopic.getName(), timestamp, position);
+                    log.debug("[{}] Get earliest position for topic {}: {}, lac: {}",
+                            ctx, perTopic.getName(), position, lac);
                 }
-                if (position.compareTo(lac) > 0 || MessageMetadataUtils.getCurrentOffset(managedLedger) < 0) {
-                    long offset = Math.max(0, MessageMetadataUtils.getCurrentOffset(managedLedger));
-                    partitionData.complete(Pair.of(Errors.NONE, offset));
+                final long latestOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                if (latestOffset < 0) {
+                    log.warn("[{}] Unexpected latest offset {} (< 0) for topic {}",
+                            ctx, latestOffset, perTopic.getName());
+                    partitionData.complete(Pair.of(Errors.NONE, 0L));
+                    return;
+                }
+                if (position.compareTo(lac) > 0) {
+                    partitionData.complete(Pair.of(Errors.NONE, latestOffset));
                 } else {
                     MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
                             .whenComplete((offset, throwable) -> {
@@ -1944,10 +1970,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void handleAlterConfigs(KafkaHeaderAndRequest alterConfigs,
+    protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
                                          CompletableFuture<AbstractResponse> resultFuture) {
-        checkArgument(alterConfigs.getRequest() instanceof AlterConfigsRequest);
-        AlterConfigsRequest request = (AlterConfigsRequest) alterConfigs.getRequest();
+        checkArgument(describeConfigs.getRequest() instanceof AlterConfigsRequest);
+        AlterConfigsRequest request = (AlterConfigsRequest) describeConfigs.getRequest();
 
         if (request.configs().isEmpty()) {
             resultFuture.complete(new AlterConfigsResponse(0, Maps.newHashMap()));
@@ -2018,7 +2044,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     String fullTopicName = kopTopic.getFullName();
                     authorize(AclOperation.DESCRIBE_CONFIGS, Resource.of(ResourceType.TOPIC, fullTopicName))
                             .whenComplete((isAuthorized, ex) -> {
-                                log.info("authorize {}{}", fullTopicName, isAuthorized, ex);
                                 if (ex != null) {
                                     log.error("DescribeConfigs in topic authorize failed, topic - {}. {}",
                                             fullTopicName, ex.getMessage());
@@ -2089,7 +2114,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 } else {
                     TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
                     transactionCoordinator.handleAddPartitionsToTransaction(request.transactionalId(),
-                            request.producerId(), request.producerEpoch(), partitionsToAdd, response);
+                            request.producerId(), request.producerEpoch(), authorizedPartitions, (errors) -> {
+                                // TODO: handle PRODUCER_FENCED errors
+                                Map<TopicPartition, Errors> topicPartitionErrorsMap =
+                                        addPartitionError(partitionsToAdd, errors);
+                                response.complete(
+                                        new AddPartitionsToTxnResponse(0, topicPartitionErrorsMap));
+                            });
                 }
             }
         };
@@ -2127,11 +2158,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         String currentTenant = getCurrentTenant();
         String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().getCurrentOffsetsTopicName(currentTenant);
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+        Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
                 request.transactionalId(),
                 request.producerId(),
                 request.producerEpoch(),
-                Collections.singletonList(new TopicPartition(offsetTopicName, partition)), response);
+                topicPartitions,
+                (errors) -> {
+                    // TODO: handle PRODUCER_FENCED errors
+                    response.complete(
+                            new AddOffsetsToTxnResponse(0, errors));
+                });
+    }
+
+    private Map<TopicPartition, Errors> addPartitionError(Collection<TopicPartition> partitions, Errors errors) {
+        Map<TopicPartition, Errors> result = Maps.newHashMap();
+        for (TopicPartition partition : partitions) {
+            result.put(partition, errors);
+        }
+        return result;
     }
 
     @Override
@@ -2572,7 +2617,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
-        return kopBrokerLookupManager.findBroker(topic, advertisedEndPoint)
+        return kopBrokerLookupManager.findBroker(topic.toString(), advertisedEndPoint)
                 .thenApply(listenerInetSocketAddressOpt -> listenerInetSocketAddressOpt
                         .map(inetSocketAddress -> newPartitionMetadata(topic, newNode(inetSocketAddress)))
                         .orElse(null)

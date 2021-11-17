@@ -845,7 +845,14 @@ public abstract class KopProtocolHandlerTestBase {
         final TransactionCoordinator transactionCoordinator =
                 handler.getTransactionCoordinator(conf.getKafkaMetadataTenant());
 
-        return ((KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue())
+        return handler
+                .getChannelInitializerMap()
+                .values()
+                .stream()
+                .filter(e -> e instanceof KafkaChannelInitializer)
+                .map(f -> ((KafkaChannelInitializer) f))
+                .findFirst()
+                .get()
                 .newCnx(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {

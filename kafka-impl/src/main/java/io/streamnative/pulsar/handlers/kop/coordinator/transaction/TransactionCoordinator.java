@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -54,8 +55,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.requests.AbstractResponse;
-import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
@@ -316,8 +315,8 @@ public class TransactionCoordinator {
             responseCallback.accept(initTransactionError(Errors.forException(prepareInitPidThrowable)));
             return;
         }
-        TxnTransitMetadata newMetadata = errorsAndData.getData().txnTransitMetadata;
-        if (errorsAndData.getData().txnTransitMetadata.getTxnState() == PREPARE_EPOCH_FENCE) {
+        TxnTransitMetadata newMetadata = errorsAndData.getData().getTxnTransitMetadata();
+        if (errorsAndData.getData().getTxnTransitMetadata().getTxnState() == PREPARE_EPOCH_FENCE) {
             endTransaction(transactionalId,
                     newMetadata.getProducerId(),
                     newMetadata.getProducerEpoch(),
@@ -360,6 +359,7 @@ public class TransactionCoordinator {
         return new InitProducerIdResult(RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH, error);
     }
 
+    @Data
     @AllArgsConstructor
     private static class EpochAndTxnTransitMetadata {
         private final int coordinatorEpoch;
@@ -378,7 +378,7 @@ public class TransactionCoordinator {
         //      this could be a retry after a valid epoch bump that the producer never received the response for
         return txnMetadata.getProducerEpoch() == RecordBatch.NO_PRODUCER_EPOCH
                 || producerIdAndEpoch.producerId == txnMetadata.getProducerId()
-                || (producerIdAndEpoch.producerId == txnMetadata.getLastProducerEpoch()
+                || (producerIdAndEpoch.producerId == txnMetadata.getLastProducerId()
                 && txnMetadata.isEpochExhausted(producerIdAndEpoch.epoch));
     }
 
@@ -412,30 +412,33 @@ public class TransactionCoordinator {
                 case COMPLETE_ABORT:
                 case COMPLETE_COMMIT:
                 case EMPTY:
-                    final CompletableFuture<TxnTransitMetadata> transitMetadata =
+                    final CompletableFuture<ErrorsAndData<TxnTransitMetadata>> transitMetadata =
                             new CompletableFuture<>();
                     // If the epoch is exhausted and the expected epoch (if provided) matches it, generate a new
                     // producer ID
                     if (txnMetadata.isProducerEpochExhausted()) {
                         CompletableFuture<Long> newProducerId = producerIdManager.generateProducerId();
                         newProducerId.thenAccept(newPid -> {
-                            transitMetadata.complete(
-                                    txnMetadata.prepareProducerIdRotation(
+                            transitMetadata.complete(new ErrorsAndData<>(txnMetadata.prepareProducerIdRotation(
                                             newPid,
                                             transactionTimeoutMs,
                                             time.milliseconds(),
-                                            expectedProducerIdAndEpoch.isPresent()));
+                                            expectedProducerIdAndEpoch.isPresent())));
                         });
                     } else {
                         transitMetadata.complete(
                                 txnMetadata.prepareIncrementProducerEpoch(
                                         transactionTimeoutMs,
                                         expectedProducerIdAndEpoch.map(ProducerIdAndEpoch::getEpoch),
-                                        time.milliseconds()).getData());
+                                        time.milliseconds()));
                     }
                     transitMetadata.whenComplete((txnTransitMetadata, throwable) -> {
+                        if (txnTransitMetadata.hasErrors()) {
+                            resultFuture.complete(new ErrorsAndData<>(txnTransitMetadata.getErrors()));
+                            return;
+                        }
                         resultFuture.complete(new ErrorsAndData<>(
-                                new EpochAndTxnTransitMetadata(coordinatorEpoch, txnTransitMetadata)));
+                                new EpochAndTxnTransitMetadata(coordinatorEpoch, txnTransitMetadata.getData())));
                     });
                     break;
                 case ONGOING:
@@ -464,15 +467,14 @@ public class TransactionCoordinator {
     public void handleAddPartitionsToTransaction(String transactionalId,
                                                  long producerId,
                                                  short producerEpoch,
-                                                 List<TopicPartition> partitionList,
-                                                 CompletableFuture<AbstractResponse> response) {
+                                                 Set<TopicPartition> partitionList,
+                                                 Consumer<Errors> responseCallback) {
         if (transactionalId == null || transactionalId.isEmpty()) {
             if (log.isDebugEnabled()) {
                 log.debug("Returning {} error code to client for {}'s AddPartitions request",
                         Errors.INVALID_REQUEST, transactionalId);
             }
-            response.complete(
-                    new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, Errors.INVALID_REQUEST)));
+            responseCallback.accept(Errors.INVALID_REQUEST);
             return;
         }
 
@@ -480,67 +482,60 @@ public class TransactionCoordinator {
         // if there is no such metadata treat it as invalid producerId mapping error.
         ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> metadata =
                 txnManager.getTransactionState(transactionalId);
+        if (metadata.hasErrors()) {
+            responseCallback.accept(metadata.getErrors());
+            return;
+        }
         ErrorsAndData<EpochAndTxnTransitMetadata> result = new ErrorsAndData<>();
         if (!metadata.getData().isPresent()) {
-            response.complete(
-                    new AddPartitionsToTxnResponse(0,
-                            addPartitionError(partitionList, Errors.INVALID_PRODUCER_ID_MAPPING)));
-        } else {
-            CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = metadata.getData().get();
-            int coordinatorEpoch = epochAndTxnMetadata.getCoordinatorEpoch();
-            TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
-
-            txnMetadata.inLock(() -> {
-                if (txnMetadata.getProducerId() != producerId) {
-                    result.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
-                } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
-                    // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
-                    result.setErrors(producerEpochFenceErrors());
-                } else if (txnMetadata.getPendingState().isPresent()) {
-                    // return a retriable exception to let the client backoff and retry
-                    result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                } else if (txnMetadata.getState() == PREPARE_COMMIT || txnMetadata.getState() == PREPARE_ABORT) {
-                    result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
-                } else if (txnMetadata.getState() == ONGOING
-                        && txnMetadata.getTopicPartitions().containsAll(partitionList)) {
-                    // this is an optimization: if the partitions are already in the metadata reply OK immediately
-                    result.setErrors(Errors.NONE);
-                } else {
-                    result.setData(new EpochAndTxnTransitMetadata(
-                            coordinatorEpoch, txnMetadata.prepareAddPartitions(
-                                    new HashSet<>(partitionList), time.milliseconds())));
-                }
-                return null;
-            });
+            responseCallback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
+            return;
         }
+
+        CoordinatorEpochAndTxnMetadata epochAndTxnMetadata = metadata.getData().get();
+        int coordinatorEpoch = epochAndTxnMetadata.getCoordinatorEpoch();
+        TransactionMetadata txnMetadata = epochAndTxnMetadata.getTransactionMetadata();
+
+        txnMetadata.inLock(() -> {
+            if (txnMetadata.getProducerId() != producerId) {
+                result.setErrors(Errors.INVALID_PRODUCER_ID_MAPPING);
+            } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
+                // TODO the error should be Errors.PRODUCER_FENCED, needs upgrade kafka client version
+                result.setErrors(producerEpochFenceErrors());
+            } else if (txnMetadata.getPendingState().isPresent()) {
+                // return a retriable exception to let the client backoff and retry
+                result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
+            } else if (txnMetadata.getState() == PREPARE_COMMIT || txnMetadata.getState() == PREPARE_ABORT) {
+                result.setErrors(Errors.CONCURRENT_TRANSACTIONS);
+            } else if (txnMetadata.getState() == ONGOING
+                    && txnMetadata.getTopicPartitions().containsAll(partitionList)) {
+                // this is an optimization: if the partitions are already in the metadata reply OK immediately
+                result.setErrors(Errors.NONE);
+            } else {
+                result.setData(new EpochAndTxnTransitMetadata(
+                        coordinatorEpoch, txnMetadata.prepareAddPartitions(
+                        new HashSet<>(partitionList), time.milliseconds())));
+            }
+            return null;
+        });
 
         if (result.getErrors() != null) {
-            response.complete(new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, result.getErrors())));
-        } else {
-            txnManager.appendTransactionToLog(
-                    transactionalId, result.getData().coordinatorEpoch, result.getData().txnTransitMetadata,
-                    new TransactionStateManager.ResponseCallback() {
-                        @Override
-                        public void complete() {
-                            response.complete(
-                                    new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, Errors.NONE)));
-                        }
-
-                        @Override
-                        public void fail(Errors e) {
-                            response.complete(new AddPartitionsToTxnResponse(0, addPartitionError(partitionList, e)));
-                        }
-                    }, errors -> true);
-
+            responseCallback.accept(result.getErrors());
+            return;
         }
-    }
+        txnManager.appendTransactionToLog(
+                transactionalId, result.getData().getCoordinatorEpoch(), result.getData().getTxnTransitMetadata(),
+                new TransactionStateManager.ResponseCallback() {
+                    @Override
+                    public void complete() {
+                        responseCallback.accept(Errors.NONE);
+                    }
 
-    private Map<TopicPartition, Errors> addPartitionError(List<TopicPartition> partitionList, Errors errors) {
-        Map<TopicPartition, Errors> data = new HashMap<>();
-        for (TopicPartition topicPartition : partitionList) {
-            data.put(topicPartition, errors);
-        }
-        return data;
+                    @Override
+                    public void fail(Errors e) {
+                        responseCallback.accept(e);
+                    }
+                }, errors -> true);
     }
 
     private Errors producerEpochFenceErrors() {
@@ -554,7 +549,7 @@ public class TransactionCoordinator {
                                      TransactionResult transactionResult,
                                      Consumer<Errors> responseCallback) {
         endTransaction(transactionalId, producerId, producerEpoch, transactionResult, true,
-                responseCallback::accept);
+                responseCallback);
     }
 
     @AllArgsConstructor
@@ -576,9 +571,14 @@ public class TransactionCoordinator {
             return;
         }
 
-        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata =
-                txnManager.getTransactionState(transactionalId).getData();
+        ErrorsAndData<Optional<CoordinatorEpochAndTxnMetadata>> transactionState =
+                txnManager.getTransactionState(transactionalId);
+        if (transactionState.hasErrors()) {
+            callback.accept(transactionState.getErrors());
+            return;
+        }
 
+        Optional<CoordinatorEpochAndTxnMetadata> epochAndMetadata = transactionState.getData();
         if (!epochAndMetadata.isPresent()) {
             callback.accept(Errors.INVALID_PRODUCER_ID_MAPPING);
             return;
@@ -624,7 +624,7 @@ public class TransactionCoordinator {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
                                 epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
-                                            + "{} to the transaction log with error {}. The epoch was increased to ${} "
+                                            + "{} to the transaction log with error {}. The epoch was increased to {} "
                                             + "but not returned to the client", transactionalId, errors,
                                             preAppendResult.getData().getProducerEpoch());
                             }
@@ -835,8 +835,8 @@ public class TransactionCoordinator {
 
         if (preSendResult.hasErrors()) {
             log.info("Aborting sending of transaction markers after appended {} to transaction log "
-                            + "and returning {} error to client for $transactionalId's EndTransaction request",
-                    txnMarkerResult, preSendResult.getErrors());
+                            + "and returning {} error to client for {}'s EndTransaction request",
+                    transactionalId, txnMarkerResult, preSendResult.getErrors());
             callback.accept(preSendResult.getErrors());
             return;
         }
@@ -998,5 +998,4 @@ public class TransactionCoordinator {
         }
         return abortedTransactions;
     }
-
 }
