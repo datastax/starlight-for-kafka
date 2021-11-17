@@ -482,7 +482,7 @@ public class TransactionStateManager {
     }
 
     public int partitionFor(String transactionalId) {
-        return Utils.abs(transactionalId.hashCode()) % transactionTopicPartitionCount;
+        return TransactionCoordinator.partitionFor(transactionalId, transactionTopicPartitionCount);
     }
 
     /**
@@ -493,8 +493,7 @@ public class TransactionStateManager {
     public CompletableFuture<Void> loadTransactionsForTxnTopicPartition(
                                                                 int partitionId,
                                                                 SendTxnMarkersCallback sendTxnMarkers) {
-        TopicPartition topicPartition = new TopicPartition(Topic.TRANSACTION_STATE_TOPIC_NAME, partitionId);
-
+        TopicPartition topicPartition = new TopicPartition(transactionConfig.getTransactionMetadataTopicName(), partitionId);
         boolean alreadyLoading = CoreUtils.inWriteLock(stateLock, () -> {
             leavingPartitions.remove(partitionId);
             boolean partitionAlreadyLoading = !loadingPartitions.add(partitionId);
