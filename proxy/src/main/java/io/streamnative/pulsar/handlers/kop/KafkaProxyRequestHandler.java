@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.isInternalTopic;
 import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
@@ -338,7 +339,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         for (TopicPartition topicPartition : produceRequest.partitionRecordsOrFail().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition);
             // check KOP inner topic
-            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+            if (isInternalTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                         ctx.channel(), produceHar.getHeader(), topicPartition);
                 Map<TopicPartition, PartitionResponse> errorsMap =
@@ -554,7 +555,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         for (TopicPartition topicPartition : fetchRequest.fetchData().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition);
             // check KOP inner topic
-            if (isOffsetTopic(fullPartitionName) || isTransactionTopic(fullPartitionName)) {
+            if (isInternalTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support fetch message to inner topic. topic: {}",
                         ctx.channel(), fetch.getHeader(), topicPartition);
                 Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
@@ -1130,22 +1131,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 topic, pulsarAddress, kafkaAddress);
 
         return CompletableFuture.completedFuture(Optional.of(kafkaAddress));
-    }
-
-    protected boolean isOffsetTopic(String topic) {
-        String offsetsTopic = getCurrentTenant() + "/"
-                + kafkaConfig.getKafkaMetadataNamespace()
-                + "/" + GROUP_METADATA_TOPIC_NAME;
-
-        return topic != null && topic.contains(offsetsTopic);
-    }
-
-    protected boolean isTransactionTopic(String topic) {
-        String transactionTopic = getCurrentTenant() + "/"
-                + kafkaConfig.getKafkaMetadataNamespace()
-                + "/" + TRANSACTION_STATE_TOPIC_NAME;
-
-        return topic != null && topic.contains(transactionTopic);
     }
 
     String currentUser() {
