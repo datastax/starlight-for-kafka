@@ -77,6 +77,7 @@ public class GroupCoordinator {
         SystemTopicClient client,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
+        String namespacePrefix,
         Timer timer,
         Time time
     ) {
@@ -91,6 +92,7 @@ public class GroupCoordinator {
             client.newProducerBuilder(),
             client.newReaderBuilder(),
             coordinatorExecutor,
+            namespacePrefix,
             time
         );
 

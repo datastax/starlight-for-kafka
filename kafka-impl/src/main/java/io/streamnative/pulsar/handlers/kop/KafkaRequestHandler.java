@@ -252,7 +252,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return defaultTenant;
     }
 
-    private String currentNamespacePrefix() {
+    public String currentNamespacePrefix() {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
         return currentTenant + "/" + kafkaConfig.getKafkaNamespace();
     }

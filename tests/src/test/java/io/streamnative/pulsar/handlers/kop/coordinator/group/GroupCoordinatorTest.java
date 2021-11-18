@@ -147,7 +147,8 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
                 } else {
                     return otherGroupPartitionId;
                 }
-            }
+            },
+            "public/default"
         ));
 
         assertNotEquals(groupPartitionId, otherGroupPartitionId);

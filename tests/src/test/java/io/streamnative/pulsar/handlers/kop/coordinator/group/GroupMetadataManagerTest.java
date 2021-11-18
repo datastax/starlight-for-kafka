@@ -94,6 +94,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
+    private static final String NAMESPACE_PREFIX = "public/default";
     private static final String groupId = "foo";
     private static final int groupPartitionId = 0;
 
@@ -132,10 +133,10 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     }
 
     private List<SimpleRecord> createCommittedOffsetRecords(Map<TopicPartition, Long> committedOffsets,
-                                                            String groupId) {
+                                                            String groupId, String namespacePrefix) {
         return committedOffsets.entrySet().stream().map(e -> {
             OffsetAndMetadata offsetAndMetadata = OffsetAndMetadata.apply(e.getValue());
-            byte[] offsetCommitKey = offsetCommitKey(groupId, e.getKey());
+            byte[] offsetCommitKey = offsetCommitKey(groupId, e.getKey(), namespacePrefix);
             byte[] offsetCommitValue = offsetCommitValue(offsetAndMetadata);
             return new SimpleRecord(offsetCommitKey, offsetCommitValue);
         }).collect(Collectors.toList());
@@ -244,7 +245,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                                            Map<TopicPartition, Long> offsets) {
         MemoryRecordsBuilder builder =
             MemoryRecords.builder(buffer, CompressionType.NONE, TimestampType.LOG_APPEND_TIME, baseOffset);
-        List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId);
+        List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId,
+                NAMESPACE_PREFIX);
         commitRecords.forEach(builder::append);
         builder.build();
         return offsets.size();
@@ -254,10 +256,11 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                                                  long producerId,
                                                  short producerEpoch,
                                                  long baseOffset,
-                                                 Map<TopicPartition, Long> offsets) {
+                                                 Map<TopicPartition, Long> offsets,
+                                                 String namespacePrefix) {
         MemoryRecordsBuilder builder =
             MemoryRecords.builder(buffer, CompressionType.NONE, baseOffset, producerId, producerEpoch, 0, true);
-        List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId);
+        List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId, namespacePrefix);
         commitRecords.forEach(builder::append);
         builder.build();
         return offsets.size();
@@ -313,7 +316,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(
             committedOffsets,
-            groupId
+            groupId,
+            NAMESPACE_PREFIX
         );
         ByteBuffer buffer = newMemoryRecordsBuffer(offsetCommitRecords);
         byte[] key = groupMetadataKey(groupId);
@@ -340,7 +344,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(Empty, group.currentState());
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset)));
 
 
     }
@@ -360,7 +364,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(
             committedOffsets,
-            groupId
+            groupId,
+            NAMESPACE_PREFIX
         );
         offsetCommitRecords.add(
             buildEmptyGroupRecord(generation, protocolType));
@@ -395,7 +400,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertNull(group.leaderOrNull());
         assertNull(group.protocolOrNull());
         committedOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset)));
     }
 
     @Test
@@ -414,7 +419,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         int nextOffset = 0;
         nextOffset += appendTransactionalOffsetCommits(
-            buffer, producerId, producerEpoch, nextOffset, committedOffsets
+            buffer, producerId, producerEpoch, nextOffset, committedOffsets,
+                NAMESPACE_PREFIX
         );
         completeTransactionalOffsetCommit(
             buffer, producerId, producerEpoch, nextOffset, true
@@ -445,7 +451,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(Empty, group.currentState());
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset)));
     }
 
     @Test
@@ -463,7 +469,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         int nextOffset = 0;
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets,
+                NAMESPACE_PREFIX);
         completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, false);
         buffer.flip();
 
@@ -499,7 +506,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         int nextOffset = 0;
-        appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, pendingOffsets);
+        appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, pendingOffsets,
+                NAMESPACE_PREFIX);
         buffer.flip();
 
         byte[] key = groupMetadataKey(groupId);
@@ -554,9 +562,11 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         int nextOffset = 0;
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets,
+                NAMESPACE_PREFIX);
         nextOffset += completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, false);
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, committedOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, committedOffsets,
+                NAMESPACE_PREFIX);
         completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, true);
         buffer.flip();
 
@@ -589,7 +599,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         // are truly discarded.
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX)
+                    .map(OffsetAndMetadata::offset)));
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
     }
 
@@ -624,11 +635,14 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         ByteBuffer buffer = ByteBuffer.allocate(2048);
         int nextOffset = 0;
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, committedOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, committedOffsets,
+                NAMESPACE_PREFIX);
         nextOffset += completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, true);
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, abortedOffsets,
+                NAMESPACE_PREFIX);
         nextOffset += completeTransactionalOffsetCommit(buffer, producerId, producerEpoch, nextOffset, false);
-        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, pendingOffsets);
+        nextOffset += appendTransactionalOffsetCommits(buffer, producerId, producerEpoch, nextOffset, pendingOffsets,
+                NAMESPACE_PREFIX);
         buffer.flip();
 
         byte[] key = groupMetadataKey(groupId);
@@ -659,7 +673,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         // for the producer. This allows us to be certain that the aborted offset commits are truly discarded.
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset)));
 
         // We should have pending commits.
         assertTrue(group.hasPendingOffsetCommitsFromProducer(producerId));
@@ -671,7 +685,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             true, new CompletableFuture<>());
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
         pendingOffsets.forEach((tp, offset) ->
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset)));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset)));
 
     }
 
@@ -702,14 +716,16 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         int nextOffset = 0;
         int firstProduceRecordOffset = nextOffset;
         nextOffset += appendTransactionalOffsetCommits(
-            buffer, firstProducerId, firstProducerEpoch, nextOffset, committedOffsetsFirstProducer
+            buffer, firstProducerId, firstProducerEpoch, nextOffset, committedOffsetsFirstProducer,
+                NAMESPACE_PREFIX
         );
         nextOffset += completeTransactionalOffsetCommit(
             buffer, firstProducerId, firstProducerEpoch, nextOffset, true
         );
         int secondProduceRecordOffset = nextOffset;
         nextOffset += appendTransactionalOffsetCommits(
-            buffer, secondProducerId, secondProducerEpoch, nextOffset, committedOffsetsSecondProducer
+            buffer, secondProducerId, secondProducerEpoch, nextOffset, committedOffsetsSecondProducer,
+                NAMESPACE_PREFIX
         );
         nextOffset += completeTransactionalOffsetCommit(
             buffer, secondProducerId, secondProducerEpoch, nextOffset, true
@@ -745,13 +761,13 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(committedOffsetsFirstProducer.size() + committedOffsetsSecondProducer.size(),
             group.allOffsets().size());
         committedOffsetsFirstProducer.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
                 Optional.of((long) firstProduceRecordOffset),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
         });
         committedOffsetsSecondProducer.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
                 Optional.of((long) secondProduceRecordOffset),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedBatchOffset));
@@ -778,7 +794,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             buffer, nextOffset, consumerOffsetCommits
         );
         nextOffset += appendTransactionalOffsetCommits(
-            buffer, producerId, producerEpoch, nextOffset, transactionalOffsetCommits
+            buffer, producerId, producerEpoch, nextOffset, transactionalOffsetCommits,
+            NAMESPACE_PREFIX
         );
         nextOffset += completeTransactionalOffsetCommit(
             buffer, producerId, producerEpoch, nextOffset, true
@@ -815,7 +832,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertFalse(group.hasPendingOffsetCommitsFromProducer(producerId));
         assertEquals(consumerOffsetCommits.size(), group.allOffsets().size());
         transactionalOffsetCommits.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
         });
 
     }
@@ -828,6 +845,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             producer,
             consumer,
             scheduler,
+            NAMESPACE_PREFIX,
             new MockTime()
         );
         // group is not owned
@@ -861,9 +879,9 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.put(
             new TopicPartition("bar", 0), 8992L);
 
-        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId);
+        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId, NAMESPACE_PREFIX);
         SimpleRecord tombstone = new SimpleRecord(
-            offsetCommitKey(groupId, tombstonePartition),
+            offsetCommitKey(groupId, tombstonePartition, NAMESPACE_PREFIX),
             null
         );
         offsetCommitRecords.add(tombstone);
@@ -898,9 +916,9 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(committedOffsets.size() - 1, group.allOffsets().size());
         committedOffsets.forEach((tp, offset) -> {
             if (tp == tombstonePartition) {
-                assertEquals(Optional.empty(), group.offset(tp));
+                assertEquals(Optional.empty(), group.offset(tp, NAMESPACE_PREFIX));
             } else {
-                assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+                assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             }
         });
 
@@ -920,7 +938,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.put(
             new TopicPartition("bar", 0), 8992L);
 
-        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId);
+        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId, NAMESPACE_PREFIX);
         String memberId = "98098230493";
         SimpleRecord groupMetadataRecord = buildStableGroupRecordWithMember(
             generation,
@@ -966,7 +984,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             group.allOffsets().size()
         );
         committedOffsets.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
         });
 
     }
@@ -1028,7 +1046,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.put(
             new TopicPartition("bar", 0), 8992L);
 
-        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId);
+        List<SimpleRecord> offsetCommitRecords = createCommittedOffsetRecords(committedOffsets, groupId,
+                                                    NAMESPACE_PREFIX);
         SimpleRecord groupMetadataRecord = buildStableGroupRecordWithMember(
             generation,
             protocolType,
@@ -1072,7 +1091,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         assertEquals(Empty, group.currentState());
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
         });
     }
 
@@ -1091,7 +1110,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         segment1Offsets.put(tp0, 23L);
         segment1Offsets.put(tp1, 455L);
         segment1Offsets.put(tp3, 42L);
-        List<SimpleRecord> segment1Records = createCommittedOffsetRecords(segment1Offsets, groupId);
+        List<SimpleRecord> segment1Records = createCommittedOffsetRecords(segment1Offsets, groupId, NAMESPACE_PREFIX);
         SimpleRecord segment1Group = buildStableGroupRecordWithMember(
             generation,
             protocolType,
@@ -1106,7 +1125,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         segment2Offsets.put(tp0, 33L);
         segment2Offsets.put(tp2, 8992L);
         segment2Offsets.put(tp3, 10L);
-        List<SimpleRecord> segment2Records = createCommittedOffsetRecords(segment2Offsets, groupId);
+        List<SimpleRecord> segment2Records = createCommittedOffsetRecords(segment2Offsets, groupId,
+                NAMESPACE_PREFIX);
         SimpleRecord segment2Group = buildStableGroupRecordWithMember(
             generation,
             protocolType,
@@ -1158,7 +1178,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsets.putAll(segment2Offsets);
         assertEquals(committedOffsets.size(), group.allOffsets().size());
         committedOffsets.forEach((tp, offset) -> {
-            assertEquals(Optional.of(offset), group.offset(tp).map(OffsetAndMetadata::offset));
+            assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
         });
 
     }
@@ -1171,6 +1191,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             producer,
             consumer,
             scheduler,
+            NAMESPACE_PREFIX,
             new MockTime()
         );
         GroupMetadata group = new GroupMetadata("foo", Empty);
@@ -1432,7 +1453,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 GroupTopicPartition gtp = ok.key();
                 assertEquals(groupId, gtp.group());
                 assertEquals(new TopicPartition(
-                        new KopTopic(topicPartition.topic(), null).getFullName(), topicPartition.partition()),
+                        new KopTopic(topicPartition.topic(), NAMESPACE_PREFIX).getFullName(), topicPartition.partition()),
                         gtp.topicPartition());
 
                 OffsetAndMetadata gm = GroupMetadataConstants.readOffsetMessageValue(
@@ -1503,7 +1524,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
 
         assertEquals(
             Optional.of(OffsetAndMetadata.apply(offset)),
-            group.offset(topicPartition)
+            group.offset(topicPartition, NAMESPACE_PREFIX)
         );
 
     }
@@ -1662,8 +1683,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         groupMetadataManager.cleanupGroupMetadata();
 
         assertEquals(Optional.of(group), groupMetadataManager.getGroup(groupId));
-        assertEquals(Optional.empty(), group.offset(topicPartition1));
-        assertEquals(Optional.of(offset), group.offset(topicPartition2).map(OffsetAndMetadata::offset));
+        assertEquals(Optional.empty(), group.offset(topicPartition1, NAMESPACE_PREFIX));
+        assertEquals(Optional.of(offset), group.offset(topicPartition2, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
 
         Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(
             groupId,
@@ -1820,7 +1841,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                 assertTrue(bk instanceof OffsetKey);
                 OffsetKey ok = (OffsetKey) bk;
                 assertEquals(groupId, ok.key().group());
-                assertEquals(new KopTopic("foo", null).getFullName(), ok.key().topicPartition().topic());
+                assertEquals(new KopTopic("foo", NAMESPACE_PREFIX).getFullName(), ok.key().topicPartition().topic());
             }
         });
         assertEquals(0, verified.get());
@@ -1900,11 +1921,11 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         );
         assertEquals(
             Optional.empty(),
-            group.offset(topicPartition1)
+            group.offset(topicPartition1, NAMESPACE_PREFIX)
         );
         assertEquals(
             Optional.empty(),
-            group.offset(topicPartition2)
+            group.offset(topicPartition2, NAMESPACE_PREFIX)
         );
 
         Map<TopicPartition, PartitionData> cachedOffsets = groupMetadataManager.getOffsets(

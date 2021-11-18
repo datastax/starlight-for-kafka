@@ -59,9 +59,6 @@ public class KopTopic {
     }
 
     public KopTopic(String topic, String namespacePrefix) {
-        if (namespacePrefix == null) {
-            throw new KoPTopicNotInitializedException("KopTopic is not initialized");
-        }
         originalName = topic;
         fullName = expandToFullName(topic, namespacePrefix);
     }
