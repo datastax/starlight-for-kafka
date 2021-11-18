@@ -568,6 +568,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 fetchPurgatory,
                 endPoint.isTlsEnabled(),
                 endPoint,
+                kafkaConfig.isSkipMessagesWithoutIndex(),
                 scopeStatsLogger);
     }
 

@@ -208,6 +208,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final Boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
+    private final boolean skipMessagesWithoutIndex;
     private final int defaultNumPartitions;
     public final int maxReadEntriesNum;
     private final int failedAuthenticationDelayMs;
@@ -290,6 +291,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
+                               boolean skipMessagesWithoutIndex,
                                StatsLogger statsLogger) throws Exception {
         super(statsLogger, kafkaConfig);
         this.pulsarService = pulsarService;
@@ -313,6 +315,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.fetchPurgatory = fetchPurgatory;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;
+        this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
         this.topicManager = new KafkaTopicManager(this);
         this.defaultNumPartitions = kafkaConfig.getDefaultNumPartitions();
         this.maxReadEntriesNum = kafkaConfig.getMaxReadEntriesNum();
@@ -1359,7 +1362,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 if (position.compareTo(lac) > 0) {
                     partitionData.complete(Pair.of(Errors.NONE, latestOffset));
                 } else {
-                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false, timestamp)
+                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, position, false,
+                            timestamp, skipMessagesWithoutIndex)
                             .whenComplete((offset, throwable) -> {
                                 if (throwable != null) {
                                     log.error("[{}] Failed to get offset for position {}",
@@ -1413,7 +1417,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     long offset = Math.max(0, MessageMetadataUtils.getCurrentOffset(managedLedger));
                     partitionData.complete(Pair.of(Errors.NONE, offset));
                 } else {
-                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, finalPosition, true, timestamp)
+                    MessageMetadataUtils.getOffsetOfPosition(managedLedger, finalPosition, true,
+                            timestamp, skipMessagesWithoutIndex)
                             .whenComplete((offset, throwable) -> {
                                 if (throwable != null) {
                                     log.error("[{}] Failed to get offset for position {}",
