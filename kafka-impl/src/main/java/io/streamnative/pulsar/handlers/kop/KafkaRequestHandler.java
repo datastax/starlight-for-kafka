@@ -254,7 +254,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private String currentNamespacePrefix() {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
-        return currentTenant + "/"+ kafkaConfig.getKafkaNamespace();
+        return currentTenant + "/" + kafkaConfig.getKafkaNamespace();
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -1934,7 +1934,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return;
             }
             // TODO: handle request.validateOnly()
-            adminManager.createTopicsAsync(authorizedTopics, request.timeout(), namespacePrefix).thenApply(validResult -> {
+            adminManager.createTopicsAsync(authorizedTopics, request.timeout(), namespacePrefix)
+                    .thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
                 return null;
