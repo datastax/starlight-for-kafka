@@ -394,6 +394,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void initialize(ServiceConfiguration conf) throws Exception {
+        log.info("init {}", conf, new Exception("init").fillInStackTrace());
         // init config
         if (conf instanceof KafkaServiceConfiguration) {
             // in unit test, passed in conf will be KafkaServiceConfiguration
@@ -407,7 +408,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
             kafkaConfig.setBindAddress(conf.getBindAddress());
         }
-        KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
 
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {

@@ -252,6 +252,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return defaultTenant;
     }
 
+    private String currentNamespacePrefix() {
+        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        return currentTenant + "/"+ kafkaConfig.getKafkaNamespace();
+    }
+
     private static String extractTenantFromTenantSpec(String tenantSpec) {
         if (tenantSpec != null && !tenantSpec.isEmpty()) {
             String tenant = tenantSpec;
@@ -525,7 +530,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         final Map<String, List<TopicName>> topicMap = new ConcurrentHashMap<>();
         final CompletableFuture<Set<String>> allowedNamespacesFuture =
                 expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces());
-
+        String namespacePrefix = currentNamespacePrefix();
         allowedNamespacesFuture.thenAccept(allowedNamespaces -> {
             final AtomicInteger pendingNamespacesCount = new AtomicInteger(allowedNamespaces.size());
 
@@ -544,7 +549,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 final TopicName topicName = TopicName.get(topic);
                                 final String key = topicName.getPartitionedTopicName();
                                 topicMap.computeIfAbsent(
-                                        KopTopic.removeDefaultNamespacePrefix(key),
+                                        KopTopic.removeDefaultNamespacePrefix(key, namespacePrefix),
                                         ignored -> Collections.synchronizedList(new ArrayList<>())
                                 ).add(topicName);
                             }
@@ -636,9 +641,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     pulsarTopicsFuture.complete(pulsarTopics);
                 }
             };
-
+            final String namespacePrefix = currentNamespacePrefix();
             final BiConsumer<String, Integer> addTopicPartition = (topic, partition) -> {
-                final KopTopic kopTopic = new KopTopic(topic);
+                final KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
                 pulsarTopics.putIfAbsent(topic,
                         IntStream.range(0, partition)
                                 .mapToObj(i -> TopicName.get(kopTopic.getPartitionName(i)))
@@ -656,7 +661,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             };
 
             requestTopics.forEach(topic -> {
-                final String fullTopicName = new KopTopic(topic).getFullName();
+                final String fullTopicName = new KopTopic(topic, namespacePrefix).getFullName();
 
                 authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullTopicName))
                     .whenComplete((authorized, ex) -> {
@@ -779,7 +784,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(finalResponse);
                 return;
             }
-
+            final String namespacePrefix = currentNamespacePrefix();
             pulsarTopics.forEach((topic, list) -> {
                 final int partitionsNumber = list.size();
                 AtomicInteger partitionsCompleted = new AtomicInteger(0);
@@ -820,7 +825,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     // The topic returned to Kafka clients should be
                                                     // the same with what it sent
                                                     topic,
-                                                    isInternalTopic(new KopTopic(topic).getFullName()),
+                                                    isInternalTopic(new KopTopic(topic, namespacePrefix).getFullName()),
                                                     partitionMetadatas));
 
                                     // whether completed all the topics requests.
@@ -921,11 +926,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
             return;
         }
-        final String partitionName = KopTopic.toString(topicPartition);
+        String namespacePrefix = currentNamespacePrefix();
+        final String partitionName = KopTopic.toString(topicPartition, namespacePrefix);
 
         topicManager.registerProducerInPersistentTopic(partitionName, persistentTopic);
         // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats);
+        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
 
         // publish
         final CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
@@ -994,6 +1000,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
         };
 
+        String namespacePrefix = currentNamespacePrefix();
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
             final Consumer<Long> offsetConsumer = offset -> addPartitionResponse.accept(
                     topicPartition, new PartitionResponse(Errors.NONE, offset, -1L, -1L));
@@ -1001,7 +1008,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     errors -> addPartitionResponse.accept(topicPartition, new PartitionResponse(errors));
             final Consumer<Throwable> exceptionConsumer =
                     e -> addPartitionResponse.accept(topicPartition, new PartitionResponse(Errors.forException(e)));
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
 
             authorize(AclOperation.WRITE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
@@ -1192,6 +1199,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @VisibleForTesting
     public <T> void replaceTopicPartition(Map<TopicPartition, T> replacedMap,
                                           Map<TopicPartition, TopicPartition> replacingIndex) {
+        String namespacePrefix = currentNamespacePrefix();
         Map<TopicPartition, T> newMap = new HashMap<>();
         replacedMap.entrySet().removeIf(entry -> {
             if (replacingIndex.containsKey(entry.getKey())) {
@@ -1199,7 +1207,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return true;
             } else if (KopTopic.isFullTopicName(entry.getKey().topic())) {
                 newMap.put(new TopicPartition(
-                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic()),
+                                KopTopic.removeDefaultNamespacePrefix(entry.getKey().topic(),
+                                        namespacePrefix),
                                 entry.getKey().partition()),
                         entry.getValue());
                 return true;
@@ -1238,9 +1247,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     authorizeFuture.complete(authorizedPartitions);
                 }
             };
+            final String namespacePrefix = currentNamespacePrefix();
             request.partitions().forEach(tp -> {
                 try {
-                    String fullName =  new KopTopic(tp.topic()).getFullName();
+                    String fullName =  new KopTopic(tp.topic(), namespacePrefix).getFullName();
                     authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
                             .whenComplete((isAuthorized, ex) -> {
                                 if (ex != null) {
@@ -1443,9 +1453,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
         Map<TopicPartition, CompletableFuture<Pair<Errors, Long>>> responseData =
                 Maps.newConcurrentMap();
-
+        String namespacePrefix = currentNamespacePrefix();
         KafkaRequestUtils.forEachListOffsetRequest(request, (topic, times) -> {
-            String fullPartitionName = KopTopic.toString(topic);
+            String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
                                 if (ex != null) {
@@ -1484,8 +1494,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         if (log.isDebugEnabled()) {
             log.debug("received a v0 listOffset: {}", request.toString(true));
         }
+        String namespacePrefix = currentNamespacePrefix();
         KafkaRequestUtils.LegacyUtils.forEachListOffsetRequest(request, topic -> times -> maxNumOffsets -> {
-            String fullPartitionName = KopTopic.toString(topic);
+            String fullPartitionName = KopTopic.toString(topic, namespacePrefix);
 
             authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullPartitionName))
                     .whenComplete((isAuthorized, ex) -> {
@@ -1682,10 +1693,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             }
         };
+        final String namespacePrefix = currentNamespacePrefix();
         request.offsetData().forEach((tp, partitionData) -> {
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(tp.topic());
+                kopTopic = new KopTopic(tp.topic(), namespacePrefix);
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
                 completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
@@ -1708,7 +1720,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                         completeOne.accept(() -> {
                             TopicPartition newTopicPartition = new TopicPartition(
-                                    new KopTopic(tp.topic()).getFullName(), tp.partition());
+                                    new KopTopic(tp.topic(), namespacePrefix).getFullName(), tp.partition());
 
                             convertedOffsetData.put(newTopicPartition, partitionData);
                             replacingIndex.put(newTopicPartition, tp);
@@ -1732,8 +1744,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     topic, data.toString());
             });
         }
-
-        MessageFetchContext.get(this, fetch, resultFuture, fetchPurgatory).handleFetch();
+        String namespacePrefix = currentNamespacePrefix();
+        MessageFetchContext.get(this, fetch, resultFuture,
+                fetchPurgatory, namespacePrefix).handleFetch();
     }
 
     @Override
@@ -1912,6 +1925,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return;
         }
 
+        String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
         final Map<String, TopicDetails> authorizedTopics = Maps.newConcurrentMap();
         Runnable createTopicsAsync = () -> {
@@ -1920,7 +1934,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return;
             }
             // TODO: handle request.validateOnly()
-            adminManager.createTopicsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
+            adminManager.createTopicsAsync(authorizedTopics, request.timeout(), namespacePrefix).thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(KafkaResponseUtils.newCreateTopics(result));
                 return null;
@@ -1942,7 +1956,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         validTopics.forEach((topic, details) -> {
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topic);
+                kopTopic = new KopTopic(topic, namespacePrefix);
             } catch (KoPTopicException e) {
                 completeOneErrorTopic.accept(topic, ApiError.fromThrowable(e));
                 return;
@@ -1958,6 +1972,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                            return;
                        }
                        if (!isAuthorized) {
+                           log.error("CreateTopics authorize failed, topic - {}.", fullTopicName);
                            completeOneErrorTopic
                                    .accept(topic, new ApiError(Errors.TOPIC_AUTHORIZATION_FAILED, null));
                            return;
@@ -2006,7 +2021,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 Maps.newConcurrentMap();
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.resources().size());
 
-
+        String namespacePrefix = currentNamespacePrefix();
         Consumer<Runnable> completeOne = (action) -> {
             // When complete one authorization or failed, will do the action first.
             action.run();
@@ -2015,7 +2030,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         .collect(Collectors.toMap(
                                 resource -> resource,
                                 resource -> Optional.ofNullable(request.configNames(resource)).map(HashSet::new)
-                        ))
+                        )), namespacePrefix
                 ).thenApply(configResourceConfigMap -> {
                     configResourceConfigMap.putAll(failedConfigResourceMap);
                     resultFuture.complete(new DescribeConfigsResponse(0, configResourceConfigMap));
@@ -2030,7 +2045,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 case TOPIC:
                     KopTopic kopTopic;
                     try {
-                        kopTopic = new KopTopic(configResource.name());
+                        kopTopic = new KopTopic(configResource.name(), namespacePrefix);
                     } catch (KoPTopicException e) {
                         completeOne.accept(() -> {
                             final ApiError error = new ApiError(
@@ -2124,10 +2139,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             }
         };
+        String namespacePrefix = currentNamespacePrefix();
         partitionsToAdd.forEach(tp -> {
             String fullPartitionName;
             try {
-                fullPartitionName = KopTopic.toString(tp);
+                fullPartitionName = KopTopic.toString(tp, namespacePrefix);
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
                 completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
@@ -2224,10 +2240,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 });
             }
         };
+        final String namespacePrefix = currentNamespacePrefix();
         request.offsets().forEach((tp, commitOffset) -> {
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(tp.topic());
+                kopTopic = new KopTopic(tp.topic(), namespacePrefix);
             } catch (KoPTopicException e) {
                 log.warn("Invalid topic name: {}", tp.topic(), e);
                 completeOne.accept(() -> nonExistingTopicErrors.put(tp, Errors.UNKNOWN_TOPIC_OR_PARTITION));
@@ -2291,6 +2308,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<Long, Map<TopicPartition, Errors>> resultMap = new HashMap<>();
         List<CompletableFuture<Void>> resultFutureList = new ArrayList<>();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
+        String namespacePrefix = currentNamespacePrefix();
         for (WriteTxnMarkersRequest.TxnMarkerEntry txnMarkerEntry : request.markers()) {
             Map<TopicPartition, Errors> partitionErrorsMap =
                     resultMap.computeIfAbsent(txnMarkerEntry.producerId(), pid -> new HashMap<>());
@@ -2331,7 +2349,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             resultFuture.completeExceptionally(handleGroupThrowable);
                             return;
                         }
-                        String fullPartitionName = KopTopic.toString(topicPartition);
+                        String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
                         TopicName topicName = TopicName.get(fullPartitionName);
 
                         long firstOffset = transactionCoordinator.removeActivePidOffset(
@@ -2390,10 +2408,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(KafkaResponseUtils.newDeleteTopics(deleteTopicsResponse));
             }
         };
+        final String namespacePrefix = currentNamespacePrefix();
         topicsToDelete.forEach(topic -> {
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topic);
+                kopTopic = new KopTopic(topic, namespacePrefix);
             } catch (KoPTopicException e) {
                 completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
                 return;
@@ -2438,10 +2457,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(KafkaResponseUtils.newDeleteRecords(deleteRecordsResponse));
             }
         };
+        final String namespacePrefix = currentNamespacePrefix();
         partitionOffsets.forEach((topicPartition, offset) -> {
             KopTopic kopTopic;
             try {
-                kopTopic = new KopTopic(topicPartition.topic());
+                kopTopic = new KopTopic(topicPartition.topic(), namespacePrefix);
             } catch (KoPTopicException e) {
                 completeOne.accept(topicPartition, Errors.UNKNOWN_TOPIC_OR_PARTITION);
                 return;
@@ -2501,6 +2521,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             return;
         }
 
+        String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger validTopicsCount = new AtomicInteger(validTopics.size());
         final Map<String, NewPartitions> authorizedTopics = Maps.newConcurrentMap();
         Runnable createPartitionsAsync = () -> {
@@ -2508,7 +2529,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
                 return;
             }
-            adminManager.createPartitionsAsync(authorizedTopics, request.timeout()).thenApply(validResult -> {
+            adminManager.createPartitionsAsync(authorizedTopics, request.timeout(), namespacePrefix)
+                    .thenApply(validResult -> {
                 result.putAll(validResult);
                 resultFuture.complete(KafkaResponseUtils.newCreatePartitions(result));
                 return null;
@@ -2529,7 +2551,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         };
         validTopics.forEach((topic, newPartitions) -> {
             try {
-                KopTopic kopTopic = new KopTopic(topic);
+                KopTopic kopTopic = new KopTopic(topic, namespacePrefix);
                 String fullTopicName = kopTopic.getFullName();
                 authorize(AclOperation.ALTER, Resource.of(ResourceType.TOPIC, fullTopicName))
                         .whenComplete((isAuthorized, ex) -> {
@@ -2563,7 +2585,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                 long producerId,
                                 short producerEpoch) {
         CompletableFuture<Long> offsetFuture = new CompletableFuture<>();
-        String fullPartitionName = KopTopic.toString(topicPartition);
+        String namespacePrefix = currentNamespacePrefix();
+        String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
         TopicName topicName = TopicName.get(fullPartitionName);
         topicManager.getTopic(topicName.toString())
                 .whenComplete((persistentTopicOpt, throwable) -> {

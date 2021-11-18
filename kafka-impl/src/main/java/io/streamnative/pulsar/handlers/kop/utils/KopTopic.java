@@ -29,22 +29,14 @@ import org.apache.kafka.common.requests.MetadataResponse;
 public class KopTopic {
 
     private static final String persistentDomain = "persistent://";
-    private static volatile String namespacePrefix;  // the full namespace prefix, e.g. "public/default"
 
-    public static String removeDefaultNamespacePrefix(String fullTopicName) {
+    public static String removeDefaultNamespacePrefix(String fullTopicName, String namespacePrefix) {
         final String topicPrefix = persistentDomain + namespacePrefix + "/";
         if (fullTopicName.startsWith(topicPrefix)) {
             return fullTopicName.substring(topicPrefix.length());
         } else {
             return fullTopicName;
         }
-    }
-
-    public static void initialize(String namespace) {
-        if (namespace.split("/").length != 2) {
-            throw new KoPTopicIllegalArgumentException("Invalid namespace: " + namespace);
-        }
-        KopTopic.namespacePrefix = namespace;
     }
 
     @Getter
@@ -66,15 +58,15 @@ public class KopTopic {
         }
     }
 
-    public KopTopic(String topic) {
+    public KopTopic(String topic, String namespacePrefix) {
         if (namespacePrefix == null) {
             throw new KoPTopicNotInitializedException("KopTopic is not initialized");
         }
         originalName = topic;
-        fullName = expandToFullName(topic);
+        fullName = expandToFullName(topic, namespacePrefix);
     }
 
-    private String expandToFullName(String topic) {
+    private String expandToFullName(String topic, String namespacePrefix) {
         if (topic.startsWith(persistentDomain)) {
             if (topic.substring(persistentDomain.length()).split("/").length != 3) {
                 throw new KoPTopicIllegalArgumentException("Invalid topic name '" + topic + "', it should be "
@@ -86,7 +78,7 @@ public class KopTopic {
         String[] parts = topic.split("/");
         if (parts.length == 3) {
             return persistentDomain + topic;
-        } else if (parts.length == 1) {
+        } else if (parts.length == 1 && namespacePrefix != null) {
             return persistentDomain + namespacePrefix + "/" + topic;
         } else {
             throw new KoPTopicIllegalArgumentException(
@@ -107,11 +99,11 @@ public class KopTopic {
         return topic.startsWith(persistentDomain);
     }
 
-    public static String toString(TopicPartition topicPartition) {
-        return (new KopTopic(topicPartition.topic())).getPartitionName(topicPartition.partition());
+    public static String toString(TopicPartition topicPartition, String namespacePrefix) {
+        return (new KopTopic(topicPartition.topic(), namespacePrefix)).getPartitionName(topicPartition.partition());
     }
 
-    public static String toString(String topic, int partition) {
-        return (new KopTopic(topic)).getPartitionName(partition);
+    public static String toString(String topic, int partition, String namespacePrefix) {
+        return (new KopTopic(topic, namespacePrefix)).getPartitionName(partition);
     }
 }
