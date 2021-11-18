@@ -278,6 +278,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 MetadataRequest.class, (metadataRequest) -> "system",
                 null);
 
+        String namespacePrefix = currentNamespacePrefix();
         responseInterceptor.whenComplete((metadataResponse, error) -> {
            if (error != null) {
                resultFuture.completeExceptionally(error);
@@ -306,7 +307,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                        // for metadata and for data
                                                        // so caching this value here
                                                        // won't help to serve Produce or Fetch requests
-                                                       String fullTopicName = KopTopic.toString(md.topic(), pd.partition());
+                                                       String fullTopicName = KopTopic.toString(md.topic(),
+                                                               pd.partition(), namespacePrefix);
                                                        topicsLeaders.put(fullTopicName, pd.leader());
                                                        return new PartitionMetadata(pd.error(), pd.partition(),
                                                                selfNode, nodeList, nodeList, Collections.emptyList());
@@ -334,10 +336,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         // delay produce
         final AtomicInteger topicPartitionNum = new AtomicInteger(produceRequest.partitionRecordsOrFail().size());
 
-
+        String namespacePrefix = currentNamespacePrefix();
         // validate system topics
         for (TopicPartition topicPartition : produceRequest.partitionRecordsOrFail().keySet()) {
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // check KOP inner topic
             if (isInternalTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
@@ -356,7 +358,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         Map<String, PartitionMetadata> brokers = new ConcurrentHashMap<>();
         List<CompletableFuture<?>> lookups = new ArrayList<>(topicPartitionNum.get());
         produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             lookups.add(findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(p -> brokers.put(fullPartitionName, p)));
         });
@@ -402,7 +404,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         ProduceResponse resp = (ProduceResponse) response;
                         resp.responses().forEach((topicPartition, topicResp) -> {
                             if (topicResp.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                String fullTopicName = KopTopic.toString(topicPartition);
+                                String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
                                 log.info("Broker {} is no more the leader for {}", broker.leader(), fullTopicName);
                                 topicsLeaders.remove(fullTopicName);
                             } else {
@@ -464,7 +466,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             // split the request per broker
             final Map<Node, ProduceRequest> requestsPerBroker = new HashMap<>();
             produceRequest.partitionRecordsOrFail().forEach((topicPartition, records) -> {
-                final String fullPartitionName = KopTopic.toString(topicPartition);
+                final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
                 PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
                 Node kopBroker = topicMetadata.leader();
 
@@ -511,7 +513,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
                                         log.info("Broker {} is no more the leader for {}", kopBroker,
                                                 topicPartition);
-                                        final String fullPartitionName = KopTopic.toString(topicPartition);
+                                        final String fullPartitionName = KopTopic.toString(topicPartition,
+                                                namespacePrefix);
                                         topicsLeaders.remove(fullPartitionName);
                                     }
                                     addPartitionResponse.accept(topicPartition, partitionResponse);
@@ -547,13 +550,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return;
         }
 
-
+        String namespacePrefix = currentNamespacePrefix();
         Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = new ConcurrentHashMap<>();
         final AtomicInteger topicPartitionNum = new AtomicInteger(fetchRequest.fetchData().size());
 
         // validate system topics
         for (TopicPartition topicPartition : fetchRequest.fetchData().keySet()) {
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // check KOP inner topic
             if (isInternalTopic(fullPartitionName)) {
                 log.error("[{}] Request {}: not support fetch message to inner topic. topic: {}",
@@ -572,11 +575,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             }
         }
 
-
         Map<String, PartitionMetadata> brokers = new ConcurrentHashMap<>();
         List<CompletableFuture<?>> lookups = new ArrayList<>(topicPartitionNum.get());
         fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             lookups.add(findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(p -> brokers.put(fullPartitionName, p)));
         });
@@ -691,7 +693,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             Map<Node, FetchRequest> requestsByBroker = new HashMap<>();
 
                             fetchRequest.fetchData().forEach((topicPartition, partitionData) -> {
-                                final String fullPartitionName = KopTopic.toString(topicPartition);
+                                final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
                                 PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
                                 Node kopBroker = topicMetadata.leader();
                                 FetchRequest requestForSinglePartition = requestsByBroker.computeIfAbsent(kopBroker, ___ -> FetchRequest.Builder
@@ -729,12 +731,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             resp.responseData()
                                                     .forEach((topicPartition, partitionResponse) -> {
                                                         if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                            String fullTopicName = KopTopic.toString(topicPartition);
+                                                            String fullTopicName = KopTopic.toString(topicPartition,
+                                                                    namespacePrefix);
                                                             log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
                                                             topicsLeaders.remove(fullTopicName);
                                                         }
                                                         if (log.isDebugEnabled()) {
-                                                            final String fullPartitionName = KopTopic.toString(topicPartition);
+                                                            final String fullPartitionName = KopTopic.toString(topicPartition,
+                                                                    namespacePrefix);
                                                             log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
                                                                     partitionResponse);
                                                         }
@@ -931,14 +935,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(KafkaResponseUtils.newDeleteRecords(Collections.emptyMap()));
             return;
         }
-
+        String namespacePrefix = currentNamespacePrefix();
 
         Map<TopicPartition, DeleteRecordsResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
         int numPartitions = partitionOffsets.size();
         Map<String, PartitionMetadata> brokers = new ConcurrentHashMap<>();
         List<CompletableFuture<?>> lookups = new ArrayList<>(numPartitions);
         partitionOffsets.forEach((topicPartition, offset) -> {
-            final String fullPartitionName = KopTopic.toString(topicPartition);
+            final String fullPartitionName = KopTopic.toString(topicPartition,
+                    namespacePrefix);
             lookups.add(findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(p -> brokers.put(fullPartitionName, p)));
         });
@@ -1045,7 +1050,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             Map<Node, DeleteRecordsRequest> requestsByBroker = new HashMap<>();
 
                             partitionOffsets.forEach((topicPartition, offset) -> {
-                                final String fullPartitionName = KopTopic.toString(topicPartition);
+                                final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
                                 PartitionMetadata topicMetadata = brokers.get(fullPartitionName);
                                 Node kopBroker = topicMetadata.leader();
                                 DeleteRecordsRequest requestForSinglePartition = requestsByBroker
@@ -1081,12 +1086,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             resp.responses()
                                                     .forEach((topicPartition, partitionResponse) -> {
                                                         if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                            String fullTopicName = KopTopic.toString(topicPartition);
+                                                            String fullTopicName = KopTopic.toString(topicPartition,
+                                                                    namespacePrefix);
                                                             log.info("Broker {} is no more the leader for {}", kopBroker, fullTopicName);
                                                             topicsLeaders.remove(fullTopicName);
                                                         }
                                                         if (log.isDebugEnabled()) {
-                                                            final String fullPartitionName = KopTopic.toString(topicPartition);
+                                                            final String fullPartitionName = KopTopic.toString(topicPartition,
+                                                                    namespacePrefix);
                                                             log.debug("result fetch for {} to {} {}", fullPartitionName, kopBroker,
                                                                     partitionResponse);
                                                         }
@@ -1158,6 +1165,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
         // fallback to using system (default) tenant
         return defaultTenant;
+    }
+
+    private String currentNamespacePrefix() {
+        String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        return currentTenant + "/"+ kafkaConfig.getKafkaNamespace();
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -1306,9 +1318,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             });
         };
-
+        String namespacePrefix = currentNamespacePrefix();
         for (Map.Entry<TopicPartition, ListOffsetRequest.PartitionData> entry : request.offsetData().entrySet()) {
-            final String fullPartitionName = KopTopic.toString(entry.getKey());
+            final String fullPartitionName = KopTopic.toString(entry.getKey(), namespacePrefix);
 
             int dummyCorrelationId = getDummyCorrelationId();
             RequestHeader header = new RequestHeader(
@@ -1383,9 +1395,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             resultFuture.complete(response);
             return;
         }
-
+        String namespacePrefix = currentNamespacePrefix();
         for (Map.Entry<TopicPartition, Long> entry : request.partitionTimestamps().entrySet()) {
-            final String fullPartitionName = KopTopic.toString(entry.getKey());
+            final String fullPartitionName = KopTopic.toString(entry.getKey(), namespacePrefix);
 
             int dummyCorrelationId = getDummyCorrelationId();
             RequestHeader header = new RequestHeader(

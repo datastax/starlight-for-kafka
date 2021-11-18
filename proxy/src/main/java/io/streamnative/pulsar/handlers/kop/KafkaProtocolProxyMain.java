@@ -175,8 +175,6 @@ public class KafkaProtocolProxyMain {
         kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
         kafkaConfig.setBindAddress(conf.getBindAddress());
 
-        KopTopic.initialize(kafkaConfig.getKafkaTenant() + "/" + kafkaConfig.getKafkaNamespace());
-
         schemaRegistryProxyManager = new KafkaSchemaRegistryProxyManager(kafkaConfig, new SchemaRegistryBrokerProvider(),
                 () -> {
                     try {
