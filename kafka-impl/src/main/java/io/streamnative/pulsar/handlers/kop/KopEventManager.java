@@ -347,7 +347,7 @@ public class KopEventManager {
                         });
                     }
                 });
-            } catch (Throwable e) {
+            } catch (ExecutionException | InterruptedException e) {
                 log.error("DeleteTopicsEvent process have an error", e);
             } finally {
                 registerEventLatency.accept(name(), startProcessTime);
