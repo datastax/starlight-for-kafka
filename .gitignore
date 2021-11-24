@@ -41,6 +41,9 @@ target/
 # tmp files
 *.pid
 
+**/pom.xml.releaseBackup
+release.properties
+
 # CI generated files
 .repository
 docker.debug-info
