@@ -50,7 +50,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.kafka.common.TopicPartition;
@@ -77,7 +76,7 @@ public class GroupCoordinator {
         SystemTopicClient client,
         GroupConfig groupConfig,
         OffsetConfig offsetConfig,
-        String namespacePrefix,
+        String namespacePrefixForMetadata,
         Timer timer,
         Time time
     ) {
@@ -92,7 +91,7 @@ public class GroupCoordinator {
             client.newProducerBuilder(),
             client.newReaderBuilder(),
             coordinatorExecutor,
-            namespacePrefix,
+            namespacePrefixForMetadata,
             time
         );
 
@@ -792,14 +791,13 @@ public class GroupCoordinator {
 
     public CompletableFuture<Void> scheduleHandleTxnCompletion(
         long producerId,
-        Stream<TopicPartition> offsetsPartitions,
+        Set<Integer> offsetsPartitions,
         TransactionResult transactionResult
     ) {
         boolean isCommit = TransactionResult.COMMIT == transactionResult;
         return groupManager.scheduleHandleTxnCompletion(
             producerId,
-            offsetsPartitions.map(TopicPartition::partition)
-                .collect(Collectors.toSet()),
+            offsetsPartitions,
             isCommit
         );
     }

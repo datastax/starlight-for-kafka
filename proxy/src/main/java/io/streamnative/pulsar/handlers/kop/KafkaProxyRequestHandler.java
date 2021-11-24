@@ -1169,7 +1169,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     private String currentNamespacePrefix() {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
-        return currentTenant + "/"+ kafkaConfig.getKafkaNamespace();
+        return MetadataUtils.constructUserTopicsNamespace(currentTenant, kafkaConfig);
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -1493,12 +1493,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                             .forwardRequest(kafkaHeaderAndRequest)
                             .thenAccept(serverResponse -> {
                                 if (!isNoisyRequest(request)) {
-                                    log.info("Sending {} {} errors {}.", serverResponse, serverResponse.getClass(),
+                                    log.info("Sending {} {} from {}:{} errors {}.", serverResponse, serverResponse.getClass(),
+                                            metadata.leader().host(), metadata.leader().port(),
                                             serverResponse.errorCounts());
                                 }
                                 if (serverResponse.errorCounts() != null) {
                                     for (Errors error : serverResponse.errorCounts().keySet()) {
-                                        if (error == Errors.NOT_COORDINATOR) {
+                                        if (error == Errors.NOT_COORDINATOR
+                                                || error == Errors.NOT_CONTROLLER
+                                                || error == Errors.NOT_LEADER_FOR_PARTITION) {
                                             forgetMetadataForFailedBroker(metadata.leader().host(),
                                                     metadata.leader().port());
                                         }
