@@ -62,6 +62,21 @@
       <artifactId>apicurio-registry-schema-compatibility-json</artifactId>
       <version>${apicurio.version}</version>
     </dependency>
+    <dependency>
+      <groupId>${pulsar.group.id}</groupId>
+      <artifactId>pulsar-broker</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testng</groupId>
+      <artifactId>testng</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
 </project>
