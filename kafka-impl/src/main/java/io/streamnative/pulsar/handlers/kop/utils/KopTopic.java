@@ -13,12 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop.utils;
 
+import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
+import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.pulsar.common.naming.TopicName;
 
 /**
  * KopTopic maintains two topic name, one is the original topic name, the other is the full topic name used in Pulsar.
@@ -103,4 +106,11 @@ public class KopTopic {
     public static String toString(String topic, int partition, String namespacePrefix) {
         return (new KopTopic(topic, namespacePrefix)).getPartitionName(partition);
     }
+
+    public static boolean isInternalTopic(final String fullTopicName) {
+        String partitionedTopicName = TopicName.get(fullTopicName).getPartitionedTopicName();
+        return partitionedTopicName.endsWith("/" + GROUP_METADATA_TOPIC_NAME)
+                || partitionedTopicName.endsWith("/" + TRANSACTION_STATE_TOPIC_NAME);
+    }
+
 }
