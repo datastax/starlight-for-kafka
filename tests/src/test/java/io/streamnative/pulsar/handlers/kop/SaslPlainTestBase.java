@@ -62,15 +62,17 @@ import org.testng.annotations.Test;
 @Slf4j
 public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
-    private static final String SIMPLE_USER = "muggle_user";
-    private static final String TENANT = "SaslPlainTest";
+    protected static final String SIMPLE_USER = "muggle_user";
+    protected static final String TENANT = "SaslPlainTest";
     private static final String ANOTHER_USER = "death_eater_user";
-    private static final String ADMIN_USER = "admin_user";
+    protected static final String ADMIN_USER = "admin_user";
+    private static final String PROXY_USER = "proxy_user";
     private static final String NAMESPACE = "ns1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/topic1";
     private String adminToken;
     private String userToken;
     private String anotherToken;
+    protected String proxyToken;
 
     public SaslPlainTestBase(final String entryFormat) {
         super(entryFormat);
@@ -92,8 +94,10 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
         anotherToken = AuthTokenUtils.createToken(secretKey, ANOTHER_USER, Optional.empty());
+        proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         super.resetConfig();
+        conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
         conf.setKopAllowedNamespaces(Collections.singleton(TENANT + "/" + NAMESPACE));
         ((KafkaServiceConfiguration) conf).setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));
         ((KafkaServiceConfiguration) conf).setKafkaMetadataTenant("internal");
@@ -103,7 +107,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         conf.setAuthorizationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationAllowWildcardsMatching(true);
-        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
+        conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER, PROXY_USER));
         conf.setAuthenticationProviders(
             Sets.newHashSet("org.apache.pulsar.broker.authentication."
                 + "AuthenticationProviderToken"));
@@ -138,7 +142,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 40000)
     void simpleProduceAndConsume() throws Exception {
-        KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(TOPIC, false, "localhost", getClientPort(),
             TENANT + "/" + NAMESPACE, "token:" + userToken);
         int totalMsgs = 10;
         String messageStrPrefix = TOPIC + "_message_";
@@ -148,7 +152,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, i, messageStr));
         }
 
-        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(TOPIC, "localhost", getClientPort(), false,
             TENANT + "/" + NAMESPACE, "token:" + userToken, "DemoKafkaOnPulsarConsumer");
         kConsumer.getConsumer().subscribe(Collections.singleton(TOPIC));
 
@@ -179,7 +183,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
     void badCredentialFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getClientPort(),
                 TENANT + "/" + NAMESPACE, "token:dsa");
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
@@ -192,7 +196,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
     void badUserFail() throws Exception {
         try {
             @Cleanup
-            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getKafkaBrokerPort(),
+            KProducer kProducer = new KProducer(TOPIC, false, "localhost", getClientPort(),
                 TENANT + "/" + NAMESPACE, "token:" + anotherToken);
             kProducer.getProducer().send(new ProducerRecord<>(TOPIC, 0, "")).get();
             fail("should have failed");
@@ -208,7 +212,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         final int metadataTimeoutMs = 3000;
 
         Properties props = new Properties();
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, Integer.toString(metadataTimeoutMs));
@@ -241,7 +245,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
                                            String isolation) throws Exception {
 
         @Cleanup
-        KProducer kProducer = new KProducer(topicName, false, "localhost", getKafkaBrokerPort(),
+        KProducer kProducer = new KProducer(topicName, false, "localhost", getClientPort(),
                 TENANT + "/" + NAMESPACE, "token:" + userToken, false, IntegerSerializer.class.getName(),
                 StringSerializer.class.getName(), transactionalId);
 
@@ -287,7 +291,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
                                    String isolation) throws InterruptedException {
 
         @Cleanup
-        KConsumer kConsumer = new KConsumer(topicName , "localhost", getKafkaBrokerPort(), false,
+        KConsumer kConsumer = new KConsumer(topicName , "localhost", getClientPort(), false,
                 TENANT + "/" + NAMESPACE, "token:" + userToken, "consumeTxnMessage-" + UUID.randomUUID(),
                 IntegerDeserializer.class.getName(),
                 StringDeserializer.class.getName(), isolation);
