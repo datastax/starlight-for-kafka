@@ -130,10 +130,10 @@
               <tasks>
                 <echo>copy protocol handler</echo>
                 <mkdir dir="${project.build.outputDirectory}/protocols" />
-                <copy file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar" tofile="${project.build.outputDirectory}/protocols/test-protocol-handler.nar" />
+                <copy verbose="true" file="${basedir}/../kafka-impl/target/pulsar-protocol-handler-kafka-${project.version}.nar" tofile="${project.build.outputDirectory}/protocols/test-protocol-handler.nar" />
                 <echo>copy proxy protocol handler</echo>
                 <mkdir dir="${project.build.outputDirectory}/proxyextensions" />
-                <copy file="${basedir}/../proxy/target/pulsar-kafka-proxy-${project.version}.nar" tofile="${project.build.outputDirectory}/proxyextensions/test-proxy-extension.nar" />
+                <copy verbose="true"  file="${basedir}/../proxy/target/pulsar-kafka-proxy-${project.version}.nar" tofile="${project.build.outputDirectory}/proxyextensions/test-proxy-extension.nar" />
               </tasks>
             </configuration>
           </execution>

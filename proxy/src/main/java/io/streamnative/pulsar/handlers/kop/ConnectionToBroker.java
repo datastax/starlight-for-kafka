@@ -80,7 +80,6 @@ class ConnectionToBroker {
         } else {
             clientSocketChannelClass = NioSocketChannel.class;
         }
-        log.info("Opening proxy connection {} {}", workerGroup.getClass(), clientSocketChannelClass);
         Bootstrap b = new Bootstrap();
         b.group(workerGroup);
         b.channel(clientSocketChannelClass);

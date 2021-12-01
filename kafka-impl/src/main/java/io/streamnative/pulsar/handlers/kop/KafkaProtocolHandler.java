@@ -600,7 +600,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             return builder.build();
         } catch (Exception e){
             log.error("KafkaProtocolHandler newChannelInitializers failed with ", e);
-            return null;
+            throw new RuntimeException("KafkaProtocolHandler newChannelInitializers failed with " + e, e);
         }
     }
 
