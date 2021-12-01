@@ -80,7 +80,7 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
-                true, conf.getTxnLogTopicNumPartitions(), false);
+                true, conf.getKafkaTxnLogTopicNumPartitions(), false);
     }
 
     public static void createSchemaRegistryMetadataIfMissing(String tenant,

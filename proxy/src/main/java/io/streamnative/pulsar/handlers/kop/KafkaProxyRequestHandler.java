@@ -790,10 +790,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         String tenant = getCurrentTenant();
         if (type == FindCoordinatorRequest.CoordinatorType.TRANSACTION) {
             TransactionConfig transactionConfig = TransactionConfig.builder()
-                    .transactionLogNumPartitions(kafkaConfig.getTxnLogTopicNumPartitions())
+                    .transactionLogNumPartitions(kafkaConfig.getKafkaTxnLogTopicNumPartitions())
                     .transactionMetadataTopicName(MetadataUtils.constructTxnLogTopicBaseName(tenant, kafkaConfig))
                     .build();
-            partition = TransactionCoordinator.partitionFor(key, kafkaConfig.getTxnLogTopicNumPartitions());
+            partition = TransactionCoordinator.partitionFor(key, kafkaConfig.getKafkaTxnLogTopicNumPartitions());
             pulsarTopicName = TransactionCoordinator
                     .getTopicPartitionName(transactionConfig.getTransactionMetadataTopicName(), partition);
         } else if (type == FindCoordinatorRequest.CoordinatorType.GROUP) {

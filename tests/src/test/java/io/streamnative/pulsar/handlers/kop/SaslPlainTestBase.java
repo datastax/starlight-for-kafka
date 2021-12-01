@@ -97,7 +97,7 @@ public abstract class SaslPlainTestBase extends KopProtocolHandlerTestBase {
         proxyToken = AuthTokenUtils.createToken(secretKey, PROXY_USER, Optional.empty());
 
         super.resetConfig();
-        conf.setEnableTransactionCoordinator(true);
+        conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setProxyRoles(Sets.newHashSet(PROXY_USER));
         conf.setKopAllowedNamespaces(Collections.singleton(TENANT + "/" + NAMESPACE));
         ((KafkaServiceConfiguration) conf).setSaslAllowedMechanisms(Sets.newHashSet("PLAIN"));

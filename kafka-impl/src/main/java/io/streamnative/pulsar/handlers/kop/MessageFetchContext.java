@@ -522,7 +522,7 @@ public final class MessageFetchContext {
                     groupName,
                     statsLogger);
             List<FetchResponse.AbortedTransaction> abortedTransactions;
-            if (requestHandler.getKafkaConfig().isTransactionCoordinatorEnabled() && readCommitted && tc != null) {
+            if (requestHandler.getKafkaConfig().isKafkaTransactionCoordinatorEnabled() && readCommitted && tc != null) {
                 abortedTransactions = partitionLog.getAbortedIndexList(partitionData.fetchOffset);
             } else {
                 abortedTransactions = null;
