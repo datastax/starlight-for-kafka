@@ -105,7 +105,10 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     GroupMetadataManager groupMetadataManager = null;
     ProducerBuilder<ByteBuffer> producer = null;
     ReaderBuilder<ByteBuffer> consumer = null;
-    OffsetConfig offsetConfig = OffsetConfig.builder().build();
+    OffsetConfig offsetConfig = OffsetConfig
+            .builder()
+            .offsetsTopicName("public/__kafka/__consumer_offsets")
+            .build();
     OrderedScheduler scheduler;
 
     @BeforeMethod
