@@ -75,9 +75,9 @@
   </licenses>
 
   <scm>
-    <connection>scm:git:git@github.com:datastax/kop.git</connection>
-    <developerConnection>scm:git:git@github.com:datastax/kop.git</developerConnection>
-    <url>https://github.com/datastax/kop</url>
+    <connection>scm:git:git@github.com:datastax/starlight-for-kafka.git</connection>
+    <developerConnection>scm:git:git@github.com:datastax/starlight-for-kafka.git</developerConnection>
+    <url>https://github.com/datastax/starlight-for-kafka</url>
     <tag>HEAD</tag>
   </scm>
 
