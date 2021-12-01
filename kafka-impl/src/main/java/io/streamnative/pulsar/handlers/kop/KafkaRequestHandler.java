@@ -2179,7 +2179,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         AddOffsetsToTxnRequest request = (AddOffsetsToTxnRequest) kafkaHeaderAndRequest.getRequest();
         int partition = getGroupCoordinator().partitionFor(request.consumerGroupId());
         String currentTenant = getCurrentTenant();
-        String offsetTopicName = getGroupCoordinator().getGroupManager().getOffsetConfig().getCurrentOffsetsTopicName(currentTenant);
+        String offsetTopicName = getGroupCoordinator().getGroupManager()
+                .getOffsetConfig().offsetsTopicName();
         TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
         Set<TopicPartition> topicPartitions = Collections.singleton(new TopicPartition(offsetTopicName, partition));
         transactionCoordinator.handleAddPartitionsToTransaction(
