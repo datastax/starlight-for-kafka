@@ -36,6 +36,16 @@ public class DockerTest {
         test("pulsarproxy:9092", true);
     }
 
+    @Test
+    public void testAvro() throws Exception {
+        testAvro("pulsar:9092", "http://pulsar:8001", false);
+    }
+
+    @Test
+    public void testAvroProxy() throws Exception {
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true);
+    }
+
     private void test(String kafkaAddress, boolean proxy) throws Exception {
         // create a docker network
         try (Network network = Network.newNetwork();) {
@@ -66,6 +76,93 @@ public class DockerTest {
                                     "echo This-is-my-message > file.txt && " +
                                             "kafka-console-producer --bootstrap-server " + kafkaAddress
                                             + "  --topic test < file.txt && " +
+                                            "echo FINISHEDPRODUCER")
+                            .withLogConsumer(new Consumer<OutputFrame>() {
+                                @Override
+                                public void accept(OutputFrame outputFrame) {
+                                    log.info("PRODUCER > {}", outputFrame.getUtf8String());
+                                    if (outputFrame.getUtf8String().contains("FINISHEDPRODUCER")) {
+                                        sent.countDown();
+                                    }
+                                }
+                            })) {
+                        producerContainer.start();
+                        assertTrue(sent.await(60, TimeUnit.SECONDS));
+                    }
+
+                    assertTrue(received.await(60, TimeUnit.SECONDS));
+                }
+            }
+        }
+    }
+
+    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy) throws Exception {
+        // create a docker network
+        try (Network network = Network.newNetwork();) {
+            // start Pulsar and wait for it to be ready to accept requests
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy);) {
+                pulsarContainer.start();
+
+                CountDownLatch received = new CountDownLatch(1);
+                try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
+                        .withNetwork(network)
+                        .withCommand("bash", "-c", "kafka-avro-console-consumer --bootstrap-server " + kafkaAddress
+                                + " --topic test --from-beginning --property schema.registry.url="+ registryAddress)
+                        .withLogConsumer(new Consumer<OutputFrame>() {
+                            @Override
+                            public void accept(OutputFrame outputFrame) {
+                                log.info("CONSUMER > {}", outputFrame.getUtf8String());
+                                if (outputFrame.getUtf8String().contains("Pennsylvania")) {
+                                    received.countDown();
+                                }
+                            }
+                        })) {
+                    clientContainer.start();
+
+                    // sample taken from https://kafka-tutorials.confluent.io/kafka-console-consumer-producer/kafka.html
+                    CountDownLatch sent = new CountDownLatch(1);
+                    try (GenericContainer producerContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
+                            .withNetwork(network)
+                            .withCommand("bash", "-c",
+                                    "echo '{\"number\": 2343439, \"date\": 1596501510, "
+                                            + "\"shipping_address\": \"1600 Pennsylvania Avenue NW, Washington, DC "
+                                            + "20500, USA\", \"subtotal\": 1000.0, \"shipping_cost\": 20.0, \"tax\": "
+                                            + "0.00}' > file.txt && " +
+                                    "echo '{"
+                                            + "  \"type\": \"record\","
+                                            + "  \"namespace\": \"io.confluent.tutorial.pojo.avro\","
+                                            + "  \"name\": \"OrderDetail\","
+                                            + "  \"fields\": ["
+                                            + "    {"
+                                            + "      \"name\": \"number\","
+                                            + "      \"type\": \"long\""
+                                            + "    },"
+                                            + "    {"
+                                            + "      \"name\": \"date\","
+                                            + "      \"type\": \"long\","
+                                            + "      \"logicalType\": \"date\""
+                                            + "    },"
+                                            + "    {"
+                                            + "      \"name\": \"shipping_address\","
+                                            + "      \"type\": \"string\""
+                                            + "    },"
+                                            + "    {"
+                                            + "      \"name\": \"subtotal\","
+                                            + "      \"type\": \"double\""
+                                            + "    },"
+                                            + "    {"
+                                            + "      \"name\": \"shipping_cost\", "
+                                            + "      \"type\": \"double\""
+                                            + "    },"
+                                            + "    {"
+                                            + "      \"name\":\"tax\","
+                                            + "      \"type\":\"double\""
+                                            + "    }"
+                                            + "  ]"
+                                            + "}' > order_detail.avsc && " +
+                                            " kafka-avro-console-producer --bootstrap-server " + kafkaAddress
+                                            + "  --topic test --property schema.registry.url="+ registryAddress +
+                                            " --property value.schema=\"$(< order_detail.avsc)\" < file.txt && " +
                                             "echo FINISHEDPRODUCER")
                             .withLogConsumer(new Consumer<OutputFrame>() {
                                 @Override
