@@ -68,7 +68,7 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                true, conf.getOffsetsTopicNumPartitions());
+                true, conf.getOffsetsTopicNumPartitions(), false);
     }
 
     public static void createTxnMetadataIfMissing(String tenant,
@@ -79,7 +79,7 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
-                true, conf.getTxnLogTopicNumPartitions());
+                true, conf.getTxnLogTopicNumPartitions(), false);
     }
 
     public static void createSchemaRegistryMetadataIfMissing(String tenant,
@@ -89,7 +89,8 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, false, 1);
+        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, false,
+                1, true);
     }
 
     /**
@@ -112,7 +113,8 @@ public class MetadataUtils {
                                                      KafkaServiceConfiguration conf,
                                                      KopTopic kopTopic,
                                                      boolean partitioned,
-                                                     int partitionNum)
+                                                     int partitionNum,
+                                                     boolean infiniteRetention)
         throws PulsarAdminException {
         String cluster = conf.getClusterName();
         String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
@@ -153,7 +155,7 @@ public class MetadataUtils {
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            createTopicIfNotExist(pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum);
+            createTopicIfNotExist(conf, pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum, infiniteRetention);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -303,10 +305,12 @@ public class MetadataUtils {
         }
     }
 
-    private static void createTopicIfNotExist(final PulsarAdmin admin,
+    private static void createTopicIfNotExist(final KafkaServiceConfiguration conf,
+                                              final PulsarAdmin admin,
                                               final String topic,
                                               boolean partitioned,
-                                              final int numPartitions) throws PulsarAdminException {
+                                              final int numPartitions,
+                                              boolean infiniteRetention) throws PulsarAdminException {
         if (partitioned) {
             try {
                 admin.topics().createPartitionedTopic(topic, numPartitions);
@@ -323,6 +327,29 @@ public class MetadataUtils {
                 admin.topics().createNonPartitionedTopic(topic);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
+            }
+        }
+
+        if (infiniteRetention) {
+            // for the SchemaRegistry topic we want to keep the messages forever
+            RetentionPolicies retention = admin.topics().getRetention(topic, true);
+            if (retention.getRetentionSizeInMB() != -1
+                  || retention.getRetentionTimeInMinutes() != -1) {
+                if (conf.isTopicLevelPoliciesEnabled()) {
+                    log.info("Applying infinite retention to topic {}", topic);
+                    admin.topics().setRetention(topic, new RetentionPolicies(-1, -1));
+                } else {
+                    log.error("Cannot set infinite retention to topic {}, please enable topicLevelPoliciesEnabled", topic);
+                }
+            }
+            Integer messageTTL = admin.topics().getMessageTTL(topic, true);
+            if (messageTTL != null && messageTTL > 0) {
+                if (conf.isTopicLevelPoliciesEnabled()) {
+                    log.info("Applying MessageTTL = -1 to topic {}", topic);
+                    admin.topics().removeMessageTTL(topic);
+                } else {
+                    log.error("Cannot set MessageTTL = -1 to topic {}, please enable topicLevelPoliciesEnabled", topic);
+                }
             }
         }
     }

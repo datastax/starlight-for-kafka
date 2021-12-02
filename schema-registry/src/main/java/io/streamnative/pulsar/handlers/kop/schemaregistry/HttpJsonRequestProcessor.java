@@ -26,6 +26,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
 public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcessor {
@@ -64,8 +65,12 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
             } else {
                 decodeRequest = MAPPER.readValue((DataInput) inputStream, requestModel);
             }
-
-            CompletableFuture<R> result = processRequest(decodeRequest, groups, request);
+            CompletableFuture<R> result;
+            try {
+                result = processRequest(decodeRequest, groups, request);
+            } catch (Exception err) {
+                result = FutureUtil.failedFuture(err);
+            }
             return result.thenApply(resp -> {
                 if (resp == null) {
                     return buildErrorResponse(NOT_FOUND, "Not found", "text/plain");
