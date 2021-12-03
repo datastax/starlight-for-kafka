@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
 import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 
+import com.google.common.util.concurrent.MoreExecutors;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -108,7 +109,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     EndPoint advertisedEndPoint,
                                     Function<String, String> brokerAddressMapper,
                                     EventLoopGroup workerGroup) throws Exception {
-        super(NullStatsLogger.INSTANCE, kafkaConfig);
+        super(NullStatsLogger.INSTANCE, kafkaConfig, null);
         this.workerGroup = workerGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;

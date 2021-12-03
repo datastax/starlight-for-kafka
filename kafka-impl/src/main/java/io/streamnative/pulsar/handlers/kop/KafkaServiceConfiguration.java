@@ -82,6 +82,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private boolean kafkaManageSystemNamespaces = true;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            required = true,
+            doc = "The number of threads used to respond to the response."
+    )
+    private int numSendKafkaResponseThreads = 4;
+
+    @FieldContext(
         category = CATEGORY_KOP,
         required = true,
         doc = "Kafka on Pulsar Broker tenant"
