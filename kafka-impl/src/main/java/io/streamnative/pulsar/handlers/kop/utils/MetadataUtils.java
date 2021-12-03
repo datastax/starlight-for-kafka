@@ -116,6 +116,10 @@ public class MetadataUtils {
                                                      int partitionNum,
                                                      boolean infiniteRetention)
         throws PulsarAdminException {
+        if (!conf.isKafkaManageSystemNamespaces()) {
+            log.info("Skipping initialization of topic {} for tenant {}", kopTopic.getFullName(), tenant);
+            return;
+        }
         String cluster = conf.getClusterName();
         String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
 

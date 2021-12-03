@@ -74,6 +74,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     //
     // --- Kafka on Pulsar Broker configuration ---
     //
+    @FieldContext(
+            category = CATEGORY_KOP,
+            required = true,
+            doc = "Manage automatically system namespaces and topic"
+    )
+    private boolean kafkaManageSystemNamespaces = true;
 
     @FieldContext(
         category = CATEGORY_KOP,
