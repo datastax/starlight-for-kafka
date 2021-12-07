@@ -994,6 +994,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.debug("[{}] Request {}: Complete handle produce.", ctx.channel(), produceHar.toString());
             }
             resultFuture.complete(new ProduceResponse(responseMap));
+            responseMap.forEach((topicPartition, response) -> {
+                if (response.error == Errors.NONE) {
+                    notifyPendingFetches(topicPartition);
+                }
+            });
+
         };
         BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
             responseMap.put(topicPartition, response);
@@ -1052,6 +1058,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         }
     }
 
+    private void notifyPendingFetches(TopicPartition topicPartition) {
+        ctx.executor().execute( () -> {
+            DelayedOperationKey.TopicPartitionOperationKey key =
+                    new DelayedOperationKey.TopicPartitionOperationKey(topicPartition);
+            int matches = fetchPurgatory.checkAndComplete(key);
+            if (matches > 0) {
+                requestStats.getWaitingFetchesTriggered().add(matches);
+                log.debug("{} DelayedFetch woke up for {}", matches, topicPartition);
+            }
+        });
+    }
 
     private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
                                         final TopicPartition topicPartition,

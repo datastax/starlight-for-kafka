@@ -234,7 +234,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     }
 
      // Unit test {@link GroupCoordinator}.
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testMutiBrokerAndCoordinator() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopMutiBrokerAndCoordinator" + partitionNumber;
@@ -371,7 +371,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
     }
 
     // Unit test for unload / reload user topic bundle, verify it works well.
-    @Test(timeOut = 30000)
+    @Test(timeOut = 60000)
     public void testMultiBrokerUnloadReload() throws Exception {
         int partitionNumber = 10;
         String kafkaTopicName = "kopMultiBrokerUnloadReload" + partitionNumber;
