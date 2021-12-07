@@ -552,6 +552,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             for (String topic : topics) {
                                 final TopicName topicName = TopicName.get(topic);
                                 final String key = topicName.getPartitionedTopicName();
+                                if (key.endsWith("/__change_events")) {
+                                    continue;
+                                }
                                 topicMap.computeIfAbsent(
                                         KopTopic.removeDefaultNamespacePrefix(key, namespacePrefix),
                                         ignored -> Collections.synchronizedList(new ArrayList<>())
