@@ -334,26 +334,18 @@ public class MetadataUtils {
             }
         }
 
-        if (infiniteRetention) {
+        if (infiniteRetention && conf.isTopicLevelPoliciesEnabled()) {
             // for the SchemaRegistry topic we want to keep the messages forever
             RetentionPolicies retention = admin.topics().getRetention(topic, true);
             if (retention.getRetentionSizeInMB() != -1
                   || retention.getRetentionTimeInMinutes() != -1) {
-                if (conf.isTopicLevelPoliciesEnabled()) {
-                    log.info("Applying infinite retention to topic {}", topic);
-                    admin.topics().setRetention(topic, new RetentionPolicies(-1, -1));
-                } else {
-                    log.error("Cannot set infinite retention to topic {}, please enable topicLevelPoliciesEnabled", topic);
-                }
+                log.info("Applying infinite retention to topic {}", topic);
+                admin.topics().setRetention(topic, new RetentionPolicies(-1, -1));
             }
             Integer messageTTL = admin.topics().getMessageTTL(topic, true);
             if (messageTTL != null && messageTTL > 0) {
-                if (conf.isTopicLevelPoliciesEnabled()) {
-                    log.info("Applying MessageTTL = -1 to topic {}", topic);
-                    admin.topics().removeMessageTTL(topic);
-                } else {
-                    log.error("Cannot set MessageTTL = -1 to topic {}, please enable topicLevelPoliciesEnabled", topic);
-                }
+                log.info("Applying MessageTTL = -1 to topic {}", topic);
+                admin.topics().removeMessageTTL(topic);
             }
         }
     }
