@@ -128,10 +128,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {
-            Optional<TransactionCoordinator> transactionCoordinatorOptional = Optional.empty();
-            if (kafkaConfig.isEnableTransactionCoordinator()) {
-                transactionCoordinatorOptional = Optional.of(getTransactionCoordinator(tenant));
-            }
             EntryFormatter entryFormatter;
             try {
                 entryFormatter = EntryFormatterFactory.create(kafkaConfig);
@@ -143,7 +139,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig,
                     Time.SYSTEM,
                     entryFormatter,
-                    transactionCoordinatorOptional,
                     producePurgatory);
         });
     }
