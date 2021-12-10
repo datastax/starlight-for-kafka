@@ -820,6 +820,7 @@ public abstract class KopProtocolHandlerTestBase {
         config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
         config.put("kafkaTenant", conf.getKafkaTenant());
         config.put("kafkaNamespace", conf.getKafkaNamespace());
+        config.put("kopSchemaRegistryNamespace", conf.getKopSchemaRegistryNamespace());
         config.put("entryFormat", conf.getEntryFormat());
         config.put("kopSchemaRegistryProxyPort", getKafkaSchemaRegistryProxyPort() + "");
         config.put("kopSchemaRegistryPort", getKafkaSchemaRegistryPort() + "");
