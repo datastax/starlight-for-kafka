@@ -129,6 +129,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         conf.setKafkaMetadataNamespace("__kafka");
         conf.setKafkaTenant(TENANT);
         conf.setKafkaNamespace(NAMESPACE);
+        conf.setKopSchemaRegistryNamespace(NAMESPACE);
 
         conf.setClusterName(super.configClusterName);
         conf.setAuthorizationEnabled(true);
