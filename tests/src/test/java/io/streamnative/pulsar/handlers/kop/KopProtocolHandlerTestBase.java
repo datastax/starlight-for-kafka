@@ -176,10 +176,6 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setZookeeperServers("localhost:2181");
         kafkaConfig.setConfigurationStoreServers("localhost:3181");
 
-        kafkaConfig.setSystemTopicEnabled(true);
-        // required for the Schema Registry topics
-        kafkaConfig.setTopicLevelPoliciesEnabled(true);
-
         kafkaConfig.setAuthenticationEnabled(false);
         kafkaConfig.setAuthorizationEnabled(false);
         kafkaConfig.setAllowAutoTopicCreation(true);

@@ -17,6 +17,7 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;
@@ -49,7 +50,7 @@ public class MetadataUtils {
     }
 
     public static String constructSchemaRegistryTopicName(String tenant, KafkaServiceConfiguration conf) {
-        return tenant + "/" + conf.getKafkaMetadataNamespace()
+        return tenant + "/" + conf.getKopSchemaRegistryNamespace()
                 + "/" + conf.getKopSchemaRegistryTopicName();
     }
 
@@ -67,7 +68,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+        createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
                 true, conf.getOffsetsTopicNumPartitions(), false);
     }
 
@@ -78,7 +79,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic,
+        createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
                 true, conf.getTxnLogTopicNumPartitions(), false);
     }
 
@@ -89,7 +90,7 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, pulsarAdmin, clusterData, conf, kopTopic, false,
+        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData, conf, kopTopic, false,
                 1, true);
     }
 
@@ -108,6 +109,7 @@ public class MetadataUtils {
      * </ul>
      */
     private static void createKafkaMetadataIfMissing(String tenant,
+                                                     String namespace,
                                                      PulsarAdmin pulsarAdmin,
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
@@ -121,7 +123,7 @@ public class MetadataUtils {
             return;
         }
         String cluster = conf.getClusterName();
-        String kafkaMetadataNamespace = tenant + "/" + conf.getKafkaMetadataNamespace();
+        String kafkaMetadataNamespace = tenant + "/" + namespace;
 
         boolean clusterExists = false;
         boolean tenantExists = false;
@@ -154,12 +156,12 @@ public class MetadataUtils {
 
             // Check if the metadata namespace exists and create it if not
             Namespaces namespaces = pulsarAdmin.namespaces();
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces, true, infiniteRetention);
 
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            createTopicIfNotExist(conf, pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum, infiniteRetention);
+            createTopicIfNotExist(conf, pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -200,7 +202,9 @@ public class MetadataUtils {
     }
 
     private static void createNamespaceIfMissing(String tenant, KafkaServiceConfiguration conf, String cluster,
-                                                 String kafkaMetadataNamespace, Namespaces namespaces)
+                                                 String kafkaMetadataNamespace, Namespaces namespaces,
+                                                 boolean handlePolicies,
+                                                 boolean infiniteRetention)
                                                  throws PulsarAdminException {
         if (!namespaces.getNamespaces(tenant).contains(kafkaMetadataNamespace)) {
             log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
@@ -218,23 +222,33 @@ public class MetadataUtils {
                 namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
             }
         }
-        // set namespace config if namespace existed
-        int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
-        RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaMetadataNamespace);
-        if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
-            namespaces.setRetention(kafkaMetadataNamespace,
-                    new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
-        }
 
-        Long compactionThreshold = namespaces.getCompactionThreshold(kafkaMetadataNamespace);
-        if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
-            namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
-        }
+        if (handlePolicies) {
 
-        int targetMessageTTL = conf.getOffsetsMessageTTL();
-        Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaMetadataNamespace);
-        if (messageTTL == null || messageTTL != targetMessageTTL) {
-            namespaces.setNamespaceMessageTTL(kafkaMetadataNamespace, targetMessageTTL);
+            // set namespace config if namespace existed
+            int retentionMinutes = infiniteRetention ? -1 : (int) conf.getOffsetsRetentionMinutes();
+            RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaMetadataNamespace);
+            if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
+                namespaces.setRetention(kafkaMetadataNamespace,
+                        new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+            }
+
+            if (!infiniteRetention) {
+                Long compactionThreshold = namespaces.getCompactionThreshold(kafkaMetadataNamespace);
+                if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
+                    namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
+                }
+            }
+
+            Integer targetMessageTTL = infiniteRetention ? null : conf.getOffsetsMessageTTL();
+            Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaMetadataNamespace);
+            if (messageTTL == null || !Objects.equals(messageTTL, targetMessageTTL)) {
+                if (targetMessageTTL == null) {
+                    namespaces.removeNamespaceMessageTTL(kafkaMetadataNamespace);
+                } else {
+                    namespaces.setNamespaceMessageTTL(kafkaMetadataNamespace, targetMessageTTL);
+                }
+            }
         }
     }
 
@@ -290,7 +304,7 @@ public class MetadataUtils {
 
             Namespaces namespaces = pulsarAdmin.namespaces();
             // Check if the kafka namespace exists and create it if not
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces, false, false);
             namespaceExists = true;
 
         } catch (PulsarAdminException e) {
@@ -313,8 +327,7 @@ public class MetadataUtils {
                                               final PulsarAdmin admin,
                                               final String topic,
                                               boolean partitioned,
-                                              final int numPartitions,
-                                              boolean infiniteRetention) throws PulsarAdminException {
+                                              final int numPartitions) throws PulsarAdminException {
         if (partitioned) {
             try {
                 admin.topics().createPartitionedTopic(topic, numPartitions);
@@ -331,21 +344,6 @@ public class MetadataUtils {
                 admin.topics().createNonPartitionedTopic(topic);
             } catch (PulsarAdminException.ConflictException e) {
                 log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
-            }
-        }
-
-        if (infiniteRetention && conf.isTopicLevelPoliciesEnabled()) {
-            // for the SchemaRegistry topic we want to keep the messages forever
-            RetentionPolicies retention = admin.topics().getRetention(topic, true);
-            if (retention.getRetentionSizeInMB() != -1
-                  || retention.getRetentionTimeInMinutes() != -1) {
-                log.info("Applying infinite retention to topic {}", topic);
-                admin.topics().setRetention(topic, new RetentionPolicies(-1, -1));
-            }
-            Integer messageTTL = admin.topics().getMessageTTL(topic, true);
-            if (messageTTL != null && messageTTL > 0) {
-                log.info("Applying MessageTTL = -1 to topic {}", topic);
-                admin.topics().removeMessageTTL(topic);
             }
         }
     }
