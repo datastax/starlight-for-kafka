@@ -36,10 +36,10 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
-    <groupId>${pulsar.group.id}</groupId>
-    <artifactId>pulsar-broker</artifactId>
-    <version>${pulsar.version}</version>
-  </dependency>
+      <groupId>${pulsar.group.id}</groupId>
+      <artifactId>pulsar-broker</artifactId>
+      <version>${pulsar.version}</version>
+    </dependency>
 
   <dependency>
     <groupId>${pulsar.group.id}</groupId>
@@ -63,6 +63,12 @@
     <groupId>${pulsar.group.id}</groupId>
     <artifactId>pulsar-client-original</artifactId>
     <version>${pulsar.version}</version>
+    <exclusions>
+      <exclusion>
+        <groupId>org.apache.logging.log4j</groupId>
+        <artifactId>*</artifactId>
+      </exclusion>
+    </exclusions>
   </dependency>
 
   <dependency>
