@@ -117,6 +117,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private String kafkaMetadataNamespace = "__kafka";
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            required = true,
+            doc = "The namespace used for storing Kafka Schema Registry"
+    )
+    private String kopSchemaRegistryNamespace = "__kafka_schemaregistry";
+
+    @FieldContext(
         category = CATEGORY_KOP,
         doc = "The minimum allowed session timeout for registered consumers."
             + " Shorter timeouts result in quicker failure detection at the cost"

@@ -221,7 +221,7 @@ public class SchemaRegistryManager {
                 throw new IllegalStateException(err);
             }
         },
-                kafkaConfig.getKafkaMetadataNamespace(), kafkaConfig.getKopSchemaRegistryTopicName());
+                kafkaConfig.getKopSchemaRegistryNamespace(), kafkaConfig.getKopSchemaRegistryTopicName());
         new SchemaResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new SubjectResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);
         new ConfigResource(schemaStorage, schemaRegistryRequestAuthenticator).register(handler);

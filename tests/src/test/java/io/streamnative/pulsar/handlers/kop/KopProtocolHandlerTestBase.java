@@ -176,10 +176,6 @@ public abstract class KopProtocolHandlerTestBase {
         kafkaConfig.setZookeeperServers("localhost:2181");
         kafkaConfig.setConfigurationStoreServers("localhost:3181");
 
-        kafkaConfig.setSystemTopicEnabled(true);
-        // required for the Schema Registry topics
-        kafkaConfig.setTopicLevelPoliciesEnabled(true);
-
         kafkaConfig.setAuthenticationEnabled(false);
         kafkaConfig.setAuthorizationEnabled(false);
         kafkaConfig.setAllowAutoTopicCreation(true);
@@ -824,6 +820,7 @@ public abstract class KopProtocolHandlerTestBase {
         config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
         config.put("kafkaTenant", conf.getKafkaTenant());
         config.put("kafkaNamespace", conf.getKafkaNamespace());
+        config.put("kopSchemaRegistryNamespace", conf.getKopSchemaRegistryNamespace());
         config.put("entryFormat", conf.getEntryFormat());
         config.put("kopSchemaRegistryProxyPort", getKafkaSchemaRegistryProxyPort() + "");
         config.put("kopSchemaRegistryPort", getKafkaSchemaRegistryPort() + "");

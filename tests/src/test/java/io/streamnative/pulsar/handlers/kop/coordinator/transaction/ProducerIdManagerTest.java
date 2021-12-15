@@ -18,6 +18,7 @@ import static org.testng.AssertJUnit.fail;
 
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.data.Stat;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -78,7 +79,7 @@ public class ProducerIdManagerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testExceedProducerIdLimit() throws Exception {
-        mockZooKeeper.create(ProducerIdManager.KOP_PID_BLOCK_ZNODE, null, null, null);
+        mockZooKeeper.create(ProducerIdManager.KOP_PID_BLOCK_ZNODE, null, null, CreateMode.PERSISTENT);
         mockZooKeeper.setData(ProducerIdManager.KOP_PID_BLOCK_ZNODE,
                 ProducerIdManager.generateProducerIdBlockJson(
                         new ProducerIdManager.ProducerIdBlock(

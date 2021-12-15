@@ -31,7 +31,7 @@ public class PulsarContainer implements AutoCloseable {
 
   protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/protocols/test-protocol-handler.nar";
   protected static final String PROXY_EXTENSION_TEST_NAR = "/proxyextensions/test-proxy-extension.nar";
-  private static final String PULSAR_IMAGE = "datastax/lunastreaming:2.8.0_1.1.7";
+  private static final String PULSAR_IMAGE = "datastax/lunastreaming:2.8.0_1.1.8";
 
   @Getter
   private GenericContainer<?> pulsarContainer;
