@@ -197,7 +197,9 @@
         <artifactId>awaitility</artifactId>
         <version>${awaitility.version}</version>
       </dependency>
-  </dependencyManagenent>
+   </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <!-- provided dependencies (available at compilation and test classpths and *NOT* packaged) -->
     <dependency>
@@ -287,17 +289,6 @@
       <version>${kafka.version}</version>
     </dependency>
 
-    <dependency>
-      <groupId>com.beust</groupId>
-      <artifactId>jcommander</artifactId>
-      <version>${jcommander.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-lang3</artifactId>
-      <version>${commons-lang3.version}</version>
-    </dependency>
 
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
