@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-import static io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils.getKafkaTopicNameFromPulsarTopicName;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -33,6 +32,7 @@ import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
+import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -205,6 +205,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         final GroupCoordinator groupCoordinator;
         final String brokerUrl;
         final String tenant;
+        final String metadataNamespace;
 
         public OffsetAndTopicListener(BrokerService service,
                                       String tenant,
@@ -218,6 +219,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             this.kafkaTopicNs = NamespaceName
                     .get(tenant, kafkaConfig.getKafkaNamespace());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
+            this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         }
 
         @Override
@@ -233,16 +235,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         log.info("get owned topic list when onLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
                             // already filtered namespace, check the local name without partition
-                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {
+                            if (KopTopic.isGroupMetadataTopicName(topic, metadataNamespace)) {
                                 checkState(name.isPartitioned(),
-                                    "OffsetTopic should be partitioned in onLoad, but get " + name);
+                                        "OffsetTopic should be partitioned in onLoad, but get " + name);
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("New offset partition load:  {}, broker: {}",
-                                        name, service.pulsar().getBrokerServiceUrl());
+                                            name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupImmigration(name.getPartitionIndex());
                             }
@@ -268,16 +269,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         log.info("get owned topic list when unLoad bundle {}, topic size {} ", bundle, topics.size());
                         for (String topic : topics) {
                             TopicName name = TopicName.get(topic);
-                            String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
                             // already filtered namespace, check the local name without partition
-                            if (Topic.GROUP_METADATA_TOPIC_NAME.equals(kafkaTopicName)) {
+                            if (KopTopic.isGroupMetadataTopicName(topic, metadataNamespace)) {
                                 checkState(name.isPartitioned(),
-                                    "OffsetTopic should be partitioned in unLoad, but get " + name);
+                                        "OffsetTopic should be partitioned in unLoad, but get " + name);
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("Offset partition unload:  {}, broker: {}",
-                                        name, service.pulsar().getBrokerServiceUrl());
+                                            name, service.pulsar().getBrokerServiceUrl());
                                 }
                                 groupCoordinator.handleGroupEmigration(name.getPartitionIndex());
                             }
@@ -309,6 +309,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         private final NamespaceName kafkaTopicNs;
         private final String brokerUrl;
         private final TransactionCoordinator txnCoordinator;
+        private final String metadataNamespace;
 
         public TransactionStateRecover(
                 BrokerService service,
@@ -322,6 +323,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     .get(tenant, kafkaConfig.getKafkaNamespace());
             this.brokerUrl = service.pulsar().getBrokerServiceUrl();
             this.txnCoordinator = txnCoordinator;
+            this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         }
 
         @Override
@@ -338,9 +340,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                     bundle, topics.size());
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
-                                String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
-                                if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(kafkaTopicName)) {
+                                if (KopTopic.isTransactionMetadataTopicName(topic, metadataNamespace)) {
                                     checkState(name.isPartitioned(),
                                             "TxnTopic should be partitioned in onLoad, but get " + name);
 
@@ -373,9 +374,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                                     bundle, topics.size());
                             for (String topic : topics) {
                                 TopicName name = TopicName.get(topic);
-                                String kafkaTopicName = getKafkaTopicNameFromPulsarTopicName(name);
 
-                                if (Topic.TRANSACTION_STATE_TOPIC_NAME.equals(kafkaTopicName)
+                                if (KopTopic.isTransactionMetadataTopicName(topic, metadataNamespace)
                                         && txnCoordinator != null) {
                                     checkState(name.isPartitioned(),
                                             "TxnTopic should be partitioned in unLoad, but get " + name);

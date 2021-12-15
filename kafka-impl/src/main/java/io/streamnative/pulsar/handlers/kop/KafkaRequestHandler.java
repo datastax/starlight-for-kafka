@@ -599,6 +599,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // e.g. <persistent://public/default/topic1-partition-0, persistent://public/default/topic1>
         final Map<String, TopicName> nonPartitionedTopicMap = Maps.newConcurrentMap();
 
+        final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
+
         if (topics == null || topics.isEmpty()) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
             KopBrokerLookupManager.clear();
@@ -613,7 +615,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                    allTopicMetadata.add(new TopicMetadata(
                                            Errors.TOPIC_AUTHORIZATION_FAILED,
                                            topic,
-                                           KopTopic.isInternalTopic(topicName.toString()),
+                                           KopTopic.isInternalTopic(topicName.toString(), metadataNamespace),
                                            Collections.emptyList()));
                                    return;
                                }
@@ -658,7 +660,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 allTopicMetadata.add(new TopicMetadata(
                         Errors.TOPIC_AUTHORIZATION_FAILED,
                         topic,
-                        KopTopic.isInternalTopic(fullTopicName),
+                        KopTopic.isInternalTopic(fullTopicName, metadataNamespace),
                         Collections.emptyList()));
                 completeOneTopic.run();
             };
@@ -713,7 +715,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                         new TopicMetadata(
                                                                 Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                                 topic,
-                                                                KopTopic.isInternalTopic(fullTopicName),
+                                                                KopTopic.isInternalTopic(fullTopicName,
+                                                                        metadataNamespace),
                                                                 Collections.emptyList()));
                                                 completeOneTopic.run();
                                             }
@@ -723,7 +726,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     new TopicMetadata(
                                                             Errors.UNKNOWN_TOPIC_OR_PARTITION,
                                                             topic,
-                                                            KopTopic.isInternalTopic(fullTopicName),
+                                                            KopTopic.isInternalTopic(fullTopicName, metadataNamespace),
                                                             Collections.emptyList()));
                                             log.warn("[{}] Request {}: Failed to get partitioned pulsar topic {} "
                                                             + "metadata: {}",
@@ -829,7 +832,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                     // the same with what it sent
                                                     topic,
                                                     KopTopic.isInternalTopic(
-                                                            new KopTopic(topic, namespacePrefix).getFullName()),
+                                                            new KopTopic(topic, namespacePrefix).getFullName(),
+                                                            metadataNamespace),
                                                     partitionMetadatas));
 
                                     // whether completed all the topics requests.
@@ -1008,23 +1012,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 log.debug("{} DelayedFetch woke up for {}", matches, topicPartition);
             }
         });
-    }
-
-    private void handlePartitionRecords(final KafkaHeaderAndRequest produceHar,
-                                        final TopicPartition topicPartition,
-                                        final MemoryRecords records,
-                                        final int numPartitions,
-                                        final String fullPartitionName,
-                                        final Consumer<Long> offsetConsumer,
-                                        final Consumer<Errors> errorsConsumer,
-                                        final Consumer<Throwable> exceptionConsumer) {
-        // check KOP inner topic
-        if (KopTopic.isInternalTopic(fullPartitionName)) {
-            log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
-                    ctx.channel(), produceHar.getHeader(), topicPartition);
-            errorsConsumer.accept(Errors.INVALID_TOPIC_EXCEPTION);
-            return;
-        }
     }
 
     private void validateRecords(short version, MemoryRecords records) {
@@ -2282,9 +2269,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }));
                 updateErrors.accept(producerId, currentErrors);
 
+                final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
                 Set<TopicPartition> successfulOffsetsPartitions = result.keySet()
                         .stream()
-                        .filter(topicPartition -> KopTopic.isGroupMetadataTopicName(topicPartition.topic()))
+                        .filter(topicPartition ->
+                                KopTopic.isGroupMetadataTopicName(topicPartition.topic(), metadataNamespace))
                         .collect(Collectors.toSet());
                 if (!successfulOffsetsPartitions.isEmpty()) {
                     getGroupCoordinator().scheduleHandleTxnCompletion(

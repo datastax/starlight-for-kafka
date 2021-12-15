@@ -337,11 +337,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         final AtomicInteger topicPartitionNum = new AtomicInteger(produceRequest.partitionRecordsOrFail().size());
 
         String namespacePrefix = currentNamespacePrefix();
+        final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
         // validate system topics
         for (TopicPartition topicPartition : produceRequest.partitionRecordsOrFail().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // check KOP inner topic
-            if (KopTopic.isInternalTopic(fullPartitionName)) {
+            if (KopTopic.isInternalTopic(metadataNamespace, fullPartitionName)) {
                 log.error("[{}] Request {}: not support produce message to inner topic. topic: {}",
                         ctx.channel(), produceHar.getHeader(), topicPartition);
                 Map<TopicPartition, PartitionResponse> errorsMap =
@@ -553,12 +554,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         String namespacePrefix = currentNamespacePrefix();
         Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = new ConcurrentHashMap<>();
         final AtomicInteger topicPartitionNum = new AtomicInteger(fetchRequest.fetchData().size());
+        final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
 
         // validate system topics
         for (TopicPartition topicPartition : fetchRequest.fetchData().keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
             // check KOP inner topic
-            if (KopTopic.isInternalTopic(fullPartitionName)) {
+            if (KopTopic.isInternalTopic(metadataNamespace, fullPartitionName)) {
                 log.error("[{}] Request {}: not support fetch message to inner topic. topic: {}",
                         ctx.channel(), fetch.getHeader(), topicPartition);
                 Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
