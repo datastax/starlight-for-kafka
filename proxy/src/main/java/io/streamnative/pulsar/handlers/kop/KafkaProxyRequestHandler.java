@@ -1534,7 +1534,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
                 FindCoordinatorRequest.CoordinatorType.TRANSACTION, InitProducerIdRequest.class,
-                InitProducerIdRequest::transactionalId,
+                (InitProducerIdRequest r) -> {
+                    String id = r.transactionalId();
+                    // this id is used only for routing, and it must be non null here
+                    return id != null ? id : UUID.randomUUID().toString();
+                },
                 null);
     }
 
