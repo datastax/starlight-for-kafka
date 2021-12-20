@@ -193,6 +193,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Wait for durable write while committing group offsets"
+    )
+    private boolean offsetsWaitForSync = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Zookeeper path for storing kop consumer group"
     )
     private String groupIdZooKeeperPath = "/client_group_id";

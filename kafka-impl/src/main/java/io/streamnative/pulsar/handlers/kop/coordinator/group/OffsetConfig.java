@@ -48,4 +48,6 @@ public class OffsetConfig {
     private long offsetsRetentionCheckIntervalMs = DefaultOffsetsRetentionCheckIntervalMs;
     @Default
     private int offsetsTopicNumPartitions = DefaultOffsetsNumPartitions;
+    @Default
+    private boolean offsetsSync = true;
 }

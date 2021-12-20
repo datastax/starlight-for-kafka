@@ -546,51 +546,61 @@ public class GroupMetadataManager {
 
         // dummy offset commit key
         byte[] key = offsetCommitKey(group.groupId(), new TopicPartition("", -1), namespacePrefix);
-        return storeOffsetMessage(group.groupId(), key, entries.buffer(), timestamp)
-            .thenApplyAsync(messageId -> {
-                if (!group.is(GroupState.Dead)) {
-                    MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
-                    long baseOffset = MessageMetadataUtils.getMockOffset(
-                        lastMessageId.getLedgerId(),
-                        lastMessageId.getEntryId()
-                    );
-                    filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
-                        CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
-                            new CommitRecordMetadataAndOffset(
-                                Optional.of(baseOffset),
-                                offsetAndMetadata
-                            );
-                        if (isTxnOffsetCommit) {
-                            group.onTxnOffsetCommitAppend(producerId, tp, commitRecordMetadataAndOffset);
-                        } else {
-                            group.onOffsetCommitAppend(tp, commitRecordMetadataAndOffset);
-                        }
-                    });
-                }
-                return Errors.NONE;
-            }, scheduler)
-            .exceptionally(cause -> {
-                if (!group.is(GroupState.Dead)) {
-                    if (!group.hasPendingOffsetCommitsFromProducer(producerId)) {
-                        removeProducerGroup(producerId, group.groupId());
+        CompletableFuture<MessageId> resultWrite = storeOffsetMessage(group.groupId(), key, entries.buffer(), timestamp);
+        CompletableFuture<Errors> resultWriteCompletion = resultWrite
+                .thenApplyAsync(messageId -> {
+                    if (!group.is(GroupState.Dead)) {
+                        MessageIdImpl lastMessageId = (MessageIdImpl) messageId;
+                        long baseOffset = MessageMetadataUtils.getMockOffset(
+                                lastMessageId.getLedgerId(),
+                                lastMessageId.getEntryId()
+                        );
+                        filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
+                            CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
+                                    new CommitRecordMetadataAndOffset(
+                                            Optional.of(baseOffset),
+                                            offsetAndMetadata
+                                    );
+                            if (isTxnOffsetCommit) {
+                                group.onTxnOffsetCommitAppend(producerId, tp, commitRecordMetadataAndOffset);
+                            } else {
+                                group.onOffsetCommitAppend(tp, commitRecordMetadataAndOffset);
+                            }
+                        });
                     }
-                    filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
-                        if (isTxnOffsetCommit) {
-                            group.failPendingTxnOffsetCommit(producerId, tp);
-                        } else {
-                            group.failPendingOffsetWrite(tp, offsetAndMetadata);
+                    return Errors.NONE;
+                }, scheduler)
+                .exceptionally(cause -> {
+                    if (!group.is(GroupState.Dead)) {
+                        if (!group.hasPendingOffsetCommitsFromProducer(producerId)) {
+                            removeProducerGroup(producerId, group.groupId());
                         }
-                    });
-                }
+                        filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
+                            if (isTxnOffsetCommit) {
+                                group.failPendingTxnOffsetCommit(producerId, tp);
+                            } else {
+                                group.failPendingOffsetWrite(tp, offsetAndMetadata);
+                            }
+                        });
+                    }
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Offset commit {} from group {}, consumer {} with generation {} failed"
-                            + " when appending to log due to ",
-                        filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
-                }
+                    if (log.isDebugEnabled()) {
+                        log.debug("Offset commit {} from group {}, consumer {} with generation {} failed"
+                                        + " when appending to log due to ",
+                                filteredOffsetMetadata, group.groupId(), consumerId, group.generationId(), cause);
+                    }
 
-                return Errors.UNKNOWN_SERVER_ERROR;
-            })
+                    return Errors.UNKNOWN_SERVER_ERROR;
+                });
+
+        final CompletableFuture<Errors> reference;
+        if (this.offsetConfig.offsetsSync()) {
+            reference = resultWriteCompletion;
+        } else {
+            reference = CompletableFuture.completedFuture(Errors.NONE);
+        }
+
+        return reference
             .thenApplyAsync(errors -> offsetMetadata.entrySet()
                 .stream()
                 .collect(Collectors.toMap(
