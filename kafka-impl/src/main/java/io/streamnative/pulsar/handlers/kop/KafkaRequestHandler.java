@@ -1003,15 +1003,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private void notifyPendingFetches(TopicPartition topicPartition) {
-        ctx.executor().execute( () -> {
-            DelayedOperationKey.TopicPartitionOperationKey key =
-                    new DelayedOperationKey.TopicPartitionOperationKey(topicPartition);
-            int matches = fetchPurgatory.checkAndComplete(key);
-            if (matches > 0) {
-                requestStats.getWaitingFetchesTriggered().add(matches);
-                log.debug("{} DelayedFetch woke up for {}", matches, topicPartition);
-            }
-        });
+       ctx.executor().execute(() -> {
+           DelayedOperationKey.TopicPartitionOperationKey key =
+                   new DelayedOperationKey.TopicPartitionOperationKey(topicPartition);
+           int matches = fetchPurgatory.checkAndComplete(key);
+           if (matches > 0) {
+               requestStats.getWaitingFetchesTriggered().add(matches);
+               if (log.isDebugEnabled()) {
+                   log.debug("{} DelayedFetch woke up for {}", matches, topicPartition);
+               }
+           }
+       });
     }
 
     private void validateRecords(short version, MemoryRecords records) {
