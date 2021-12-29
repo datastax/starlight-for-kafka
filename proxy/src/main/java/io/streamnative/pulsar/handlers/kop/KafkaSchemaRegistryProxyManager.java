@@ -32,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
@@ -40,6 +41,7 @@ public class KafkaSchemaRegistryProxyManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final AuthenticationService authenticationService;
+    private final AuthorizationService authorizationService;
     private final Supplier<CompletableFuture<PulsarAdmin>> pulsarAdmin;
     private final Supplier<String> brokerUrlSupplier;
     private final ProxySchemaRegistryHttpRequestProcessor proxy;
@@ -49,14 +51,16 @@ public class KafkaSchemaRegistryProxyManager {
     public KafkaSchemaRegistryProxyManager(KafkaServiceConfiguration kafkaConfig,
                                            Supplier<String> brokerUrlSupplier,
                                            Supplier<CompletableFuture<PulsarAdmin>> systemPulsarAdmin,
-                                           AuthenticationService authenticationService) {
+                                           AuthenticationService authenticationService,
+                                           AuthorizationService authorizationService) {
         this.kafkaConfig = kafkaConfig;
         this.pulsarAdmin = systemPulsarAdmin;
         this.brokerUrlSupplier = brokerUrlSupplier;
         this.authenticationService = authenticationService;
+        this.authorizationService = authorizationService;
         if (kafkaConfig.isKopSchemaRegistryEnable()) {
             Authorizer authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarAdminMetadataAccessor(
-                    systemPulsarAdmin, kafkaConfig));
+                    systemPulsarAdmin, kafkaConfig, authorizationService));
             SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator =
                     new SchemaRegistryManager.HttpRequestAuthenticator(kafkaConfig,
                     authenticationService, authorizer);

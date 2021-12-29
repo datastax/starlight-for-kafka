@@ -112,6 +112,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Authentication;
@@ -145,6 +146,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     public KafkaProxyRequestHandler(String id, KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
                                     AuthenticationService authenticationService,
+                                    AuthorizationService authorizationService,
                                     KafkaServiceConfiguration kafkaConfig,
                                     boolean tlsEnabled,
                                     EndPoint advertisedEndPoint,
@@ -176,7 +178,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             } catch (Exception err) {
                 return FutureUtil.failedFuture(err);
             }
-        }, kafkaConfig))
+        }, kafkaConfig, authorizationService))
                 : null;
         this.tlsEnabled = tlsEnabled;
         this.advertisedEndPoint = advertisedEndPoint;

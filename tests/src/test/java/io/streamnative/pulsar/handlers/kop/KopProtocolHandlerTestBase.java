@@ -825,6 +825,8 @@ public abstract class KopProtocolHandlerTestBase {
         restConnect = "http://localhost:" + getKafkaSchemaRegistryProxyPort();
 
         Properties config = new Properties();
+        config.put("zookeeperServers", conf.getZookeeperServers());
+        config.put("configurationStoreServers", conf.getConfigurationStoreServers());
         config.put("kafkaMetadataNamespace", conf.getKafkaMetadataNamespace());
         config.put("kafkaMetadataTenant", conf.getKafkaMetadataTenant());
         config.put("kafkaTenant", conf.getKafkaTenant());
@@ -862,7 +864,9 @@ public abstract class KopProtocolHandlerTestBase {
         proxyConfiguration.setProxyExtensionsDirectory(extensionsDir);
         proxyConfiguration.setProxyExtensions(Sets.newHashSet("kafka"));
         beforeStartingProxy(proxyConfiguration);
-        pulsarProxy = new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService());
+        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService()));
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createLocalMetadataStore();
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createConfigurationMetadataStore();
         pulsarProxy.start();
     }
 

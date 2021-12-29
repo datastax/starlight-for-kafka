@@ -30,6 +30,7 @@ import java.util.function.Function;
 import lombok.Getter;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
 import org.slf4j.Logger;
@@ -48,6 +49,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin;
     @Getter
     private final AuthenticationService authenticationService;
+    private final AuthorizationService authorizationService;
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
 
@@ -65,6 +67,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     public KafkaProxyChannelInitializer(
             KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
             AuthenticationService authenticationService,
+            AuthorizationService authorizationService,
             KafkaServiceConfiguration serviceConfig,
             boolean enableTLS,
             EndPoint advertisedEndPoint,
@@ -76,6 +79,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         this.requestStats = requestStats;
         this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
+        this.authorizationService = authorizationService;
         this.pulsarAdmin = pulsarAdmin;
         this.kafkaConfig = serviceConfig;
         this.enableTls = enableTLS;
@@ -180,7 +184,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         ch.pipeline().addLast("frameDecoder",
                 new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-                new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
+                new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, authorizationService, kafkaConfig,
                         // use the same eventloop to preserve ordering
                         enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(),
                         requestStats, topicsLeaders));

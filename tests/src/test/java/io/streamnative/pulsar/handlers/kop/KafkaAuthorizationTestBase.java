@@ -60,7 +60,6 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.TopicAuthorizationException;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.broker.authentication.utils.AuthTokenUtils;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -83,6 +82,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     protected static final String NAMESPACE = "ns1";
     private static final String SHORT_TOPIC = "topic1";
     private static final String TOPIC = "persistent://" + TENANT + "/" + NAMESPACE + "/" + SHORT_TOPIC;
+    private static final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
 
     protected static final String SIMPLE_USER = "muggle_user";
     protected static final String ANOTHER_USER = "death_eater_user";
@@ -111,9 +111,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
 
         Properties properties = new Properties();
         properties.setProperty("tokenSecretKey", AuthTokenUtils.encodeKeyBase64(secretKey));
-        ServiceConfiguration authConf = new ServiceConfiguration();
-        authConf.setProperties(properties);
-        provider.initialize(authConf);
 
         userToken = AuthTokenUtils.createToken(secretKey, SIMPLE_USER, Optional.empty());
         adminToken = AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty());
@@ -681,6 +678,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
             deleteTopicsResult.all().get();
             fail("Should delete failed!");
         } catch (ExecutionException ex) {
+            log.info("Test delete topic failed", ex);
             assertTrue(ex.getMessage().contains("TopicAuthorizationException"));
         }
         try {

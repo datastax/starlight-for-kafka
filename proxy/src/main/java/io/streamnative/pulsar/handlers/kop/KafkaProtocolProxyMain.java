@@ -44,12 +44,12 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.impl.AuthenticationUtil;
-import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
@@ -68,6 +68,7 @@ public class KafkaProtocolProxyMain {
     private ProxyConfiguration proxyConfiguration;
     private KafkaSchemaRegistryProxyManager schemaRegistryProxyManager;
     private AuthenticationService authenticationService;
+    private AuthorizationService authorizationService;
     private Function<String, String> brokerAddressMapper;
     private EventLoopGroup eventLoopGroupStandaloneMode;
     private PrometheusMetricsProvider statsProvider;
@@ -110,27 +111,22 @@ public class KafkaProtocolProxyMain {
         StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
         requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
         this.proxyConfiguration = conf;
-        if (proxyService != null) {
-            try {
-                proxyService.addPrometheusRawMetricsProvider(statsProvider);
-            } catch (NoSuchMethodError notAvailableOnPulsar210) {
-                log.error("Metrics are not available on this version of Pulsar due to {}",
-                        notAvailableOnPulsar210 + "");
-            }
-            authenticationService = proxyService.getAuthenticationService();
-            if (proxyService.getDiscoveryProvider() != null) {
-                brokerAddressMapper = new BrokerAddressMapper(proxyService);
-                log.info("Using Proxy DiscoveryProvider");
-            } else {
-                brokerAddressMapper = defaultBrokerAddressMapper;
-                log.info("Using Broker address mapping by convention, "
-                        + "because DiscoveryProvider is not configured (no zk configuration in the proxy)");
-            }
 
+        try {
+            proxyService.addPrometheusRawMetricsProvider(statsProvider);
+        } catch (NoSuchMethodError notAvailableOnPulsar210) {
+            log.error("Metrics are not available on this version of Pulsar due to {}",
+                    notAvailableOnPulsar210 + "");
+        }
+        authenticationService = proxyService.getAuthenticationService();
+        authorizationService = proxyService.getAuthorizationService();
+        if (proxyService.getDiscoveryProvider() != null) {
+            brokerAddressMapper = new BrokerAddressMapper(proxyService);
+            log.info("Using Proxy DiscoveryProvider");
         } else {
-            authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
             brokerAddressMapper = defaultBrokerAddressMapper;
-            log.info("Using Broker address mapping by convention");
+            log.info("Using Broker address mapping by convention, "
+                    + "because DiscoveryProvider is not configured (no zk configuration in the proxy)");
         }
 
 
@@ -147,7 +143,7 @@ public class KafkaProtocolProxyMain {
                             } catch (PulsarClientException err) {
                                 return FutureUtil.failedFuture(err);
                             }
-                        }, authenticationService);
+                        }, authenticationService, authorizationService);
 
         // Validate the namespaces
         for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
@@ -206,13 +202,13 @@ public class KafkaProtocolProxyMain {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, kafkaConfig, false,
+                                authenticationService, authorizationService, kafkaConfig, false,
                                 advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, kafkaConfig, true,
+                                authenticationService, authorizationService, kafkaConfig, true,
                                 advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                 }

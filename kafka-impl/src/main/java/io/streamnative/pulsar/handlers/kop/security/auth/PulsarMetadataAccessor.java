@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -64,13 +65,19 @@ public interface PulsarMetadataAccessor {
             return pulsarService.getConfiguration();
         }
 
+        @Override
+        public AuthorizationService getAuthorizationService() {
+            return pulsarService.getBrokerService().getAuthorizationService();
+        }
     }
 
     @AllArgsConstructor
     class PulsarAdminMetadataAccessor implements PulsarMetadataAccessor {
         private final Supplier<CompletableFuture<PulsarAdmin>> pulsarAdmin;
         private final ServiceConfiguration serviceConfiguration;
+        private final AuthorizationService authorizationService;
 
+        @Override
         public CompletableFuture<Optional<TenantInfo>> getTenantInfoAsync(String tenant) {
             return pulsarAdmin.get()
                         .thenCompose(admin -> admin
@@ -86,6 +93,7 @@ public interface PulsarMetadataAccessor {
                         });
         }
 
+        @Override
         public CompletableFuture<Optional<Policies>> getNamespacePoliciesAsync(NamespaceName namespace) {
             return pulsarAdmin.get()
                     .thenCompose(admin -> admin
@@ -101,8 +109,13 @@ public interface PulsarMetadataAccessor {
                     });
         }
 
+        @Override
         public ServiceConfiguration getConfiguration() {
             return serviceConfiguration;
+        }
+        @Override
+        public AuthorizationService getAuthorizationService() {
+            return authorizationService;
         }
     }
 
@@ -125,4 +138,10 @@ public interface PulsarMetadataAccessor {
      * @return the configuration.
      */
     ServiceConfiguration getConfiguration();
+
+    /**
+     * Access the AuthorizationService.
+     * @return the AuthorizationService.
+     */
+    AuthorizationService getAuthorizationService();
 }

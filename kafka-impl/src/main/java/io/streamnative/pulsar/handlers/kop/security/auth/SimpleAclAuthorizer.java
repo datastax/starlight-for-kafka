@@ -21,10 +21,14 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AuthAction;
+import org.apache.pulsar.common.policies.data.NamespaceOperation;
 import org.apache.pulsar.common.policies.data.Policies;
+import org.apache.pulsar.common.policies.data.PolicyName;
+import org.apache.pulsar.common.policies.data.PolicyOperation;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 
 /**
@@ -35,9 +39,11 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     private final PulsarMetadataAccessor pulsarService;
     private final ServiceConfiguration conf;
+    private final AuthorizationService authorizationService;
 
     public SimpleAclAuthorizer(PulsarMetadataAccessor pulsarService) {
         this.pulsarService = pulsarService;
+        this.authorizationService = pulsarService.getAuthorizationService();
         this.conf = pulsarService.getConfiguration();
     }
 
@@ -241,7 +247,7 @@ public class SimpleAclAuthorizer implements Authorizer {
                 String.format("Expected resource type is TENANT, but have [%s]", resource.getResourceType()));
 
         CompletableFuture<Boolean> canAccessFuture = new CompletableFuture<>();
-        authorize(principal, null, resource).whenComplete((hasPermission, ex) -> {
+        authorizeTenantPermission(principal, resource).whenComplete((hasPermission, ex) -> {
                 if (ex != null) {
                     if (log.isDebugEnabled()) {
                         log.debug(
@@ -258,6 +264,43 @@ public class SimpleAclAuthorizer implements Authorizer {
     }
 
     @Override
+    public CompletableFuture<Boolean> canCreateTopicAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.allowNamespaceOperationAsync(
+                topicName.getNamespaceObject(),
+                NamespaceOperation.CREATE_TOPIC,
+                principal.getName(),
+                principal.getAuthenticationData());
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canDeleteTopicAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.allowNamespaceOperationAsync(
+                topicName.getNamespaceObject(),
+                NamespaceOperation.DELETE_TOPIC,
+                principal.getName(),
+                principal.getAuthenticationData());
+    }
+
+    @Override
+    public CompletableFuture<Boolean> canAlterTopicAsync(KafkaPrincipal principal, Resource resource) {
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
+                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.allowTopicPolicyOperationAsync(
+                topicName, PolicyName.PARTITION, PolicyOperation.WRITE,
+                principal.getName(), principal.getAuthenticationData());
+    }
+
+    @Override
     public CompletableFuture<Boolean> canManageTenantAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
@@ -271,37 +314,8 @@ public class SimpleAclAuthorizer implements Authorizer {
     public CompletableFuture<Boolean> canLookupAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-
-        CompletableFuture<Boolean> canLookupFuture = new CompletableFuture<>();
-        authorize(principal, AuthAction.consume, resource).whenComplete((hasProducePermission, ex) -> {
-            if (ex != null) {
-                if (log.isDebugEnabled()) {
-                    log.debug(
-                            "Resource [{}] Principal [{}] exception occurred while trying to "
-                                    + "check Consume permissions. {}",
-                            resource, principal, ex.getMessage());
-                }
-                hasProducePermission = false;
-            }
-            if (hasProducePermission) {
-                canLookupFuture.complete(true);
-                return;
-            }
-            authorize(principal, AuthAction.produce, resource).whenComplete((hasConsumerPermission, e) -> {
-                if (e != null) {
-                    if (log.isDebugEnabled()) {
-                        log.debug(
-                                "Resource [{}] Principal [{}] exception occurred while trying to "
-                                        + "check Produce permissions. {}",
-                                resource, principal, e.getMessage());
-                    }
-                    canLookupFuture.completeExceptionally(e);
-                    return;
-                }
-                canLookupFuture.complete(hasConsumerPermission);
-            });
-        });
-        return canLookupFuture;
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.canLookupAsync(topicName, principal.getName(), principal.getAuthenticationData());
     }
 
     @Override
@@ -321,14 +335,17 @@ public class SimpleAclAuthorizer implements Authorizer {
     public CompletableFuture<Boolean> canProduceAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-        return authorize(principal, AuthAction.produce, resource);
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.canProduceAsync(topicName, principal.getName(), principal.getAuthenticationData());
     }
 
     @Override
     public CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.TOPIC,
                 String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
-        return authorize(principal, AuthAction.consume, resource);
+        TopicName topicName = TopicName.get(resource.getName());
+        return authorizationService.canConsumeAsync(
+                topicName, principal.getName(), principal.getAuthenticationData(), "");
     }
 
 }

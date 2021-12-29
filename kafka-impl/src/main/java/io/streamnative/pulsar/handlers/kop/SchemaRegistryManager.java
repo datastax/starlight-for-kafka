@@ -131,7 +131,7 @@ public class SchemaRegistryManager {
         private void performAuthorizationValidation(String username, String role, String tenant)
                 throws SchemaStorageException {
             if (kafkaConfig.isAuthorizationEnabled() && kafkaConfig.isKafkaEnableMultiTenantMetadata()) {
-                KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username);
+                KafkaPrincipal kafkaPrincipal = new KafkaPrincipal(KafkaPrincipal.USER_TYPE, role, username, null);
                 String topicName = MetadataUtils.constructSchemaRegistryTopicName(tenant, kafkaConfig);
                 try {
                     Boolean tenantExists =
