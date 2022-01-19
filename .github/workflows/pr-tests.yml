@@ -1,10 +1,6 @@
 name: kop tests
 
-on:
-  pull_request:
-    branches:
-      - master
-      - branch-*
+on: [push, pull_request]
 
 jobs:
   build:
