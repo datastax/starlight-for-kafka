@@ -175,7 +175,7 @@ public class SaslAuthenticator {
     public void authenticate(ChannelHandlerContext ctx,
                              ByteBuf requestBuf,
                              BiConsumer<Long, Throwable> registerRequestParseLatency,
-                             BiConsumer<String, Long> registerRequestLatency,
+                             BiConsumer<ApiKeys, Long> registerRequestLatency,
                              Function<Session, Boolean> tenantAccessValidationFunction)
             throws AuthenticationException {
         checkArgument(requestBuf.readableBytes() > 0);
@@ -301,7 +301,7 @@ public class SaslAuthenticator {
     private void handleKafkaRequest(ChannelHandlerContext ctx,
                                     ByteBuf requestBuf,
                                     BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                    BiConsumer<String, Long> registerRequestLatency)
+                                    BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
         final long beforeParseTime = MathUtils.nowInNano();
         ByteBuffer nioBuffer = requestBuf.nioBuffer();
@@ -405,7 +405,7 @@ public class SaslAuthenticator {
     private void handleSaslToken(ChannelHandlerContext ctx,
                                  ByteBuf requestBuf,
                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                 BiConsumer<String, Long> registerRequestLatency,
+                                 BiConsumer<ApiKeys, Long> registerRequestLatency,
                                  Function<Session, Boolean> tenantAccessValidationFunction)
             throws AuthenticationException {
         final long timeBeforeParse = MathUtils.nowInNano();
@@ -459,7 +459,7 @@ public class SaslAuthenticator {
             if (apiKey != ApiKeys.SASL_AUTHENTICATE) {
                 AuthenticationException e = new AuthenticationException(
                         "Unexpected Kafka request of type " + apiKey + " during SASL authentication");
-                registerRequestLatency.accept(apiKey.name, startProcessTime);
+                registerRequestLatency.accept(apiKey, startProcessTime);
                 buildResponseOnAuthenticateFailure(header, request, null, e);
                 throw e;
             }
@@ -478,11 +478,11 @@ public class SaslAuthenticator {
                         new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
                                 (String) saslServer.getNegotiatedProperty(USER_NAME_PROP)),
                         header.clientId());
-                registerRequestLatency.accept(apiKey.name, startProcessTime);
+                registerRequestLatency.accept(apiKey, startProcessTime);
                 if (!tenantAccessValidationFunction.apply(session)) {
                     AuthenticationException e =
                             new AuthenticationException("User is not allowed to access this tenant");
-                    registerRequestLatency.accept(apiKey.name, startProcessTime);
+                    registerRequestLatency.accept(apiKey, startProcessTime);
                     buildResponseOnAuthenticateFailure(header, request, null, e);
                     throw e;
                 }
@@ -497,7 +497,7 @@ public class SaslAuthenticator {
                             saslServer.getNegotiatedProperty(USER_NAME_PROP));
                 }
             } catch (SaslException e) {
-                registerRequestLatency.accept(apiKey.name, startProcessTime);
+                registerRequestLatency.accept(apiKey, startProcessTime);
                 buildResponseOnAuthenticateFailure(header, request,
                         KafkaResponseUtils.newSaslAuthenticate(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), e);
                 sendAuthenticationFailureResponse();
@@ -513,20 +513,20 @@ public class SaslAuthenticator {
                                           RequestHeader header,
                                           ApiVersionsRequest request,
                                           Long startProcessTime,
-                                          BiConsumer<String, Long> registerRequestLatency)
+                                          BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
         if (state != State.HANDSHAKE_OR_VERSIONS_REQUEST) {
             throw new IllegalStateException(
                     "Receive ApiVersions request", state, State.HANDSHAKE_OR_VERSIONS_REQUEST);
         }
         if (request.hasUnsupportedRequestVersion()) {
-            registerRequestLatency.accept(header.apiKey().name, startProcessTime);
+            registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx, header, request,
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
             ApiVersionsResponse versionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
-            registerRequestLatency.accept(header.apiKey().name, startProcessTime);
+            registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,
                     request,
@@ -541,13 +541,13 @@ public class SaslAuthenticator {
                                                    RequestHeader header,
                                                    SaslHandshakeRequest request,
                                                    Long startProcessTime,
-                                                   BiConsumer<String, Long> registerRequestLatency)
+                                                   BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
 
         final String mechanism = request.mechanism();
         if (mechanism == null) {
             AuthenticationException e = new AuthenticationException("client's mechanism is null");
-            registerRequestLatency.accept(header.apiKey().name, startProcessTime);
+            registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,
                     request,
@@ -564,7 +564,7 @@ public class SaslAuthenticator {
             if (log.isDebugEnabled()) {
                 log.debug("Using SASL mechanism '{}' provided by client", mechanism);
             }
-            registerRequestLatency.accept(header.apiKey().name, startProcessTime);
+            registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,
                     request,
@@ -575,7 +575,7 @@ public class SaslAuthenticator {
             if (log.isDebugEnabled()) {
                 log.debug("SASL mechanism '{}' requested by client is not supported", mechanism);
             }
-            registerRequestLatency.accept(header.apiKey().name, startProcessTime);
+            registerRequestLatency.accept(header.apiKey(), startProcessTime);
             buildResponseOnAuthenticateFailure(header, request,
                     KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM, allowedMechanisms),
                     null);

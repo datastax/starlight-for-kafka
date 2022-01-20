@@ -46,7 +46,6 @@ import io.streamnative.pulsar.handlers.kop.security.auth.PulsarMetadataAccessor;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
@@ -294,9 +293,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                Boolean tlsEnabled,
                                EndPoint advertisedEndPoint,
                                boolean skipMessagesWithoutIndex,
-                               StatsLogger statsLogger,
+                               RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler) throws Exception {
-        super(statsLogger, kafkaConfig, sendResponseScheduler);
+        super(requestStats, kafkaConfig, sendResponseScheduler);
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
@@ -381,7 +380,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     protected void channelPrepare(ChannelHandlerContext ctx,
                                   ByteBuf requestBuf,
                                   BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                  BiConsumer<String, Long> registerRequestLatency)
+                                  BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,

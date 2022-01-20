@@ -23,7 +23,6 @@ import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
-import io.streamnative.pulsar.handlers.kop.stats.NullStatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
@@ -883,7 +882,7 @@ public abstract class KopProtocolHandlerTestBase {
                 .map(f -> ((KafkaChannelInitializer) f))
                 .findFirst()
                 .get()
-                .newCnx(new TenantContextManager() {
+                .newCnxWithoutStats(new TenantContextManager() {
                     @Override
                     public GroupCoordinator getGroupCoordinator(String tenant) {
                         return groupCoordinator;
@@ -898,7 +897,7 @@ public abstract class KopProtocolHandlerTestBase {
                     public ReplicaManager getReplicaManager(String tenant) {
                         return replicaManager;
                     }
-                }, NullStatsLogger.INSTANCE);
+                });
     }
 
 }
