@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_FETCH_MAX_BYTES;
 import static org.apache.kafka.clients.consumer.ConsumerConfig.DEFAULT_MAX_PARTITION_FETCH_BYTES;
+import static org.apache.kafka.common.requests.ListOffsetRequest.EARLIEST_TIMESTAMP;
 import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -44,6 +45,7 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -519,7 +521,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         }
 
         // 2. real test, test earliest
-        ListOffsetResponse listOffsetResponse = listOffset(ListOffsetRequest.EARLIEST_TIMESTAMP, tp);
+        ListOffsetResponse listOffsetResponse = listOffset(EARLIEST_TIMESTAMP, tp);
         System.out.println("offset for earliest " + listOffsetResponse.responseData().get(tp).offset.intValue());
         assertEquals(listOffsetResponse.responseData().get(tp).error, Errors.NONE);
         assertEquals(listOffsetResponse.responseData().get(tp).offset.intValue(), 0);

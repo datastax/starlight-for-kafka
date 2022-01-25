@@ -293,7 +293,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                        selfNode.id(),
                        responseFromBroker.topicMetadata()
                                .stream()
-                               .map(md -> {
+                               .map((MetadataResponse.TopicMetadata md) -> {
                                    return new MetadataResponse.TopicMetadata(
                                            md.error(),
                                            md.topic(),
@@ -301,7 +301,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                            md
                                                    .partitionMetadata()
                                                    .stream()
-                                                   .map(pd -> {
+                                                   .map((MetadataResponse.PartitionMetadata pd)-> {
                                                        // please note that usually the Kafka client
                                                        // opens two different connections
                                                        // for metadata and for data
@@ -310,8 +310,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                        String fullTopicName = KopTopic.toString(md.topic(),
                                                                pd.partition(), namespacePrefix);
                                                        topicsLeaders.put(fullTopicName, pd.leader());
-                                                       return new PartitionMetadata(pd.error(), pd.partition(),
-                                                               selfNode, nodeList, nodeList, Collections.emptyList());
+                                                       return new MetadataResponse.PartitionMetadata(pd.error(), pd.partition(),
+                                                               selfNode, Optional.empty(), nodeList, nodeList, Collections.<Node>emptyList());
                                                    })
                                                    .collect(Collectors.toList()));
                                })
@@ -1282,6 +1282,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 Errors.NONE,
                 kafkaPartitionIndex,
                 node,                      // leader
+                Optional.empty(),          // leaderEpoch is unknown in Pulsar
                 Lists.newArrayList(node),  // replicas
                 Lists.newArrayList(node),  // isr
                 Collections.emptyList()     // offline replicas
@@ -1304,72 +1305,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
     protected void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                            CompletableFuture<AbstractResponse> resultFuture) {
-        // use offsetData
-        checkArgument(listOffset.getRequest() instanceof ListOffsetRequest);
-        ListOffsetRequest request = (ListOffsetRequest) listOffset.getRequest();
-
-        Map<TopicPartition, ListOffsetResponse.PartitionData> map = new ConcurrentHashMap<>();
-        AtomicInteger expectedCount = new AtomicInteger(request.offsetData().size());
-
-        BiConsumer<String, ListOffsetResponse> onResponse = (topic, topicResponse) -> {
-            topicResponse.responseData().forEach((tp, data) -> {
-                map.put(tp, data);
-                if (expectedCount.decrementAndGet() == 0) {
-                    ListOffsetResponse response = new ListOffsetResponse(map);
-                    resultFuture.complete(response);
-                }
-            });
-        };
-        String namespacePrefix = currentNamespacePrefix();
-        for (Map.Entry<TopicPartition, ListOffsetRequest.PartitionData> entry : request.offsetData().entrySet()) {
-            final String fullPartitionName = KopTopic.toString(entry.getKey(), namespacePrefix);
-
-            int dummyCorrelationId = getDummyCorrelationId();
-            RequestHeader header = new RequestHeader(
-                    listOffset.getHeader().apiKey(),
-                    listOffset.getHeader().apiVersion(),
-                    listOffset.getHeader().clientId(),
-                    dummyCorrelationId
-            );
-
-            Map<TopicPartition, ListOffsetRequest.PartitionData> tsData = new HashMap<>();
-            tsData.put(entry.getKey(), entry.getValue());
-            ListOffsetRequest requestForSinglePartition = ListOffsetRequest.Builder
-                    .forConsumer(false, request.isolationLevel())
-                    .setOffsetData(tsData)
-                    .build(request.version());
-            ByteBuffer buffer = requestForSinglePartition.serialize(header);
-
-            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
-                    header,
-                    requestForSinglePartition,
-                    Unpooled.wrappedBuffer(buffer),
-                    null
-            );
-
-            findBroker(TopicName.get(fullPartitionName))
-                    .thenAccept(brokerAddress -> {
-                        grabConnectionToBroker(brokerAddress.leader().host(), brokerAddress.leader().port())
-                                .forwardRequest(singlePartitionRequest)
-                                .thenAccept(theResponse -> {
-                                    onResponse.accept(fullPartitionName, (ListOffsetResponse) theResponse);
-                                }).exceptionally(err -> {
-                                    ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
-                                    dummyResponse.responseData().put(entry.getKey(),
-                                            new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
-                                                    0, 0));
-                                    onResponse.accept(fullPartitionName, dummyResponse);
-                                    return null;
-                                });
-                    }).exceptionally(err -> {
-                        ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
-                        dummyResponse.responseData().put(entry.getKey(),
-                                new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
-                                        0, 0));
-                        onResponse.accept(fullPartitionName, dummyResponse);
-                        return null;
-                    });
-        }
+        log.error("{} ListOffset v0 is not supported", this);
+        resultFuture.complete(listOffset
+                .getRequest()
+                .getErrorResponse(new Exception("V0 not supported")));
     }
 
     protected void handleListOffsetRequestV1(KafkaHeaderAndRequest listOffset,
@@ -1398,7 +1337,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             return;
         }
         String namespacePrefix = currentNamespacePrefix();
-        for (Map.Entry<TopicPartition, Long> entry : request.partitionTimestamps().entrySet()) {
+        for (Map.Entry<TopicPartition, ListOffsetRequest.PartitionData> entry : request.partitionTimestamps().entrySet()) {
             final String fullPartitionName = KopTopic.toString(entry.getKey(), namespacePrefix);
 
             int dummyCorrelationId = getDummyCorrelationId();
@@ -1409,7 +1348,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     dummyCorrelationId
             );
 
-            Map<TopicPartition, Long> tsData = new HashMap<>();
+            Map<TopicPartition, ListOffsetRequest.PartitionData> tsData = new HashMap<>();
             tsData.put(entry.getKey(), entry.getValue());
             ListOffsetRequest requestForSinglePartition = ListOffsetRequest.Builder
                     .forConsumer(false, request.isolationLevel())
@@ -1434,7 +1373,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
                                     dummyResponse.responseData().put(entry.getKey(),
                                             new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
-                                                    0, 0));
+                                                    0, 0, Optional.empty()));
                                     onResponse.accept(fullPartitionName, dummyResponse);
                                     return null;
                                 });
@@ -1442,7 +1381,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
                         dummyResponse.responseData().put(entry.getKey(),
                                 new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
-                                        0, 0));
+                                        0, 0, Optional.empty()));
                         onResponse.accept(fullPartitionName, dummyResponse);
                         return null;
                     });
