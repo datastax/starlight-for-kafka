@@ -108,8 +108,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     boolean tlsEnabled,
                                     EndPoint advertisedEndPoint,
                                     Function<String, String> brokerAddressMapper,
-                                    EventLoopGroup workerGroup) throws Exception {
-        super(NullStatsLogger.INSTANCE, kafkaConfig, null);
+                                    EventLoopGroup workerGroup,
+                                    RequestStats requestStats) throws Exception {
+        super(requestStats, kafkaConfig, null);
         this.workerGroup = workerGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;
@@ -140,9 +141,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
-    protected void channelPrepare(ChannelHandlerContext ctx, ByteBuf requestBuf,
+    protected void channelPrepare(ChannelHandlerContext ctx,
+                                  ByteBuf requestBuf,
                                   BiConsumer<Long, Throwable> registerRequestParseLatency,
-                                  BiConsumer<String, Long> registerRequestLatency) throws AuthenticationException {
+                                  BiConsumer<ApiKeys, Long> registerRequestLatency)
+            throws AuthenticationException {
         if (authenticator != null) {
             authenticator.authenticate(ctx, requestBuf, registerRequestParseLatency, registerRequestLatency,
                     this::validateTenantAccessForSession);

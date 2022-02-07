@@ -19,6 +19,8 @@ import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.util.concurrent.DefaultThreadFactory;
+import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
+import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import java.util.function.Supplier;
@@ -50,6 +52,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -66,6 +69,8 @@ public class KafkaProtocolProxyMain {
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
     private EventLoopGroup eventLoopGroupStandaloneMode;
+    private PrometheusMetricsProvider statsProvider;
+    private RequestStats requestStats;
 
     private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
         // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
@@ -224,6 +229,9 @@ public class KafkaProtocolProxyMain {
                 KopVersion.getBuildUser(),
                 KopVersion.getBuildHost(),
                 KopVersion.getBuildTime());
+        statsProvider = new PrometheusMetricsProvider();
+        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
+        requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
     }
 
     public void startStandalone() {
@@ -280,13 +288,13 @@ public class KafkaProtocolProxyMain {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, false,
-                                advertisedEndPoint, brokerAddressMapper));
+                                advertisedEndPoint, brokerAddressMapper, requestStats));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, true,
-                                advertisedEndPoint, brokerAddressMapper));
+                                advertisedEndPoint, brokerAddressMapper, requestStats));
                         break;
                 }
             });
