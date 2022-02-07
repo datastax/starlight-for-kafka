@@ -53,10 +53,11 @@ public final class MessagePublishContext implements PublishContext {
         return this.highestSequenceId;
     }
 
-    @Override
-    public boolean isMarkerMessage() {
-        return this.isControlBatch;
-    }
+//    TODO: uncomment this when updating to 2.9+
+//    @Override
+//    public boolean isMarkerMessage() {
+//        return this.isControlBatch;
+//    }
 
     private MetadataCorruptedException peekOffsetError;
 
