@@ -46,12 +46,14 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import javax.crypto.SecretKey;
 import javax.security.auth.login.Configuration;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.errors.TimeoutException;
 import org.apache.kafka.common.security.JaasUtils;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
@@ -361,8 +363,10 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
 
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
-            } catch (Exception e) {
-                if (version == KafkaVersion.KAFKA_2_8_0
+            } catch (ExecutionException e) {
+                assertTrue(e.getCause() instanceof TimeoutException);
+                if (version == KafkaVersion.DEFAULT
+                    || version == KafkaVersion.KAFKA_2_8_0
                     || version == KafkaVersion.KAFKA_3_0_0) {
                     assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC
                             + " not present in metadata after " + metadataTimeoutMs + " ms."));
