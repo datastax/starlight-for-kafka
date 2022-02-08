@@ -364,7 +364,6 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
                 producer.newContextBuilder(KAFKA_TOPIC, "hello").build().sendAsync().get();
                 fail("should have failed");
             } catch (ExecutionException e) {
-                assertTrue(e.getCause() instanceof TimeoutException);
                 if (version == KafkaVersion.DEFAULT
                     || version == KafkaVersion.KAFKA_2_8_0
                     || version == KafkaVersion.KAFKA_3_0_0) {
