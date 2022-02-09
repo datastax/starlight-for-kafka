@@ -46,6 +46,7 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                     .topic(topic)
                     .startMessageId(MessageId.earliest)
                     .startMessageIdInclusive()
+                    .readCompacted(true)
                     .createAsync();
         }
         return reader;
@@ -122,7 +123,10 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                         // write to Pulsar
                         byte[] serialized = BigInteger.valueOf(result).toByteArray();
                         CompletableFuture<Long>  res =  opProducer
-                                .sendAsync(serialized)
+                                .newMessage()
+                                .key("") // always the same key, this way we can rely on compaction
+                                .value(serialized)
+                                .sendAsync()
                                 .thenApply((msgId) -> {
                                     log.debug("{} written {} as {}", this, result, msgId);
                                     nextId.set(result);
