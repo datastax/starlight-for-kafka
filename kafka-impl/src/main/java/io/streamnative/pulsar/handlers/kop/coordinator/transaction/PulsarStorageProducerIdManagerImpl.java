@@ -108,6 +108,8 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
 
     @Override
     public synchronized CompletableFuture<Long> generateProducerId() {
+        // we could get rid of the Exclusive Producer if we had Message.getIndex()
+        // introduced in 2.9.0 https://github.com/apache/pulsar/pull/11553
         CompletableFuture<Producer<byte[]>> producerHandle = pulsarClient.newProducer()
                 .enableBatching(false)
                 .topic(topic)
