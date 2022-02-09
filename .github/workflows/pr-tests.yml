@@ -15,7 +15,7 @@ jobs:
         java-version: 11
 
     - name: Build with Maven skipTests
-      run: mvn clean install -ntp -B -DskipTests
+      run: mvn clean checkstyle:check install -ntp -B -DskipTests
 
     - name: tests module
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!KafkaIntegration*Test' -pl tests
