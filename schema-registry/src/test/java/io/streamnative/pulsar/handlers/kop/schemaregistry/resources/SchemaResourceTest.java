@@ -23,6 +23,7 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryRequestAuthenticator;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SimpleAPIServer;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChecker;
+import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.MemorySchemaStorageAccessor;
 import java.io.FileNotFoundException;
 import java.util.Map;
