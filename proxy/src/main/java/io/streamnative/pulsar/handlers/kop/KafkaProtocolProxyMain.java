@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -12,6 +12,9 @@
  * limitations under the License.
  */
 package io.streamnative.pulsar.handlers.kop;
+
+import static com.google.common.base.Preconditions.checkState;
+import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -22,7 +25,18 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
-import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.AbstractMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -43,36 +57,24 @@ import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.proxy.server.ProxyService;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-
-import static com.google.common.base.Preconditions.checkState;
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
  */
 @Slf4j
 public class KafkaProtocolProxyMain {
 
+    private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     @Getter
     private KafkaServiceConfiguration kafkaConfig;
     private ProxyConfiguration proxyConfiguration;
     private KafkaSchemaRegistryProxyManager schemaRegistryProxyManager;
-
-    private final PulsarAdminProvider pulsarAdminProvider = new AuthenticatedPulsarAdminProvider();
     private AuthenticationService authenticationService;
     private Function<String, String> brokerAddressMapper;
     private EventLoopGroup eventLoopGroupStandaloneMode;
     private PrometheusMetricsProvider statsProvider;
     private RequestStats requestStats;
 
-    private Function<String, String> DEFAULT_BROKER_ADDRESS_MAPPER = (pulsarAddress -> {
+    private final Function<String, String> defaultBrokerAddressMapper = (pulsarAddress -> {
         // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
         String kafkaAddress = pulsarAddress
                 .replace("pulsar://", "PLAINTEXT://")
@@ -97,113 +99,6 @@ public class KafkaProtocolProxyMain {
         return kafkaAddress;
     });
 
-    @AllArgsConstructor
-    private final class SchemaRegistryBrokerProvider implements Supplier<String> {
-
-        @Override
-        public String get() {
-            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
-
-            int colon = rawServiceUrl.lastIndexOf(':');
-            String res;
-            if (colon <= 0) {
-                // no port ? this should not happen
-                res = rawServiceUrl + ":" +kafkaConfig.getKopSchemaRegistryPort();
-            } else {
-                res = rawServiceUrl.substring(0, colon + 1) + kafkaConfig.getKopSchemaRegistryPort();
-            }
-            // no https to talk with the internal KOP broker
-            res = res.replace("http://", "http://");
-            log.info("SchemaRegistry mapping {} to {}", rawServiceUrl, res);
-            return res;
-        }
-    }
-
-    @AllArgsConstructor
-    private final class BrokerAddressMapper implements Function<String, String> {
-        private final ProxyService proxyService;
-        private final ConcurrentHashMap<String, String> cache = new ConcurrentHashMap<>();
-
-        @Override
-        public String apply(String s) {
-            return cache.computeIfAbsent(s, (address) -> {
-                try {
-                    List<? extends ServiceLookupData> availableBrokers = proxyService
-                            .getDiscoveryProvider()
-                            .getAvailableBrokers();
-                    String mapped = availableBrokers
-                            .stream()
-                            .filter(data -> data.getPulsarServiceUrl().equals(address))
-                            .map(data -> data.getProtocol("kafka"))
-                            .findFirst()
-                            .orElse(Optional.empty())
-                            .orElse(null);
-                    if (mapped != null) {
-                        return mapped;
-                    } else {
-                        log.error("Cannot find KOP handler for broker {}, discovery info {}, using default mapping",
-                                address, availableBrokers);
-                        return DEFAULT_BROKER_ADDRESS_MAPPER.apply(address);
-                    }
-                } catch (PulsarServerException err) {
-                    throw new RuntimeException("Cannot find KOP handler for broker " + address, err);
-                }
-            });
-
-        }
-    }
-
-    public void initialize(ProxyConfiguration conf, ProxyService proxyService) throws Exception {
-        this.proxyConfiguration = conf;
-        if (proxyService != null) {
-            authenticationService = proxyService.getAuthenticationService();
-            if (proxyService.getDiscoveryProvider() != null) {
-                brokerAddressMapper = new BrokerAddressMapper(proxyService);
-                log.info("Using Proxy DiscoveryProvider");
-            } else {
-                brokerAddressMapper = DEFAULT_BROKER_ADDRESS_MAPPER;
-                log.info("Using Broker address mapping by convention, " +
-                        "because DiscoveryProvider is not configured (no zk configuration in the proxy)");
-            }
-
-        } else {
-            authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
-            brokerAddressMapper = DEFAULT_BROKER_ADDRESS_MAPPER;
-            log.info("Using Broker address mapping by convention");
-        }
-
-        // init config
-        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
-
-        // some of the configs value in conf.properties may not updated.
-        // So need to get latest value from conf itself
-        kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
-        kafkaConfig.setBindAddress(conf.getBindAddress());
-
-        schemaRegistryProxyManager = new KafkaSchemaRegistryProxyManager(kafkaConfig, new SchemaRegistryBrokerProvider(),
-                () -> {
-                    try {
-                        return CompletableFuture.completedFuture(pulsarAdminProvider.getSuperUserPulsarAdmin());
-                    } catch (PulsarClientException err) {
-                        return FutureUtil.failedFuture(err);
-                    }
-                }, authenticationService);
-
-        // Validate the namespaces
-        for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
-            final String[] tokens = fullNamespace.split("/");
-            if (tokens.length != 2) {
-                throw new IllegalArgumentException(
-                        "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
-            }
-            NamespaceName.validateNamespaceName(tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
-                    tokens[1].replace("*", kafkaConfig.getKafkaNamespace()));
-        }
-
-        log.info("AuthenticationEnabled:  {}", kafkaConfig.isAuthenticationEnabled());
-        log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());
-    }
-
     public static void main(String... args) throws Exception {
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             @Override
@@ -222,6 +117,59 @@ public class KafkaProtocolProxyMain {
         proxy.close();
     }
 
+    public void initialize(ProxyConfiguration conf, ProxyService proxyService) throws Exception {
+        this.proxyConfiguration = conf;
+        if (proxyService != null) {
+            authenticationService = proxyService.getAuthenticationService();
+            if (proxyService.getDiscoveryProvider() != null) {
+                brokerAddressMapper = new BrokerAddressMapper(proxyService);
+                log.info("Using Proxy DiscoveryProvider");
+            } else {
+                brokerAddressMapper = defaultBrokerAddressMapper;
+                log.info("Using Broker address mapping by convention, "
+                        + "because DiscoveryProvider is not configured (no zk configuration in the proxy)");
+            }
+
+        } else {
+            authenticationService = new AuthenticationService(PulsarConfigurationLoader.convertFrom(conf));
+            brokerAddressMapper = defaultBrokerAddressMapper;
+            log.info("Using Broker address mapping by convention");
+        }
+
+        // init config
+        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+
+        // some of the configs value in conf.properties may not updated.
+        // So need to get latest value from conf itself
+        kafkaConfig.setAdvertisedAddress(conf.getAdvertisedAddress());
+        kafkaConfig.setBindAddress(conf.getBindAddress());
+
+        schemaRegistryProxyManager =
+                new KafkaSchemaRegistryProxyManager(kafkaConfig, new SchemaRegistryBrokerProvider(),
+                        () -> {
+                            try {
+                                return CompletableFuture.completedFuture(pulsarAdminProvider.getSuperUserPulsarAdmin());
+                            } catch (PulsarClientException err) {
+                                return FutureUtil.failedFuture(err);
+                            }
+                        }, authenticationService);
+
+        // Validate the namespaces
+        for (String fullNamespace : kafkaConfig.getKopAllowedNamespaces()) {
+            final String[] tokens = fullNamespace.split("/");
+            if (tokens.length != 2) {
+                throw new IllegalArgumentException(
+                        "Invalid namespace '" + fullNamespace + "' in kopAllowedNamespaces config");
+            }
+            NamespaceName.validateNamespaceName(
+                    tokens[0].replace(KafkaServiceConfiguration.TENANT_PLACEHOLDER, kafkaConfig.getKafkaTenant()),
+                    tokens[1].replace("*", kafkaConfig.getKafkaNamespace()));
+        }
+
+        log.info("AuthenticationEnabled:  {}", kafkaConfig.isAuthenticationEnabled());
+        log.info("SaslAllowedMechanisms:  {}", kafkaConfig.getSaslAllowedMechanisms());
+    }
+
     public void start() {
         log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -236,7 +184,8 @@ public class KafkaProtocolProxyMain {
 
     public void startStandalone() {
 
-        eventLoopGroupStandaloneMode = EventLoopUtil.newEventLoopGroup(16, false, new DefaultThreadFactory("kop-broker-connection"));
+        eventLoopGroupStandaloneMode =
+                EventLoopUtil.newEventLoopGroup(16, false, new DefaultThreadFactory("kop-broker-connection"));
 
         log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
         log.info("Git Revision {}", KopVersion.getGitSha());
@@ -299,7 +248,8 @@ public class KafkaProtocolProxyMain {
                 }
             });
 
-            Optional<ChannelInitializer<SocketChannel>> schemaRegistryChannelInitializer = schemaRegistryProxyManager.build();
+            Optional<ChannelInitializer<SocketChannel>> schemaRegistryChannelInitializer =
+                    schemaRegistryProxyManager.build();
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryProxyManager.getAddress(), schemaRegistryChannelInitializer.get());
             }
@@ -319,76 +269,6 @@ public class KafkaProtocolProxyMain {
         void invalidateAdminForPrincipal(String principal, PulsarAdmin expected, Throwable error);
 
         PulsarAdmin getSuperUserPulsarAdmin() throws PulsarClientException;
-    }
-
-    private class AuthenticatedPulsarAdminProvider implements PulsarAdminProvider {
-
-        private final ConcurrentHashMap<String, PulsarAdmin> cache = new ConcurrentHashMap<>();
-
-        @Override
-        public void invalidateAdminForPrincipal(String originalPrincipal, PulsarAdmin expected, Throwable error) {
-            if (originalPrincipal == null) {
-                originalPrincipal = "";
-            }
-            cache.computeIfPresent(originalPrincipal, (p, current) -> {
-                if (expected == current) {
-                    // prevent race conditions and multiple threads that try to
-                    // invalidate the same principal
-                    current.close();
-                    return null;
-                } else {
-                    return current;
-                }
-            });
-        }
-
-        public void close() {
-            cache.values().forEach(admin -> {
-                admin.close();
-            });
-        }
-
-        @Override
-        public PulsarAdmin getSuperUserPulsarAdmin() throws PulsarClientException {
-            return getAdminForPrincipal(kafkaConfig.getKafkaProxySuperUserRole());
-        }
-
-        @Override
-        public PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException {
-            if (originalPrincipal == null) {
-                originalPrincipal = "";
-            }
-            try {
-                return cache.computeIfAbsent(originalPrincipal, principal -> {
-                try {
-                    String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
-                    String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
-
-                    Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
-                    Authentication authenticationWithPrincipal =
-                            new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
-                    return PulsarAdmin
-                            .builder()
-                            .authentication(authenticationWithPrincipal)
-                            .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
-                            .allowTlsInsecureConnection(proxyConfiguration.isTlsAllowInsecureConnection())
-                            .enableTlsHostnameVerification(proxyConfiguration.isTlsHostnameVerificationEnabled())
-                            .readTimeout(5000, TimeUnit.MILLISECONDS)
-                            .connectionTimeout(5000, TimeUnit.MILLISECONDS)
-                            .build();
-                } catch (PulsarClientException err) {
-                    throw new RuntimeException(err);
-                }
-            }
-                );
-            } catch (RuntimeException err) {
-                if (err.getCause() instanceof PulsarClientException) {
-                    throw (PulsarClientException) err.getCause();
-                } else {
-                    throw new PulsarClientException(err);
-                }
-            }
-        }
     }
 
     /**
@@ -456,6 +336,134 @@ public class KafkaProtocolProxyMain {
             }
             resWithPrincipal.add(new AbstractMap.SimpleImmutableEntry("X-Original-Principal", originalPrincipal));
             return resWithPrincipal;
+        }
+    }
+
+    @AllArgsConstructor
+    private final class SchemaRegistryBrokerProvider implements Supplier<String> {
+
+        @Override
+        public String get() {
+            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
+
+            int colon = rawServiceUrl.lastIndexOf(':');
+            String res;
+            if (colon <= 0) {
+                // no port ? this should not happen
+                res = rawServiceUrl + ":" + kafkaConfig.getKopSchemaRegistryPort();
+            } else {
+                res = rawServiceUrl.substring(0, colon + 1) + kafkaConfig.getKopSchemaRegistryPort();
+            }
+            // no https to talk with the internal KOP broker
+            res = res.replace("http://", "http://");
+            log.info("SchemaRegistry mapping {} to {}", rawServiceUrl, res);
+            return res;
+        }
+    }
+
+    @AllArgsConstructor
+    private final class BrokerAddressMapper implements Function<String, String> {
+        private final ProxyService proxyService;
+        private final ConcurrentHashMap<String, String> cache = new ConcurrentHashMap<>();
+
+        @Override
+        public String apply(String s) {
+            return cache.computeIfAbsent(s, (address) -> {
+                try {
+                    List<? extends ServiceLookupData> availableBrokers = proxyService
+                            .getDiscoveryProvider()
+                            .getAvailableBrokers();
+                    String mapped = availableBrokers
+                            .stream()
+                            .filter(data -> data.getPulsarServiceUrl().equals(address))
+                            .map(data -> data.getProtocol("kafka"))
+                            .findFirst()
+                            .orElse(Optional.empty())
+                            .orElse(null);
+                    if (mapped != null) {
+                        return mapped;
+                    } else {
+                        log.error("Cannot find KOP handler for broker {}, discovery info {}, using default mapping",
+                                address, availableBrokers);
+                        return defaultBrokerAddressMapper.apply(address);
+                    }
+                } catch (PulsarServerException err) {
+                    throw new RuntimeException("Cannot find KOP handler for broker " + address, err);
+                }
+            });
+
+        }
+    }
+
+    private class AuthenticatedPulsarAdminProvider implements PulsarAdminProvider {
+
+        private final ConcurrentHashMap<String, PulsarAdmin> cache = new ConcurrentHashMap<>();
+
+        @Override
+        public void invalidateAdminForPrincipal(String originalPrincipal, PulsarAdmin expected, Throwable error) {
+            if (originalPrincipal == null) {
+                originalPrincipal = "";
+            }
+            cache.computeIfPresent(originalPrincipal, (p, current) -> {
+                if (expected == current) {
+                    // prevent race conditions and multiple threads that try to
+                    // invalidate the same principal
+                    current.close();
+                    return null;
+                } else {
+                    return current;
+                }
+            });
+        }
+
+        public void close() {
+            cache.values().forEach(admin -> {
+                admin.close();
+            });
+        }
+
+        @Override
+        public PulsarAdmin getSuperUserPulsarAdmin() throws PulsarClientException {
+            return getAdminForPrincipal(kafkaConfig.getKafkaProxySuperUserRole());
+        }
+
+        @Override
+        public PulsarAdmin getAdminForPrincipal(String originalPrincipal) throws PulsarClientException {
+            if (originalPrincipal == null) {
+                originalPrincipal = "";
+            }
+            try {
+                return cache.computeIfAbsent(originalPrincipal, principal -> {
+                            try {
+                                String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
+                                String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
+
+                                Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
+                                Authentication authenticationWithPrincipal =
+                                        new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
+                                return PulsarAdmin
+                                        .builder()
+                                        .authentication(authenticationWithPrincipal)
+                                        .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
+                                        .allowTlsInsecureConnection(
+                                                proxyConfiguration.isTlsAllowInsecureConnection())
+                                        .enableTlsHostnameVerification(
+                                                proxyConfiguration.isTlsHostnameVerificationEnabled())
+                                        .readTimeout(5000, TimeUnit.MILLISECONDS)
+                                        .connectionTimeout(5000, TimeUnit.MILLISECONDS)
+                                        .build();
+                            } catch (PulsarClientException err) {
+                                throw new RuntimeException(err);
+                            }
+                        }
+                );
+            } catch (RuntimeException err) {
+                if (err.getCause() instanceof PulsarClientException) {
+                    throw (PulsarClientException) err.getCause();
+                } else {
+                    throw new PulsarClientException(err);
+                }
+            }
         }
     }
 }

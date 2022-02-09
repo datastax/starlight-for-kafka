@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,15 +15,13 @@ package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 
-import java.util.function.Function;
-
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
+import java.util.function.Function;
 import lombok.Getter;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
@@ -47,11 +45,11 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
-    private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
     private final NettyServerSslContextBuilder serverSslCtxRefresher;
     private final boolean tlsEnabledWithKeyStore;
     private final RequestStats requestStats;
     private final Function<String, String> brokerAddressMapper;
+    private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
 
     public KafkaProxyChannelInitializer(
             KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
@@ -93,7 +91,8 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
                 serverSSLContextAutoRefreshBuilder = null;
                 serverSslCtxRefresher = new NettyServerSslContextBuilder(serviceConfig.isTlsAllowInsecureConnection(),
                         serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
-                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(), serviceConfig.getTlsProtocols(),
+                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
+                        serviceConfig.getTlsProtocols(),
                         serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
                         serviceConfig.getTlsCertRefreshCheckDurationSec());
             }
@@ -118,11 +117,11 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         String id = ch.remoteAddress() + "";
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",
-            new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
+                new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
-            new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
-                    // use the same eventloop to preserve ordering
-                    enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(), requestStats));
+                new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
+                        // use the same eventloop to preserve ordering
+                        enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(), requestStats));
     }
 
 }

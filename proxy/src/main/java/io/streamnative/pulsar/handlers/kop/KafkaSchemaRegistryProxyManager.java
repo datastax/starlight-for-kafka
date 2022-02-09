@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
+
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
@@ -47,7 +48,7 @@ public class KafkaSchemaRegistryProxyManager {
 
     public KafkaSchemaRegistryProxyManager(KafkaServiceConfiguration kafkaConfig,
                                            Supplier<String> brokerUrlSupplier,
-                                           Supplier<CompletableFuture<PulsarAdmin>>  systemPulsarAdmin,
+                                           Supplier<CompletableFuture<PulsarAdmin>> systemPulsarAdmin,
                                            AuthenticationService authenticationService) {
         this.kafkaConfig = kafkaConfig;
         this.pulsarAdmin = systemPulsarAdmin;
@@ -56,8 +57,8 @@ public class KafkaSchemaRegistryProxyManager {
         if (kafkaConfig.isKopSchemaRegistryEnable()) {
             Authorizer authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarAdminMetadataAccessor(
                     systemPulsarAdmin, kafkaConfig));
-            SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator
-                    = new SchemaRegistryManager.HttpRequestAuthenticator(kafkaConfig,
+            SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator =
+                    new SchemaRegistryManager.HttpRequestAuthenticator(kafkaConfig,
                     authenticationService, authorizer);
             this.proxy = new ProxySchemaRegistryHttpRequestProcessor(brokerUrlSupplier,
                     kafkaConfig,

@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,15 +13,33 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SingleThreadEventLoop;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.AbstractMap;
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -37,26 +55,17 @@ import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.AbstractMap;
-import java.util.Map;
-import java.util.concurrent.*;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 @Slf4j
 class ConnectionToBroker {
-    private final KafkaProxyRequestHandler kafkaProxyRequestHandler;
     final String connectionKey;
     final String brokerHost;
     final int brokerPort;
-    private volatile boolean closed;
-    private CompletableFuture<Channel> connectionFuture;
+    private final KafkaProxyRequestHandler kafkaProxyRequestHandler;
     private final BlockingQueue<Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest,
             CompletableFuture<AbstractResponse>>> writeQueue = new LinkedBlockingQueue<>();
-
     private final ConcurrentHashMap<Integer, PendingAction> pendingRequests = new ConcurrentHashMap<>();
+    private volatile boolean closed;
+    private CompletableFuture<Channel> connectionFuture;
 
     ConnectionToBroker(KafkaProxyRequestHandler kafkaProxyRequestHandler, String connectionKey, String brokerHost,
                        int brokerPort) {
@@ -70,13 +79,15 @@ class ConnectionToBroker {
         if (connectionFuture != null) {
             return connectionFuture;
         }
-        log.info("Opening proxy connection to {} {} current user {}", brokerHost, brokerPort, kafkaProxyRequestHandler.currentUser());
+        log.info("Opening proxy connection to {} {} current user {}", brokerHost, brokerPort,
+                kafkaProxyRequestHandler.currentUser());
 
         EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
         Class<? extends SocketChannel> clientSocketChannelClass;
         if (workerGroup instanceof SingleThreadEventLoop) {
             // handle Epool
-            clientSocketChannelClass = EventLoopUtil.getClientSocketChannelClass(((SingleThreadEventLoop) workerGroup).parent());
+            clientSocketChannelClass =
+                    EventLoopUtil.getClientSocketChannelClass(((SingleThreadEventLoop) workerGroup).parent());
         } else {
             clientSocketChannelClass = NioSocketChannel.class;
         }
@@ -117,7 +128,8 @@ class ConnectionToBroker {
                     originalPrincipal);
             connectionFuture = rawConnectFuture
                     .thenCompose(this::saslHandshake) // send SASL mechanism
-                    .thenCompose(this::authenticate); // send Proxy Token, as Username we send the authenticated principal
+                    .thenCompose(
+                            this::authenticate); // send Proxy Token, as Username we send the authenticated principal
         } else {
             connectionFuture = rawConnectFuture;
         }
@@ -231,6 +243,7 @@ class ConnectionToBroker {
             return channel;
         });
     }
+
     private void processWriteQueue(Channel channel, Throwable error) {
         Map.Entry<KafkaCommandDecoder.KafkaHeaderAndRequest, CompletableFuture<AbstractResponse>> entry =
                 writeQueue.poll();
@@ -312,6 +325,13 @@ class ConnectionToBroker {
         }
     }
 
+    @AllArgsConstructor
+    private static final class PendingAction {
+        CompletableFuture<AbstractResponse> response;
+        ApiKeys apiKeys;
+        short apiVersion;
+    }
+
     public class ResponseFromBrokerHandler extends ChannelInboundHandlerAdapter {
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
@@ -345,13 +365,5 @@ class ConnectionToBroker {
             log.error("Error on {}", connectionKey, cause);
             close();
         }
-    }
-
-
-    @AllArgsConstructor
-    private static final class PendingAction {
-        CompletableFuture<AbstractResponse> response;
-        ApiKeys apiKeys;
-        short apiVersion;
     }
 }
