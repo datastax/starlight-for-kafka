@@ -14,9 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
-import java.net.URL;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Optional;
 import java.util.Properties;
 import lombok.Cleanup;

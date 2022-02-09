@@ -21,9 +21,9 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
-import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
+import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
 import java.io.IOException;
@@ -31,12 +31,17 @@ import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -837,11 +842,13 @@ public abstract class KopProtocolHandlerTestBase {
         // copy system configuration
         ProxyConfiguration proxyConfiguration = ConfigurationUtils.create(config, ProxyConfiguration.class);
 
-        proxyConfiguration.getProperties().put("kafkaListeners", PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
-        proxyConfiguration.setBrokerWebServiceURL("http://localhost:"+getBrokerWebservicePort());
+        proxyConfiguration.getProperties().put("kafkaListeners",
+                PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
+        proxyConfiguration.setBrokerWebServiceURL("http://localhost:" + getBrokerWebservicePort());
 
         // Map Pulsar port to KOP port
-        proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping", computeKafkaProxyBrokerPortToKopMapping());
+        proxyConfiguration.getProperties().put("kafkaProxyBrokerPortToKopMapping",
+                computeKafkaProxyBrokerPortToKopMapping());
 
         URL proxyExtUrl = this.getClass().getResource(PROXY_EXTENSION_TEST_NAR);
         Path proxyExtPath = Paths.get(proxyExtUrl.toURI());

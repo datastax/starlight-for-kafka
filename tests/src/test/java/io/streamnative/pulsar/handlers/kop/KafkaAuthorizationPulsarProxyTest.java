@@ -13,17 +13,15 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
-import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 
-import java.util.Properties;
-
 /**
- * Unit test for Authorization with `entryFormat=pulsar` and using the Proxy
+ * Unit test for Authorization with `entryFormat=pulsar` and using the Proxy.
  */
 @Slf4j
 public class KafkaAuthorizationPulsarProxyTest extends KafkaAuthorizationTestBase {

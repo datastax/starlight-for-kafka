@@ -102,9 +102,10 @@ public class BasicEndToEndTestBase extends KopProtocolHandlerTestBase {
         return newKafkaConsumer(topic, group, bootstrapServers());
     }
 
-    protected KafkaConsumer<String, String> newKafkaConsumer(final String topic, final String group, final String boostrapServers) {
+    protected KafkaConsumer<String, String> newKafkaConsumer(final String topic, final String group,
+                                                             final String boostrapServers) {
         final Properties props =  new Properties();
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG,boostrapServers);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, boostrapServers);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         props.put(ConsumerConfig.GROUP_ID_CONFIG, (group == null) ? GROUP_ID : group);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);

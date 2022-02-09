@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertNull;
-import static org.testng.Assert.assertThrows;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
 
@@ -105,7 +104,7 @@ public class SchemaStorageTestsBase {
         });
         assertTrue(
                 executionException.getCause() instanceof CompatibilityChecker.IncompatibleSchemaChangeException,
-                "Unexcepted exception "+executionException.getCause().getClass());
+                "Unexcepted exception " + executionException.getCause().getClass());
 
 
     }

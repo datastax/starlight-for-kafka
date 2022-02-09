@@ -13,25 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import lombok.Cleanup;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.Producer;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
-
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-
-import static org.testng.Assert.assertEquals;
 
 /**
- * Basic end-to-end test for Proxy
+ * Basic end-to-end test for Proxy.
  */
 public class BasicEndToEndPulsarProxyTest extends BasicEndToEndPulsarTest {
 

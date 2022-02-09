@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.docker;
 
 import static org.testng.Assert.assertTrue;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -73,10 +74,10 @@ public class DockerTest {
                     try (GenericContainer producerContainer = new GenericContainer("confluentinc/cp-kafka:latest")
                             .withNetwork(network)
                             .withCommand("bash", "-c",
-                                    "echo This-is-my-message > file.txt && " +
-                                            "kafka-console-producer --bootstrap-server " + kafkaAddress
-                                            + "  --topic test < file.txt && " +
-                                            "echo FINISHEDPRODUCER")
+                                    "echo This-is-my-message > file.txt && "
+                                            + "kafka-console-producer --bootstrap-server " + kafkaAddress
+                                            + "  --topic test < file.txt && "
+                                            + "echo FINISHEDPRODUCER")
                             .withLogConsumer(new Consumer<OutputFrame>() {
                                 @Override
                                 public void accept(OutputFrame outputFrame) {
@@ -107,7 +108,7 @@ public class DockerTest {
                 try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
                         .withNetwork(network)
                         .withCommand("bash", "-c", "kafka-avro-console-consumer --bootstrap-server " + kafkaAddress
-                                + " --topic test --from-beginning --property schema.registry.url="+ registryAddress)
+                                + " --topic test --from-beginning --property schema.registry.url=" + registryAddress)
                         .withLogConsumer(new Consumer<OutputFrame>() {
                             @Override
                             public void accept(OutputFrame outputFrame) {
@@ -121,14 +122,15 @@ public class DockerTest {
 
                     // sample taken from https://kafka-tutorials.confluent.io/kafka-console-consumer-producer/kafka.html
                     CountDownLatch sent = new CountDownLatch(1);
-                    try (GenericContainer producerContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
+                    try (GenericContainer producerContainer = new GenericContainer(
+                            "confluentinc/cp-schema-registry:latest")
                             .withNetwork(network)
                             .withCommand("bash", "-c",
                                     "echo '{\"number\": 2343439, \"date\": 1596501510, "
                                             + "\"shipping_address\": \"1600 Pennsylvania Avenue NW, Washington, DC "
                                             + "20500, USA\", \"subtotal\": 1000.0, \"shipping_cost\": 20.0, \"tax\": "
-                                            + "0.00}' > file.txt && " +
-                                    "echo '{"
+                                            + "0.00}' > file.txt && "
+                                            + "echo '{"
                                             + "  \"type\": \"record\","
                                             + "  \"namespace\": \"io.confluent.tutorial.pojo.avro\","
                                             + "  \"name\": \"OrderDetail\","
@@ -159,11 +161,11 @@ public class DockerTest {
                                             + "      \"type\":\"double\""
                                             + "    }"
                                             + "  ]"
-                                            + "}' > order_detail.avsc && " +
-                                            " kafka-avro-console-producer --bootstrap-server " + kafkaAddress
-                                            + "  --topic test --property schema.registry.url="+ registryAddress +
-                                            " --property value.schema=\"$(< order_detail.avsc)\" < file.txt && " +
-                                            "echo FINISHEDPRODUCER")
+                                            + "}' > order_detail.avsc && "
+                                            + " kafka-avro-console-producer --bootstrap-server " + kafkaAddress
+                                            + " --topic test --property schema.registry.url=" + registryAddress
+                                            + " --property value.schema=\"$(< order_detail.avsc)\" < file.txt && "
+                                            + "echo FINISHEDPRODUCER")
                             .withLogConsumer(new Consumer<OutputFrame>() {
                                 @Override
                                 public void accept(OutputFrame outputFrame) {

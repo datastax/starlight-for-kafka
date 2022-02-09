@@ -13,14 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.compatibility.saslplain;
 
+import java.util.Properties;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.impl.auth.AuthenticationToken;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
-
-import java.util.Properties;
 
 public class SaslPlainEndToEndPulsarProxyTest extends SaslPlainEndToEndTest {
 

@@ -48,8 +48,8 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
     }
 
     protected String computeKafkaProxyBrokerPortToKopMapping() {
-        return primaryBrokerPort + "=" + primaryKafkaBrokerPort + "," +
-                secondaryBrokerPort + "=" + secondaryKafkaBrokerPort;
+        return primaryBrokerPort + "=" + primaryKafkaBrokerPort + ","
+                + secondaryBrokerPort + "=" + secondaryKafkaBrokerPort;
     }
 
     @Test(timeOut = 180000, priority = -1)
