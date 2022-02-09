@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -79,7 +79,7 @@ public interface SchemaStorage {
      * @return the new Schema
      */
     CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType, String schemaDefinition,
-                               boolean forceCreate);
+                                                  boolean forceCreate);
 
     /**
      * Get current compatibility mode for the given subject.
@@ -96,7 +96,7 @@ public interface SchemaStorage {
     CompletableFuture<Void> setCompatibilityMode(String subject, CompatibilityChecker.Mode mode);
 
     /**
-     * Download multiple schemas
+     * Download multiple schemas.
      * @param ids
      * @return the schemas
      */
@@ -116,7 +116,7 @@ public interface SchemaStorage {
                     res.completeExceptionally(err);
                 } else {
                     schemas.add(downloadedSchema);
-                    if (index == ids.size() -1 ) {
+                    if (index == ids.size() - 1) {
                         res.complete(schemas);
                         return;
                     }

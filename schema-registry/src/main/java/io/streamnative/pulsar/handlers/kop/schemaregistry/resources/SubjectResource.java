@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -50,6 +50,43 @@ public class SubjectResource extends AbstractResource {
         schemaRegistryHandler.addProcessor(new CreateOrUpdateSchema());
     }
 
+    @AllArgsConstructor
+    @Getter
+    public static class GetSchemaBySubjectAndVersionResponse {
+        private int id;
+        private String schema;
+        private String subject;
+        private int version;
+        private String type;
+    }
+
+    @Data
+    public static final class CreateSchemaRequest {
+        String schema;
+        String schemaType = "AVRO";
+        List<SchemaReference> references = new ArrayList<>();
+
+        @Data
+        public static final class SchemaReference {
+            String name;
+            String subject;
+            String version;
+        }
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static final class CreateSchemaResponse {
+        int id;
+    }
+
+    @Data
+    @AllArgsConstructor
+    public static final class CreateSchemaResponseForSubject {
+        int id;
+        int version;
+    }
+
     // GET /subjects
     public class GetAllSubjects extends HttpJsonRequestProcessor<Void, List<String>> {
 
@@ -58,7 +95,8 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups,
+                                                                 FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<List<String>> subjects = schemaStorage.getAllSubjects();
@@ -75,7 +113,8 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups,
+                                                                  FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
@@ -98,7 +137,9 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<GetSchemaBySubjectAndVersionResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetSchemaBySubjectAndVersionResponse> processRequest(Void payload,
+                                                                                         List<String> patternGroups,
+                                                                                         FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
@@ -107,7 +148,7 @@ public class SubjectResource extends AbstractResource {
                 if (v.isEmpty()) {
                     return CompletableFuture.completedFuture(null);
                 }
-                return schemaStorage.findSchemaBySubjectAndVersion(subject, v.get(v.size() -1))
+                return schemaStorage.findSchemaBySubjectAndVersion(subject, v.get(v.size() - 1))
                         .thenApply(s -> s == null ? null : new GetSchemaBySubjectAndVersionResponse(
                                 s.getId(),
                                 s.getSchemaDefinition(),
@@ -125,7 +166,8 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<List<Integer>> processRequest(Void payload, List<String> patternGroups,
+                                                                  FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = getString(0, patternGroups);
@@ -141,16 +183,6 @@ public class SubjectResource extends AbstractResource {
 
     }
 
-    @AllArgsConstructor
-    @Getter
-    public static class GetSchemaBySubjectAndVersionResponse {
-        private int id;
-        private String schema;
-        private String subject;
-        private int version;
-        private String type;
-    }
-
     // GET /subjects/(string: subject)/versions/(versionId: version)
     public class GetSchemaBySubjectAndVersion
             extends HttpJsonRequestProcessor<Void, GetSchemaBySubjectAndVersionResponse> {
@@ -161,8 +193,8 @@ public class SubjectResource extends AbstractResource {
 
         @Override
         protected CompletableFuture<GetSchemaBySubjectAndVersionResponse> processRequest(Void payload,
-                                                                      List<String> patternGroups,
-                                                                      FullHttpRequest request)
+                                                                                         List<String> patternGroups,
+                                                                                         FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             int version = getInt(1, patternGroups);
@@ -187,7 +219,8 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<String> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<String> processRequest(Void payload, List<String> patternGroups,
+                                                           FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             int version = getInt(1, patternGroups);
@@ -203,28 +236,6 @@ public class SubjectResource extends AbstractResource {
 
     }
 
-
-
-    @Data
-    public static final class CreateSchemaRequest {
-        String schema;
-        String schemaType = "AVRO";
-        List<SchemaReference> references = new ArrayList<>();
-
-        @Data
-        public static final class SchemaReference {
-            String name;
-            String subject;
-            String version;
-        }
-    }
-
-    @Data
-    @AllArgsConstructor
-    public static final class CreateSchemaResponse {
-        int id;
-    }
-
     // POST /subjects/(string: subject)/versions
     public class CreateNewSchema extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponse> {
 
@@ -233,8 +244,9 @@ public class SubjectResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<CreateSchemaResponse> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
-                                                      FullHttpRequest request)
+        protected CompletableFuture<CreateSchemaResponse> processRequest(CreateSchemaRequest payload,
+                                                                         List<String> patternGroups,
+                                                                         FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
@@ -245,7 +257,8 @@ public class SubjectResource extends AbstractResource {
                     err = err.getCause();
                 }
                 if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
-                    throw new CompletionException(new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                    throw new CompletionException(
+                            new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
                 } else {
                     throw new CompletionException(err);
                 }
@@ -254,39 +267,35 @@ public class SubjectResource extends AbstractResource {
 
     }
 
-    @Data
-    @AllArgsConstructor
-    public static final class CreateSchemaResponseForSubject {
-        int id;
-        int version;
-    }
-
-
     // POST /subjects/(string: subject)
-    public class CreateOrUpdateSchema extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponseForSubject> {
+    public class CreateOrUpdateSchema
+            extends HttpJsonRequestProcessor<CreateSchemaRequest, CreateSchemaResponseForSubject> {
 
         public CreateOrUpdateSchema() {
             super(CreateSchemaRequest.class, "/subjects/" + STRING_PATTERN, POST);
         }
 
         @Override
-        protected CompletableFuture<CreateSchemaResponseForSubject> processRequest(CreateSchemaRequest payload, List<String> patternGroups,
-                                                      FullHttpRequest request)
+        protected CompletableFuture<CreateSchemaResponseForSubject> processRequest(CreateSchemaRequest payload,
+                                                                                   List<String> patternGroups,
+                                                                                   FullHttpRequest request)
                 throws Exception {
             String subject = getString(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<Schema> schema = schemaStorage.createSchemaVersion(subject,
                     payload.schemaType, payload.schema, false);
-            return schema.thenApply(s -> new CreateSchemaResponseForSubject(s.getId(), s.getVersion())).exceptionally(err -> {
-                while (err instanceof CompletionException) {
-                    err = err.getCause();
-                }
-                if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
-                    throw new CompletionException(new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
-                } else {
-                    throw new CompletionException(err);
-                }
-            });
+            return schema.thenApply(s -> new CreateSchemaResponseForSubject(s.getId(), s.getVersion()))
+                    .exceptionally(err -> {
+                        while (err instanceof CompletionException) {
+                            err = err.getCause();
+                        }
+                        if (err instanceof CompatibilityChecker.IncompatibleSchemaChangeException) {
+                            throw new CompletionException(
+                                    new SchemaStorageException(err.getMessage(), HttpResponseStatus.CONFLICT.code()));
+                        } else {
+                            throw new CompletionException(err);
+                        }
+                    });
         }
 
     }

@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -46,75 +46,6 @@ public class SchemaRegistryHandlerTest {
         server.stopServer();
     }
 
-    private static class DemoHandler extends HttpRequestProcessor {
-
-        @Override
-        public boolean acceptRequest(FullHttpRequest request) {
-            return request.uri().startsWith("/demo");
-        }
-
-        @Override
-        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
-            return CompletableFuture.completedFuture(buildStringResponse("ok", "text/plain; charset=UTF-8"));
-        }
-    }
-
-    private static class JsonHandler extends HttpRequestProcessor {
-
-        @Data
-        @AllArgsConstructor
-        private static class SchemaPojo {
-            String value;
-        }
-
-        @Override
-        public boolean acceptRequest(FullHttpRequest request) {
-            return request.uri().startsWith("/json");
-        }
-
-        @Override
-        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
-            String content = request.uri();
-            return CompletableFuture.completedFuture(buildJsonResponse(new SchemaPojo(content), "application/json; charset=UTF-8"));
-        }
-    }
-
-
-    @Data
-    private static class RequestPojo {
-        String value;
-    }
-
-    @Data
-    @AllArgsConstructor
-    private static class ResponsePojo {
-        String subject;
-        String value;
-    }
-
-    private static class JsonBodyHandler extends HttpJsonRequestProcessor<RequestPojo, ResponsePojo> {
-
-        public JsonBodyHandler() {
-            super(RequestPojo.class, "/subjects/(.*)", "POST");
-        }
-
-        @Override
-        protected CompletableFuture<ResponsePojo> processRequest(RequestPojo payload, List<String> groups, FullHttpRequest request)  {
-            String subject = groups.get(0);
-            if (subject.equals("errorsubject401")) {
-                return FutureUtil.failedFuture(new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED.code()));
-            }
-            if (subject.equals("errorsubject403")) {
-                return FutureUtil.failedFuture(new  SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN.code()));
-            }
-            if (subject.equals("errorsubject500")) {
-                return FutureUtil.failedFuture(new  SchemaStorageException("Error"));
-            }
-            return CompletableFuture.completedFuture(new ResponsePojo(subject, payload.value));
-        }
-
-    }
-
     @Test
     public void testBasicGet() throws Exception {
         assertEquals("ok", server.executeGet("/demo/ok"));
@@ -132,7 +63,7 @@ public class SchemaRegistryHandlerTest {
         assertEquals("{\n"
                         + "  \"subject\" : \"testsubject\",\n"
                         + "  \"value\" : \"/json/test\"\n"
-                + "}",
+                        + "}",
                 server.executePost("/subjects/testsubject", "{\n"
                         + "  \"value\" : \"/json/test\"\n"
                         + "}", "application/json"));
@@ -174,5 +105,77 @@ public class SchemaRegistryHandlerTest {
     @Test(expectedExceptions = FileNotFoundException.class)
     public void testBasicNotFound() throws Exception {
         server.executeGet("/notfound");
+    }
+
+    private static class DemoHandler extends HttpRequestProcessor {
+
+        @Override
+        public boolean acceptRequest(FullHttpRequest request) {
+            return request.uri().startsWith("/demo");
+        }
+
+        @Override
+        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+            return CompletableFuture.completedFuture(buildStringResponse("ok", "text/plain; charset=UTF-8"));
+        }
+    }
+
+    private static class JsonHandler extends HttpRequestProcessor {
+
+        @Override
+        public boolean acceptRequest(FullHttpRequest request) {
+            return request.uri().startsWith("/json");
+        }
+
+        @Override
+        public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
+            String content = request.uri();
+            return CompletableFuture.completedFuture(
+                    buildJsonResponse(new SchemaPojo(content), "application/json; charset=UTF-8"));
+        }
+
+        @Data
+        @AllArgsConstructor
+        private static class SchemaPojo {
+            String value;
+        }
+    }
+
+    @Data
+    private static class RequestPojo {
+        String value;
+    }
+
+    @Data
+    @AllArgsConstructor
+    private static class ResponsePojo {
+        String subject;
+        String value;
+    }
+
+    private static class JsonBodyHandler extends HttpJsonRequestProcessor<RequestPojo, ResponsePojo> {
+
+        public JsonBodyHandler() {
+            super(RequestPojo.class, "/subjects/(.*)", "POST");
+        }
+
+        @Override
+        protected CompletableFuture<ResponsePojo> processRequest(RequestPojo payload, List<String> groups,
+                                                                 FullHttpRequest request) {
+            String subject = groups.get(0);
+            if (subject.equals("errorsubject401")) {
+                return FutureUtil.failedFuture(
+                        new SchemaStorageException("Bad auth", HttpResponseStatus.UNAUTHORIZED.code()));
+            }
+            if (subject.equals("errorsubject403")) {
+                return FutureUtil.failedFuture(
+                        new SchemaStorageException("Forbidden", HttpResponseStatus.FORBIDDEN.code()));
+            }
+            if (subject.equals("errorsubject500")) {
+                return FutureUtil.failedFuture(new SchemaStorageException("Error"));
+            }
+            return CompletableFuture.completedFuture(new ResponsePojo(subject, payload.value));
+        }
+
     }
 }

@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,14 +22,10 @@ import io.streamnative.pulsar.handlers.kop.schemaregistry.model.CompatibilityChe
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import lombok.AllArgsConstructor;
 import lombok.Data;
-import lombok.Getter;
-import org.apache.avro.SchemaCompatibility;
-import org.apache.pulsar.broker.service.schema.SchemaCompatibilityCheck;
 
 public class CompatibilityResource extends AbstractResource {
 
@@ -61,14 +57,16 @@ public class CompatibilityResource extends AbstractResource {
 
     // GET /compatibility/subjects/${subject}/versions/latest
     public class CheckCompatibilityLatestSchema extends HttpJsonRequestProcessor<CheckCompatibilityLatestSchemaRequest,
-                                            CheckCompatibilityLatestSchemaResponse> {
+            CheckCompatibilityLatestSchemaResponse> {
 
         public CheckCompatibilityLatestSchema() {
-            super(CheckCompatibilityLatestSchemaRequest.class, "/compatibility/subjects/" + STRING_PATTERN + "/versions/latest", POST);
+            super(CheckCompatibilityLatestSchemaRequest.class,
+                    "/compatibility/subjects/" + STRING_PATTERN + "/versions/latest", POST);
         }
 
         @Override
-        protected CompletableFuture<CheckCompatibilityLatestSchemaResponse> processRequest(CheckCompatibilityLatestSchemaRequest payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<CheckCompatibilityLatestSchemaResponse> processRequest(
+                CheckCompatibilityLatestSchemaRequest payload, List<String> patternGroups, FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = patternGroups.get(0);

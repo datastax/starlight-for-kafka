@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -112,7 +112,7 @@ public class MemorySchemaStorage implements SchemaStorage {
 
     @Override
     public CompletableFuture<Schema> createSchemaVersion(String subject, String schemaType,
-                                      String schemaDefinition, boolean forceCreate) {
+                                                         String schemaDefinition, boolean forceCreate) {
         // please note that this implementation is not meant to be fully
         // thread safe, it is only for tests
 
@@ -136,7 +136,7 @@ public class MemorySchemaStorage implements SchemaStorage {
 
             // we can extract all the versions
             // we already have them in memory
-            List<Schema> allSchemas =  schemas
+            List<Schema> allSchemas = schemas
                     .values()
                     .stream()
                     .filter(s -> s.getSubject().equals(subject))
@@ -148,7 +148,7 @@ public class MemorySchemaStorage implements SchemaStorage {
             if (!result) {
                 return FutureUtil.failedFuture(new CompatibilityChecker
                         .IncompatibleSchemaChangeException("Schema is not compatible according to " + compatibilityMode
-                                                         + " compatibility mode"));
+                        + " compatibility mode"));
             }
         }
 

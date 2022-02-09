@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,12 +39,8 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
     protected static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(SerializationFeature.INDENT_OUTPUT, true);
 
-    protected abstract boolean acceptRequest(FullHttpRequest request);
-
-    protected abstract CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request);
-
     public static FullHttpResponse buildStringResponse(String body, String contentType) {
-        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  OK,
+        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1, OK,
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
         httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
@@ -53,7 +49,7 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
     }
 
     public static FullHttpResponse buildEmptyResponseNoContentResponse() {
-        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  NO_CONTENT, Unpooled.EMPTY_BUFFER);
+        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1, NO_CONTENT, Unpooled.EMPTY_BUFFER);
         httpResponse.headers().set(HttpHeaderNames.ALLOW, "GET, POST, PUT, DELETE");
         httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0);
         addCORSHeaders(httpResponse);
@@ -61,12 +57,66 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
     }
 
     public static FullHttpResponse buildErrorResponse(HttpResponseStatus error, String body, String contentType) {
-        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
+        FullHttpResponse httpResponse = new DefaultFullHttpResponse(HTTP_1_1, error,
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
         httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, contentType);
         httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
         addCORSHeaders(httpResponse);
         return httpResponse;
+    }
+
+    public static FullHttpResponse buildJsonErrorResponse(Throwable err) {
+        while (err instanceof CompletionException) {
+            err = err.getCause();
+        }
+        int httpStatusCode = err instanceof SchemaStorageException
+                ? ((SchemaStorageException) err).getHttpStatusCode()
+                : INTERNAL_SERVER_ERROR.code();
+        HttpResponseStatus error = HttpResponseStatus.valueOf(httpStatusCode);
+
+        FullHttpResponse httpResponse = null;
+        try {
+            String body = MAPPER.writeValueAsString(new ErrorModel(httpStatusCode, err.getMessage()));
+            httpResponse = new DefaultFullHttpResponse(HTTP_1_1, error,
+                    Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            addCORSHeaders(httpResponse);
+        } catch (JsonProcessingException impossible) {
+            String body = "Error " + err;
+            httpResponse = new DefaultFullHttpResponse(HTTP_1_1, error,
+                    Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain");
+            httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
+            addCORSHeaders(httpResponse);
+        }
+        return httpResponse;
+    }
+
+    public static void addCORSHeaders(FullHttpResponse httpResponse) {
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_CREDENTIALS, true);
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "PUT, POST, GET, DELETE");
+        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "content-type");
+    }
+
+    protected abstract boolean acceptRequest(FullHttpRequest request);
+
+    protected abstract CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request);
+
+    protected FullHttpResponse buildJsonResponse(Object content, String contentType) {
+        try {
+            String body = MAPPER.writeValueAsString(content);
+            return buildStringResponse(body, contentType);
+        } catch (JsonProcessingException err) {
+            return buildErrorResponse(INTERNAL_SERVER_ERROR,
+                    "Internal server error - JSON Processing", "text/plain");
+        }
+    }
+
+    @Override
+    public void close() {
+        // nothing
     }
 
     @AllArgsConstructor
@@ -84,55 +134,5 @@ public abstract class HttpRequestProcessor implements AutoCloseable {
         public String getMessage() {
             return message;
         }
-    }
-
-    public static FullHttpResponse buildJsonErrorResponse(Throwable err) {
-        while (err instanceof CompletionException) {
-            err = err.getCause();
-        }
-        int httpStatusCode = err instanceof SchemaStorageException
-                ? ((SchemaStorageException) err).getHttpStatusCode()
-                : INTERNAL_SERVER_ERROR.code();
-        HttpResponseStatus error = HttpResponseStatus.valueOf(httpStatusCode);
-
-        FullHttpResponse httpResponse = null;
-        try {
-            String body = MAPPER.writeValueAsString(new ErrorModel(httpStatusCode, err.getMessage()));
-            httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
-                    Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
-            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/vnd.schemaregistry.v1+json");
-            httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
-            addCORSHeaders(httpResponse);
-        } catch (JsonProcessingException impossible) {
-            String body = "Error " + err;
-            httpResponse = new DefaultFullHttpResponse(HTTP_1_1,  error,
-                    Unpooled.copiedBuffer(body, CharsetUtil.UTF_8));
-            httpResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain");
-            httpResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.length());
-            addCORSHeaders(httpResponse);
-        }
-        return httpResponse;
-    }
-
-    public static void addCORSHeaders(FullHttpResponse httpResponse) {
-        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_CREDENTIALS, true);
-        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "PUT, POST, GET, DELETE");
-        httpResponse.headers().set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "content-type");
-    }
-
-    protected FullHttpResponse buildJsonResponse(Object content, String contentType) {
-        try {
-            String body = MAPPER.writeValueAsString(content);
-            return buildStringResponse(body, contentType);
-        } catch (JsonProcessingException err) {
-            return buildErrorResponse(INTERNAL_SERVER_ERROR,
-                    "Internal server error - JSON Processing", "text/plain");
-        }
-    }
-
-    @Override
-    public void close() {
-        // nothing
     }
 }

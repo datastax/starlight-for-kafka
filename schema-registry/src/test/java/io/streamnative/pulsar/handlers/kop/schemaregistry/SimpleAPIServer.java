@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,10 +36,9 @@ import org.apache.commons.io.IOUtils;
 
 @Slf4j
 public class SimpleAPIServer {
+    private final SchemaRegistryHandler schemaRegistryHandler;
     private EventLoopGroup group;
     private ServerSocketChannel serverChannel;
-
-    private final SchemaRegistryHandler schemaRegistryHandler;
 
     public SimpleAPIServer(SchemaRegistryHandler schemaRegistryHandler) {
         this.schemaRegistryHandler = schemaRegistryHandler;
@@ -100,7 +99,7 @@ public class SimpleAPIServer {
     }
 
     public String executeMethod(String base, String requestContent, String method,
-                              String requestContentType, Integer expectedError) throws Exception {
+                                String requestContentType, Integer expectedError) throws Exception {
         URL url = url(base);
         HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
         try {

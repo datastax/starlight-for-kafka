@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.common.util.FutureUtil;
 
 @Slf4j
-public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcessor {
+public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcessor {
 
     protected static final String RESPONSE_CONTENT_TYPE = "application/vnd.schemaregistry.v1+json";
 
@@ -41,6 +41,14 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
         this.requestModel = requestModel;
         this.pattern = Pattern.compile(uriPattern);
         this.method = method;
+    }
+
+    protected static int getInt(int position, List<String> queryStringGroups) {
+        return Integer.parseInt(queryStringGroups.get(position));
+    }
+
+    protected static String getString(int position, List<String> queryStringGroups) {
+        return queryStringGroups.get(position);
     }
 
     @Override
@@ -58,7 +66,7 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
     @Override
     public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
         List<String> groups = detectGroups(request);
-        try (ByteBufInputStream  inputStream = new ByteBufInputStream(request.content());) {
+        try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content());) {
             K decodeRequest;
             if (requestModel == Void.class) {
                 decodeRequest = null;
@@ -114,12 +122,4 @@ public abstract class HttpJsonRequestProcessor <K, R> extends HttpRequestProcess
 
     protected abstract CompletableFuture<R> processRequest(K payload, List<String> patternGroups,
                                                            FullHttpRequest request) throws Exception;
-
-    protected static int getInt(int position, List<String> queryStringGroups) {
-        return Integer.parseInt(queryStringGroups.get(position));
-    }
-
-    protected static String getString(int position, List<String> queryStringGroups) {
-        return queryStringGroups.get(position);
-    }
 }

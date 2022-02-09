@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
 import static junit.framework.TestCase.assertFalse;
 import static org.testng.AssertJUnit.assertTrue;
+
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.MemorySchemaStorage;
 import java.util.HashSet;
 import java.util.Set;
@@ -89,68 +90,93 @@ public class CompatibilityCheckerTest {
     @Test
     public void testAddField() throws Exception {
         // add optional field
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.BACKWARD,
+        assertTrue(
+                executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.BACKWARD,
+                        AVRO_SCHEMA));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT,
+                CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
                 AVRO_SCHEMA));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
-                AVRO_SCHEMA));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.FORWARD,
-                AVRO_SCHEMA));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
+        assertTrue(
+                executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.FORWARD,
+                        AVRO_SCHEMA));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT,
+                CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
                 AVRO_SCHEMA));
         assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.FULL,
                 AVRO_SCHEMA));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT, CompatibilityChecker.Mode.FULL_TRANSITIVE,
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT,
+                CompatibilityChecker.Mode.FULL_TRANSITIVE,
                 AVRO_SCHEMA));
 
 
         // add non-optional field
-        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.BACKWARD,
-                AVRO_SCHEMA));
+        assertFalse(
+                executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.BACKWARD,
+                        AVRO_SCHEMA));
         // more schemas, but we check only against the latest version with BACKWARD
         assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.BACKWARD,
                 AVRO_SCHEMA, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
         // more schemas, we are checking against all previous versions with BACKWARD_TRANSITIVE
-        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT,
+                CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
                 AVRO_SCHEMA, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
 
-        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT,
+                CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
                 AVRO_SCHEMA));
         assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.FORWARD,
                 AVRO_SCHEMA));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT,
+                CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
                 AVRO_SCHEMA));
         assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.FULL,
                 AVRO_SCHEMA));
-        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, CompatibilityChecker.Mode.FULL_TRANSITIVE,
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT,
+                CompatibilityChecker.Mode.FULL_TRANSITIVE,
                 AVRO_SCHEMA));
     }
 
     @Test
     public void testDeleteField() throws Exception {
         // delete optional field
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
-        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_WITH_DEFAULT));
 
-       // delete non optional field
-       assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
-       assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
-       assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
-       // we are checking only against the latest version with FORWARD
-       assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, AVRO_SCHEMA));
+        // delete non optional field
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.BACKWARD_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        // we are checking only against the latest version with FORWARD
+        assertTrue(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT, AVRO_SCHEMA));
         // we are checking against all the versions with FORWARD_TRANSITIVE
-       assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
 
-       assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE, AVRO_SCHEMA, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
-       assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
-       assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL_TRANSITIVE, AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertFalse(
+                executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FORWARD_TRANSITIVE, AVRO_SCHEMA,
+                        AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
+        assertFalse(executeTest(Schema.TYPE_AVRO, AVRO_SCHEMA, CompatibilityChecker.Mode.FULL_TRANSITIVE,
+                AVRO_SCHEMA_ADDED_FIELD_NO_DEFAULT));
     }
 
     private boolean executeTest(String type, String schemaDefinition, CompatibilityChecker.Mode mode,
-                           String ... versions) throws InterruptedException, ExecutionException {
+                                String... versions) throws InterruptedException, ExecutionException {
         SchemaStorage schemaStorage = new MemorySchemaStorage("test");
         // ensure that we can write everything to the SchemaRegistry
         schemaStorage.setCompatibilityMode(SUBJECT, CompatibilityChecker.Mode.NONE);

@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -34,21 +34,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CompatibilityChecker {
 
-    public enum Mode {
-        NONE,
-        BACKWARD,
-        BACKWARD_TRANSITIVE,
-        FORWARD,
-        FORWARD_TRANSITIVE,
-        FULL,
-        FULL_TRANSITIVE;
-
-        public static final Collection<Mode> SUPPORTED_FOR_PROTOBUF =
-                Collections.unmodifiableCollection(Arrays.asList(BACKWARD, BACKWARD_TRANSITIVE, NONE));
-    }
-
     /**
-     * Verify the compatibility of a Schema, following the request mode
+     * Verify the compatibility of a Schema, following the request mode.
      * @param schema
      * @param subject
      * @param schemaStorage
@@ -63,7 +50,7 @@ public class CompatibilityChecker {
     }
 
     private static CompletableFuture<Boolean> verifyCompatibility(Schema schema, String subject,
-                                                                          SchemaStorage schemaStorage, Mode mode) {
+                                                                  SchemaStorage schemaStorage, Mode mode) {
         log.info("verify {} {} mode ", subject, mode);
         if (mode == Mode.NONE) {
             return CompletableFuture.completedFuture(true);
@@ -75,7 +62,7 @@ public class CompatibilityChecker {
     }
 
     private static CompletableFuture<Boolean> verifyCompatibility(Schema schema, SchemaStorage schemaStorage,
-                                                                          Mode mode, List<Integer> versions) {
+                                                                  Mode mode, List<Integer> versions) {
         if (versions.isEmpty()) {
             // no versions ?
             return CompletableFuture.completedFuture(true);
@@ -98,7 +85,6 @@ public class CompatibilityChecker {
         });
     }
 
-
     public static boolean verify(String schemaDefinition, String type, Mode mode, List<Schema> allSchemas) {
         if (allSchemas.isEmpty()) {
             return true;
@@ -108,25 +94,25 @@ public class CompatibilityChecker {
         CompatibilityLevel level;
         switch (mode) {
             case BACKWARD:
-                 level  = CompatibilityLevel.BACKWARD;
+                level = CompatibilityLevel.BACKWARD;
                 onlyLatest = true;
-                 break;
+                break;
             case BACKWARD_TRANSITIVE:
-                level  = CompatibilityLevel.BACKWARD_TRANSITIVE;
+                level = CompatibilityLevel.BACKWARD_TRANSITIVE;
                 break;
             case FORWARD:
-                level  = CompatibilityLevel.FORWARD;
+                level = CompatibilityLevel.FORWARD;
                 onlyLatest = true;
                 break;
             case FORWARD_TRANSITIVE:
-                level  = CompatibilityLevel.FORWARD_TRANSITIVE;
+                level = CompatibilityLevel.FORWARD_TRANSITIVE;
                 break;
             case FULL:
-                level  = CompatibilityLevel.FULL;
+                level = CompatibilityLevel.FULL;
                 onlyLatest = true;
                 break;
             case FULL_TRANSITIVE:
-                level  = CompatibilityLevel.FULL_TRANSITIVE;
+                level = CompatibilityLevel.FULL_TRANSITIVE;
                 break;
             default:
                 level = CompatibilityLevel.NONE;
@@ -140,7 +126,7 @@ public class CompatibilityChecker {
                 .collect(Collectors.toList());
         if (onlyLatest) {
             // only latest
-            schemas = schemas.subList(schemas.size() -1, schemas.size());
+            schemas = schemas.subList(schemas.size() - 1, schemas.size());
         }
         log.info("New schema {}", schemaDefinition);
         for (String s : schemas) {
@@ -161,7 +147,6 @@ public class CompatibilityChecker {
         }
     }
 
-
     private static io.apicurio.registry.rules.compatibility.CompatibilityChecker createChecker(String type) {
         switch (type) {
             case Schema.TYPE_AVRO:
@@ -173,6 +158,20 @@ public class CompatibilityChecker {
             default:
                 return new NoopCompatibilityChecker();
         }
+    }
+
+
+    public enum Mode {
+        NONE,
+        BACKWARD,
+        BACKWARD_TRANSITIVE,
+        FORWARD,
+        FORWARD_TRANSITIVE,
+        FULL,
+        FULL_TRANSITIVE;
+
+        public static final Collection<Mode> SUPPORTED_FOR_PROTOBUF =
+                Collections.unmodifiableCollection(Arrays.asList(BACKWARD, BACKWARD_TRANSITIVE, NONE));
     }
 
     public static final class IncompatibleSchemaChangeException extends RuntimeException {

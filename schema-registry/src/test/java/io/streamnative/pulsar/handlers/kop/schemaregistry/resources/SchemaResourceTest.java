@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -76,7 +76,7 @@ public class SchemaResourceTest {
     private SimpleAPIServer server;
     private MemorySchemaStorageAccessor schemaStorage = new MemorySchemaStorageAccessor();
     private SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator =
-                                                            (r) -> SchemaResource.DEFAULT_TENANT;
+            (r) -> SchemaResource.DEFAULT_TENANT;
 
     @BeforeClass(alwaysRun = true)
     public void startServer() throws Exception {
@@ -307,8 +307,8 @@ public class SchemaResourceTest {
     @Test
     public void testOptionsAndCORS() throws Exception {
         assertEquals("",
-                    server.executeMethod("/subjects/test/versions", "",
-                            "OPTIONS", "tet/plain", 204));
+                server.executeMethod("/subjects/test/versions", "",
+                        "OPTIONS", "tet/plain", 204));
 
     }
 

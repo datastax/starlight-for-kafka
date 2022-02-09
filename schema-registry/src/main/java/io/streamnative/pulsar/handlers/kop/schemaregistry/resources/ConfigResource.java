@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -46,23 +46,6 @@ public class ConfigResource extends AbstractResource {
         private String compatibilityLevel;
     }
 
-    // GET /config/${subject}
-    public class GetSubjectConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
-
-        public GetSubjectConfig() {
-            super(Void.class, "/config/" + STRING_PATTERN, GET);
-        }
-
-        @Override
-        protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
-                throws Exception {
-            SchemaStorage schemaStorage = getSchemaStorage(request);
-            String subject = patternGroups.get(0);
-            return schemaStorage.getCompatibilityMode(subject).thenApply(r->new GetConfigResponse(r.name()));
-        }
-
-    }
-
     // GET /config
     public static class GetConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
 
@@ -71,7 +54,8 @@ public class ConfigResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups,
+                                                                      FullHttpRequest request)
                 throws Exception {
             return CompletableFuture.completedFuture(new GetConfigResponse(CompatibilityChecker.Mode.NONE.name()));
         }
@@ -92,7 +76,8 @@ public class ConfigResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<GetModeResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetModeResponse> processRequest(Void payload, List<String> patternGroups,
+                                                                    FullHttpRequest request)
                 throws Exception {
             return CompletableFuture.completedFuture(new GetModeResponse("READWRITE"));
         }
@@ -104,6 +89,24 @@ public class ConfigResource extends AbstractResource {
         private String compatibility;
     }
 
+    // GET /config/${subject}
+    public class GetSubjectConfig extends HttpJsonRequestProcessor<Void, GetConfigResponse> {
+
+        public GetSubjectConfig() {
+            super(Void.class, "/config/" + STRING_PATTERN, GET);
+        }
+
+        @Override
+        protected CompletableFuture<GetConfigResponse> processRequest(Void payload, List<String> patternGroups,
+                                                                      FullHttpRequest request)
+                throws Exception {
+            SchemaStorage schemaStorage = getSchemaStorage(request);
+            String subject = patternGroups.get(0);
+            return schemaStorage.getCompatibilityMode(subject).thenApply(r -> new GetConfigResponse(r.name()));
+        }
+
+    }
+
     // PUT /config/${subject}
     public class PutConfig extends HttpJsonRequestProcessor<PutConfigRequest, GetConfigResponse> {
 
@@ -112,13 +115,15 @@ public class ConfigResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<GetConfigResponse> processRequest(PutConfigRequest payload, List<String> patternGroups, FullHttpRequest request)
+        protected CompletableFuture<GetConfigResponse> processRequest(PutConfigRequest payload,
+                                                                      List<String> patternGroups,
+                                                                      FullHttpRequest request)
                 throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             String subject = patternGroups.get(0);
             CompatibilityChecker.Mode mode = CompatibilityChecker.Mode.valueOf(payload.compatibility);
             return schemaStorage.setCompatibilityMode(subject, mode)
-                    .thenApply(r->new GetConfigResponse(payload.compatibility));
+                    .thenApply(r -> new GetConfigResponse(payload.compatibility));
         }
 
     }

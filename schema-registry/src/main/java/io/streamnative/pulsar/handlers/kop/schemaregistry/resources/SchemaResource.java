@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -51,6 +51,29 @@ public class SchemaResource extends AbstractResource {
         private String schema;
     }
 
+    // /schemas/types
+    public static class GetSchemaTypes extends HttpJsonRequestProcessor<Void, List<String>> {
+
+        public GetSchemaTypes() {
+            super(Void.class, "/schemas/types", GET);
+        }
+
+        @Override
+        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups,
+                                                                 FullHttpRequest request) {
+            return CompletableFuture.completedFuture(Schema.getAllTypes());
+        }
+
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static final class SubjectVersionPair {
+        private String subject;
+        private int version;
+    }
+
     // GET /schemas/ids/{int: id}
     public class GetSchemaById extends HttpJsonRequestProcessor<Void, GetSchemaResponse> {
 
@@ -59,8 +82,9 @@ public class SchemaResource extends AbstractResource {
         }
 
         @Override
-        protected CompletableFuture<GetSchemaResponse> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request)
-                                    throws Exception{
+        protected CompletableFuture<GetSchemaResponse> processRequest(Void payload, List<String> patternGroups,
+                                                                      FullHttpRequest request)
+                throws Exception {
             int id = getInt(0, patternGroups);
             SchemaStorage schemaStorage = getSchemaStorage(request);
             CompletableFuture<Schema> schemaById = schemaStorage.findSchemaById(id);
@@ -74,30 +98,6 @@ public class SchemaResource extends AbstractResource {
 
     }
 
-
-    // /schemas/types
-    public static class GetSchemaTypes extends HttpJsonRequestProcessor<Void, List<String>> {
-
-        public GetSchemaTypes() {
-            super(Void.class, "/schemas/types", GET);
-        }
-
-        @Override
-        protected CompletableFuture<List<String>> processRequest(Void payload, List<String> patternGroups, FullHttpRequest request) {
-           return CompletableFuture.completedFuture(Schema.getAllTypes());
-        }
-
-    }
-
-    @Data
-    @NoArgsConstructor
-    @AllArgsConstructor
-     public static final class SubjectVersionPair {
-        private String subject;
-        private int version;
-    }
-
-
     // /schemas/ids/{int: id}/versions
     public class GetSchemaAliases extends HttpJsonRequestProcessor<Void, List<SubjectVersionPair>> {
 
@@ -107,16 +107,18 @@ public class SchemaResource extends AbstractResource {
 
         @Override
         protected CompletableFuture<List<SubjectVersionPair>> processRequest(Void payload,
-                                                          List<String> patternGroups, FullHttpRequest request)
-                                throws Exception {
+                                                                             List<String> patternGroups,
+                                                                             FullHttpRequest request)
+                throws Exception {
             SchemaStorage schemaStorage = getSchemaStorage(request);
             int id = getInt(0, patternGroups);
-            CompletableFuture<Schema> schema =  schemaStorage.findSchemaById(id);
+            CompletableFuture<Schema> schema = schemaStorage.findSchemaById(id);
             return schema.thenCompose(s -> {
                 if (s == null) {
                     return CompletableFuture.completedFuture(null);
                 }
-                CompletableFuture<List<Schema>> schemaAliases = schemaStorage.findSchemaByDefinition(s.getSchemaDefinition());
+                CompletableFuture<List<Schema>> schemaAliases =
+                        schemaStorage.findSchemaByDefinition(s.getSchemaDefinition());
                 return schemaAliases.thenApply(sh -> sh
                         .stream()
                         .map(sv -> new SubjectVersionPair(sv.getSubject(), sv.getVersion()))

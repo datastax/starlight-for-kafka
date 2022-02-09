@@ -3,7 +3,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,7 +54,7 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
         FullHttpRequest request = (FullHttpRequest) msg;
         log.info("SchemaRegistry {} {} from {}", request.method(), request.uri(), ctx.channel().localAddress());
 
-        HttpRequestProcessor processor =  null;
+        HttpRequestProcessor processor = null;
         for (HttpRequestProcessor p : processors) {
             if (p.acceptRequest(request)) {
                 processor = p;
@@ -87,7 +87,8 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
                         resp);
             }
-            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(), ctx.channel().localAddress(),
+            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(),
+                    ctx.channel().localAddress(),
                     resp.status().code(), resp.status().reasonPhrase());
             ctx.writeAndFlush(resp);
         }).exceptionally(err -> {
@@ -96,7 +97,8 @@ public class SchemaRegistryHandler extends SimpleChannelInboundHandler {
                 log.debug("SchemaRegistry at {} request {} response {}", ctx.channel().localAddress(), msg,
                         resp);
             }
-            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(), ctx.channel().localAddress(),
+            log.info("SchemaRegistry {} {} from {} response {} {}", request.method(), request.uri(),
+                    ctx.channel().localAddress(),
                     resp.status().code(), resp.status().reasonPhrase());
             ctx.writeAndFlush(resp);
             return null;
