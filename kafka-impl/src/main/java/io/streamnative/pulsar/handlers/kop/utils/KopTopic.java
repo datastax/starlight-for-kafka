@@ -21,7 +21,6 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import java.util.function.Function;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.pulsar.common.naming.TopicName;
 
 /**

@@ -70,7 +70,8 @@ public class SchemaRegistryManager {
         this.pulsar = pulsar;
         this.authenticationService = authenticationService;
         this.authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
-        this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator(this.kafkaConfig, this.authenticationService, this.authorizer);
+        this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator(this.kafkaConfig,
+                this.authenticationService, this.authorizer);
     }
 
     @AllArgsConstructor
@@ -139,8 +140,8 @@ public class SchemaRegistryManager {
                     if (tenantExists == null || !tenantExists) {
                         log.debug("SchemaRegistry username {} role {} tenant {} does not exist",
                                 username, role, tenant, topicName);
-                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName+" "
-                                + "tenant "+tenant+" does not exist (wrong username?)",
+                        throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName + " "
+                                + "tenant " + tenant + " does not exist (wrong username?)",
                                 HttpResponseStatus.FORBIDDEN.code());
                     }
                     Boolean hasPermission = authorizer

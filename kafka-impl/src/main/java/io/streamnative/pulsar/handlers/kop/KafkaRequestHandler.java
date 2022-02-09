@@ -18,8 +18,6 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.apache.kafka.common.internals.Topic.GROUP_METADATA_TOPIC_NAME;
-import static org.apache.kafka.common.internals.Topic.TRANSACTION_STATE_TOPIC_NAME;
 import static org.apache.kafka.common.protocol.CommonFields.THROTTLE_TIME_MS;
 import static org.apache.kafka.common.requests.CreateTopicsRequest.TopicDetails;
 
@@ -167,9 +165,6 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.common.api.proto.MarkerType;
-import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
@@ -2544,7 +2539,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return authorize(operation, resource, session, authorizer);
     }
 
-    public static CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session, Authorizer authorizer) {
+    public static CompletableFuture<Boolean> authorize(AclOperation operation, Resource resource, Session session,
+                                                       Authorizer authorizer) {
         if (authorizer == null) {
             return CompletableFuture.completedFuture(true);
         }

@@ -38,7 +38,6 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.kafka.common.errors.AuthenticationException;
-import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.Struct;

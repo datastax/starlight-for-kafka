@@ -90,8 +90,8 @@ public class MetadataUtils {
             throws PulsarAdminException {
         KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData, conf, kopTopic, false,
-                1, true);
+        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData,
+                conf, kopTopic, false, 1, true);
     }
 
     /**
@@ -156,7 +156,8 @@ public class MetadataUtils {
 
             // Check if the metadata namespace exists and create it if not
             Namespaces namespaces = pulsarAdmin.namespaces();
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces, true, infiniteRetention);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces,
+                    true, infiniteRetention);
 
             namespaceExists = true;
 

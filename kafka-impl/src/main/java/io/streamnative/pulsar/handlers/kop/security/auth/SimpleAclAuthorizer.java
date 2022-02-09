@@ -13,10 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
-
 import static com.google.common.base.Preconditions.checkArgument;
 
-import com.google.common.base.Joiner;
 import io.streamnative.pulsar.handlers.kop.security.KafkaPrincipal;
 import java.util.Map;
 import java.util.Set;
@@ -66,7 +64,8 @@ public class SimpleAclAuthorizer implements Authorizer {
             return permissionFuture;
         }
         String tenantName = namespace.getTenant();
-        isSuperUserOrTenantAdmin(tenantName, principal.getName(), principal).whenComplete((isSuperUserOrAdmin, exception) -> {
+        isSuperUserOrTenantAdmin(tenantName, principal.getName(), principal)
+                .whenComplete((isSuperUserOrAdmin, exception) -> {
             if (exception != null) {
                 if (log.isDebugEnabled()) {
                     log.debug("Verify if role {} is allowed to {} to resource {}: isSuperUserOrAdmin={}",
@@ -213,7 +212,8 @@ public class SimpleAclAuthorizer implements Authorizer {
      * @return a CompletableFuture containing a boolean in which true means the role is an admin user
      * and false if it is not
      */
-    private CompletableFuture<Boolean> isSuperUserOrTenantAdmin(String tenant, String role, KafkaPrincipal currentUser) {
+    private CompletableFuture<Boolean> isSuperUserOrTenantAdmin(String tenant, String role,
+                                                                KafkaPrincipal currentUser) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         isSuperUser(role).whenComplete((isSuperUser, ex) -> {
             if (ex != null || !isSuperUser) {

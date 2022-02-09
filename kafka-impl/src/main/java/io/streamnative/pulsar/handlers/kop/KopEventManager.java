@@ -307,7 +307,8 @@ public class KopEventManager {
                         HashSet<KopTopic> kopTopicsSet = Sets.newHashSet();
                         String namespacePrefix = MetadataUtils.constructUserTopicsNamespace(tenant, kafkaConfig);
                         topicsDeletions.forEach(topic -> {
-                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic), namespacePrefix);
+                            KopTopic kopTopic = new KopTopic(TopicNameUtils.getTopicNameWithUrlDecoded(topic),
+                                    namespacePrefix);
                             kopTopicsSet.add(kopTopic);
                             topicsFullNameDeletionsSets.add(kopTopic.getFullName());
                         });

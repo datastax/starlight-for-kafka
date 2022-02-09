@@ -14,6 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import com.google.common.base.Joiner;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.ServiceConfiguration;
@@ -22,14 +26,9 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.policies.data.Policies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.function.Supplier;
-
 
 /**
- * Abstracts Pulsar Metadata Access
+ * Abstracts Pulsar Metadata Access.
  */
 public interface PulsarMetadataAccessor {
 
@@ -83,7 +82,8 @@ public interface PulsarMetadataAccessor {
                                 return Optional.empty();
                             } else {
                                 throw new CompletionException(error);
-                            }});
+                            }
+                        });
         }
 
         public CompletableFuture<Optional<Policies>> getNamespacePoliciesAsync(NamespaceName namespace) {
@@ -97,7 +97,8 @@ public interface PulsarMetadataAccessor {
                             return Optional.empty();
                         } else {
                             throw new CompletionException(error);
-                        }});
+                        }
+                    });
         }
 
         public ServiceConfiguration getConfiguration() {
@@ -106,21 +107,21 @@ public interface PulsarMetadataAccessor {
     }
 
     /**
-     * Access TenantInfo for the given Tenant
+     * Access TenantInfo for the given Tenant.
      * @param tenant
      * @return the TenantInfo or an empty Optional if the tenant does not exist
      */
     CompletableFuture<Optional<TenantInfo>> getTenantInfoAsync(String tenant);
 
     /**
-     * Access Policies for the given Namespace
+     * Access Policies for the given Namespace.
      * @param namespace
      * @return the Policies or an empty Optional if the namespace does not exist
      */
     CompletableFuture<Optional<Policies>> getNamespacePoliciesAsync(NamespaceName namespace);
 
     /**
-     * Access the service configuration
+     * Access the service configuration.
      * @return the configuration.
      */
     ServiceConfiguration getConfiguration();
