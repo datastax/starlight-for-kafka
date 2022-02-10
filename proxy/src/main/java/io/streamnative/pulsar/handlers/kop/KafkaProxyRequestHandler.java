@@ -24,6 +24,7 @@ import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
+import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
@@ -43,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -81,6 +83,7 @@ import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteRecordsRequest;
 import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
+import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
@@ -476,11 +479,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .thenAccept(response -> {
                         ProduceResponse resp = (ProduceResponse) response;
                         resp.responses().forEach((topicPartition, topicResp) -> {
-                            if (topicResp.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
-                                log.info("Broker {} is no more the leader for {}", broker.leader(), fullTopicName);
-                                topicsLeaders.remove(fullTopicName);
-                            } else {
+                            invalidateLeaderIfNeeded(namespacePrefix, broker.leader(), topicPartition, topicResp.error);
+                            if (topicResp.error == Errors.NONE) {
                                 log.debug("forward FULL produce id {} COMPLETE  of {} parts to {}",
                                         produceHar.getHeader().correlationId(), numPartitions, broker);
                             }
@@ -585,13 +585,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             kopBroker, partitionResponse);
                                     addPartitionResponse.accept(topicPartition, partitionResponse);
                                 } else {
-                                    if (partitionResponse.error == Errors.NOT_LEADER_FOR_PARTITION) {
-                                        log.info("Broker {} is no more the leader for {}", kopBroker,
-                                                topicPartition);
-                                        final String fullPartitionName = KopTopic.toString(topicPartition,
-                                                namespacePrefix);
-                                        topicsLeaders.remove(fullPartitionName);
-                                    }
+                                    invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
                                     addPartitionResponse.accept(topicPartition, partitionResponse);
                                 }
                             });
@@ -607,6 +601,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
 
 
+    }
+
+    private void invalidateLeaderIfNeeded(String namespacePrefix, Node kopBroker, TopicPartition topicPartition,
+                                          Errors error) {
+        if (error == Errors.NOT_LEADER_FOR_PARTITION) {
+            log.info("Broker {} is no more the leader for {} (topicsLeaders {})", kopBroker, topicPartition, topicsLeaders);
+            final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+            topicsLeaders.remove(fullPartitionName);
+        }
     }
 
     int getDummyCorrelationId() {
@@ -813,14 +816,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             FetchResponse<?> resp = (FetchResponse) response;
                                             resp.responseData()
                                                     .forEach((topicPartition, partitionResponse) -> {
-                                                        if (partitionResponse.error
-                                                                == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                            String fullTopicName = KopTopic.toString(topicPartition,
-                                                                    namespacePrefix);
-                                                            log.info("Broker {} is no more the leader for {}",
-                                                                    kopBroker, fullTopicName);
-                                                            topicsLeaders.remove(fullTopicName);
-                                                        }
+                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
                                                         if (log.isDebugEnabled()) {
                                                             final String fullPartitionName =
                                                                     KopTopic.toString(topicPartition,
@@ -1010,6 +1006,31 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleDeleteTopics(KafkaHeaderAndRequest deleteTopics,
                                       CompletableFuture<AbstractResponse> resultFuture) {
+
+        DeleteTopicsRequest request = (DeleteTopicsRequest) deleteTopics.getRequest();
+        if (request.topics().isEmpty()) {
+            resultFuture.complete(new DeleteTopicsResponse(new HashMap<>()));
+            return;
+        }
+        String namespacePrefix = currentNamespacePrefix();
+        Set<String> topics = request.topics();
+        Map<String, Errors> responseMap = new ConcurrentHashMap<>();
+        int numTopics = topics.size();
+        Map<String, PartitionMetadata> brokers = new ConcurrentHashMap<>();
+        List<CompletableFuture<?>> lookups = new ArrayList<>(numTopics);
+        topics.forEach((topic) -> {
+            KopTopic kopTopic;
+            try {
+                kopTopic = new KopTopic(topic, namespacePrefix);
+            } catch (KoPTopicException var6) {
+                responseMap.put(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                return;
+            }
+            final String fullPartitionName = kopTopic.getFullName();
+            lookups.add(findBroker(TopicName.get(fullPartitionName))
+                    .thenAccept(p -> brokers.put(fullPartitionName, p)));
+        });
+
         handleRequestWithCoordinator(deleteTopics, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
                 DeleteTopicsRequest.class, (metadataRequest) -> "system",
                 null);
@@ -1183,14 +1204,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             DeleteRecordsResponse resp = (DeleteRecordsResponse) response;
                                             resp.responses()
                                                     .forEach((topicPartition, partitionResponse) -> {
-                                                        if (partitionResponse.error
-                                                                == Errors.NOT_LEADER_FOR_PARTITION) {
-                                                            String fullTopicName = KopTopic.toString(topicPartition,
-                                                                    namespacePrefix);
-                                                            log.info("Broker {} is no more the leader for {}",
-                                                                    kopBroker, fullTopicName);
-                                                            topicsLeaders.remove(fullTopicName);
-                                                        }
+                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
                                                         if (log.isDebugEnabled()) {
                                                             final String fullPartitionName =
                                                                     KopTopic.toString(topicPartition,
