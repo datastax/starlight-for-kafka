@@ -21,8 +21,10 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.Getter;
+import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
@@ -49,6 +51,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final boolean tlsEnabledWithKeyStore;
     private final RequestStats requestStats;
     private final Function<String, String> brokerAddressMapper;
+    private final ConcurrentHashMap<String, Node> topicsLeaders;
     private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
 
     public KafkaProxyChannelInitializer(
@@ -58,8 +61,10 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
             boolean enableTLS,
             EndPoint advertisedEndPoint,
             Function<String, String> brokerAddressMapper,
+            ConcurrentHashMap<String, Node> topicsLeaders,
             RequestStats requestStats) {
         super();
+        this.topicsLeaders = topicsLeaders;
         this.requestStats = requestStats;
         this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
@@ -121,7 +126,8 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         ch.pipeline().addLast("handler",
                 new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, kafkaConfig,
                         // use the same eventloop to preserve ordering
-                        enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(), requestStats));
+                        enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(),
+                        requestStats, topicsLeaders));
     }
 
 }

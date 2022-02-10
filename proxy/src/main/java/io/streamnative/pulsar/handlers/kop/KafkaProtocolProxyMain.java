@@ -42,6 +42,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
+import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -73,6 +74,7 @@ public class KafkaProtocolProxyMain {
     private EventLoopGroup eventLoopGroupStandaloneMode;
     private PrometheusMetricsProvider statsProvider;
     private RequestStats requestStats;
+    private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
 
     private final Function<String, String> defaultBrokerAddressMapper = (pulsarAddress -> {
         // The Mapping to the KOP port is done per-convention if you do not have access to Broker Discovery Service.
@@ -237,13 +239,13 @@ public class KafkaProtocolProxyMain {
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, false,
-                                advertisedEndPoint, brokerAddressMapper, requestStats));
+                                advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
                                 authenticationService, kafkaConfig, true,
-                                advertisedEndPoint, brokerAddressMapper, requestStats));
+                                advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                 }
             });

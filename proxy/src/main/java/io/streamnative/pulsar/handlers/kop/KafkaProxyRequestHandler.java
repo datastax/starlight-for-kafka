@@ -136,7 +136,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
-    private final ConcurrentHashMap<String, Node> topicsLeaders = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Node> topicsLeaders;
     private final Function<String, String> brokerAddressMapper;
     private final EventLoopGroup workerGroup;
     private final ConcurrentHashMap<String, ConnectionToBroker> connectionsToBrokers = new ConcurrentHashMap<>();
@@ -150,8 +150,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     EndPoint advertisedEndPoint,
                                     Function<String, String> brokerAddressMapper,
                                     EventLoopGroup workerGroup,
-                                    RequestStats requestStats) throws Exception {
+                                    RequestStats requestStats,
+                                    ConcurrentHashMap<String, Node> topicsLeaders) throws Exception {
         super(requestStats, kafkaConfig, null);
+        this.topicsLeaders = topicsLeaders;
         this.workerGroup = workerGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;
@@ -585,7 +587,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             kopBroker, partitionResponse);
                                     addPartitionResponse.accept(topicPartition, partitionResponse);
                                 } else {
-                                    invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
+                                    invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition,
+                                            partitionResponse.error);
                                     addPartitionResponse.accept(topicPartition, partitionResponse);
                                 }
                             });
@@ -606,8 +609,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private void invalidateLeaderIfNeeded(String namespacePrefix, Node kopBroker, TopicPartition topicPartition,
                                           Errors error) {
         if (error == Errors.NOT_LEADER_FOR_PARTITION) {
-            log.info("Broker {} is no more the leader for {} (topicsLeaders {})", kopBroker, topicPartition, topicsLeaders);
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+            log.info("Broker {} is no more the leader for {} - {} (topicsLeaders {})",
+                    kopBroker,
+                    topicPartition,
+                    fullPartitionName,
+                    topicsLeaders);
             topicsLeaders.remove(fullPartitionName);
         }
     }
@@ -816,7 +823,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             FetchResponse<?> resp = (FetchResponse) response;
                                             resp.responseData()
                                                     .forEach((topicPartition, partitionResponse) -> {
-                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
+                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker,
+                                                                topicPartition, partitionResponse.error);
                                                         if (log.isDebugEnabled()) {
                                                             final String fullPartitionName =
                                                                     KopTopic.toString(topicPartition,
@@ -1204,7 +1212,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             DeleteRecordsResponse resp = (DeleteRecordsResponse) response;
                                             resp.responses()
                                                     .forEach((topicPartition, partitionResponse) -> {
-                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, partitionResponse.error);
+                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker,
+                                                                topicPartition, partitionResponse.error);
                                                         if (log.isDebugEnabled()) {
                                                             final String fullPartitionName =
                                                                     KopTopic.toString(topicPartition,
