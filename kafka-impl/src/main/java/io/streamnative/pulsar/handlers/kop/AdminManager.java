@@ -33,6 +33,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
@@ -248,16 +249,23 @@ class AdminManager {
 
     public void deleteTopic(String topicToDelete,
                             Consumer<String> successConsumer,
-                            Consumer<String> errorConsumer) {
+                            BiConsumer<String, Errors> errorConsumer) {
         admin.topics()
-                .deletePartitionedTopicAsync(topicToDelete)
+                .deletePartitionedTopicAsync(topicToDelete, true, true)
                 .thenRun(() -> {
                     log.info("delete topic {} successfully.", topicToDelete);
                     successConsumer.accept(topicToDelete);
                 })
                 .exceptionally((e -> {
                     log.error("delete topic {} failed, exception: ", topicToDelete, e);
-                    errorConsumer.accept(topicToDelete);
+                    if (e.getCause() != null) {
+                        e = e.getCause();
+                    }
+                    if (e instanceof PulsarAdminException.NotFoundException) {
+                        errorConsumer.accept(topicToDelete, Errors.UNKNOWN_TOPIC_OR_PARTITION);
+                    } else {
+                        errorConsumer.accept(topicToDelete, Errors.forException(e));
+                    }
                     return null;
                 }));
     }

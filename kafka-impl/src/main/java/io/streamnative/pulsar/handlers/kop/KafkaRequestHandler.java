@@ -2325,7 +2325,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         }
                         adminManager.deleteTopic(fullTopicName,
                                 __ -> completeOne.accept(topic, Errors.NONE),
-                                __ -> completeOne.accept(topic, Errors.UNKNOWN_TOPIC_OR_PARTITION));
+                                (__, err) -> completeOne.accept(topic, err));
                     });
         });
     }
