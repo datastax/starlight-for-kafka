@@ -338,7 +338,6 @@ public class PartitionLog {
                         appendInfo.firstSequence(),
                         appendInfo.lastSequence(),
                         appendInfo.numMessages(),
-                        appendInfo.isControlBatch(),
                         time.nanoseconds()));
         return offsetFuture;
     }
