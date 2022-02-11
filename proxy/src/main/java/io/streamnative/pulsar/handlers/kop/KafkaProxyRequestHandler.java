@@ -384,6 +384,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                         String fullTopicName = KopTopic.toString(md.topic(),
                                                                 pd.partition(), namespacePrefix);
                                                         topicsLeaders.put(fullTopicName, pd.leader());
+                                                        log.info("Leader for {} is {}", fullTopicName, pd.leader());
                                                         return new MetadataResponse.PartitionMetadata(pd.error(),
                                                                 pd.partition(),
                                                                 selfNode, Optional.empty(), nodeList, nodeList,
@@ -1360,7 +1361,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 listeners, topic, advertisedListeners, listeners);
                     }
 
-                    topicsLeaders.put(topic.toString(), node);
+                    String fullTopicName = topic.toString();
+                    topicsLeaders.put(fullTopicName, node);
+                    log.info("found leader for {}: {}", fullTopicName, node);
                     returnFuture.complete(newPartitionMetadata(topic, node));
                 }).exceptionally(error -> {
                     log.error("bad error for findBroker for topic {}", topic, error);
