@@ -768,9 +768,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         // 2. After get all topics, for each topic, get the service Broker for it, and add to response
         AtomicInteger topicsCompleted = new AtomicInteger(0);
-        // Each Pulsar broker can manage metadata like controller in Kafka, Kafka's AdminClient needs to find a
-        // controller node for metadata management. So here we return the broker itself as a controller.
-        final int controllerId = newSelfNode().id();
+        // Each Pulsar broker can manage metadata like controller in Kafka,
+        // Kafka's AdminClient needs to find a controller node for metadata management.
+        // So here we return an random broker as a controller for the given listenerName.
+        final int controllerId = adminManager.getControllerId(advertisedEndPoint.getListenerName());
         pulsarTopicsFuture.whenComplete((pulsarTopics, e) -> {
             if (e != null) {
                 log.warn("[{}] Request {}: Exception fetching metadata, will return null Response",
@@ -2498,10 +2499,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             Murmur3_32Hash.getInstance().makeHash((address.getHostString() + address.getPort()).getBytes(UTF_8)),
             address.getHostString(),
             address.getPort());
-    }
-
-    Node newSelfNode() {
-        return newNode(advertisedEndPoint.getInetAddress());
     }
 
     static PartitionMetadata newPartitionMetadata(TopicName topicName, Node node) {
