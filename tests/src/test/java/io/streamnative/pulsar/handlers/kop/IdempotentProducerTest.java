@@ -44,7 +44,7 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        this.conf.setTransactionCoordinatorEnabled(true);
+        this.conf.setKafkaTransactionCoordinatorEnabled(true);
         super.internalSetup();
         log.info("success internal setup");
         admin.tenants().createTenant(TENANT, TenantInfo.builder()
