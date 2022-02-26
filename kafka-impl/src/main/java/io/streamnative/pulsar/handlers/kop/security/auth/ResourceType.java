@@ -44,8 +44,7 @@ public enum ResourceType {
     /**
      * A Pulsar tenant.
      */
-    TENANT((byte) 3),
-
+    TENANT((byte) 3)
     ;
 
 
