@@ -1686,13 +1686,15 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .get();
             return granted != null && granted;
         } catch (ExecutionException | InterruptedException err) {
-            log.error("Internal error while verifying tenant access", err);
             if (err.getCause() != null
                     && (err.getCause() instanceof PulsarAdminException.NotAuthorizedException
                     || err.getCause().getCause() instanceof PulsarAdminException.NotAuthorizedException)) {
+                log.info("Error while verifying tenant access for {}: {}", currentTenant, err + "");
                 return false;
             }
-            throw new AuthenticationException("Internal error while verifying tenant access:" + err, err);
+            log.error("Internal error while verifying tenant access for {}", currentTenant, err);
+            throw new AuthenticationException("Internal error while verifying tenant access for "
+                    + currentTenant + " :" + err, err);
         }
     }
 }
