@@ -53,8 +53,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
 
     @Test
     public void testGetProducerId() throws Exception {
-        // we need a non-partitioned topic
-        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerId");
+        pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerId", 1);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
                 "testGetProducerId", pulsar.getClient());
@@ -87,8 +86,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
     @Test
     public void testGetProducerIdWithoutDuplicates() throws Exception {
 
-        // we need a non-partitioned topic
-        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerIdWithoutDuplicates");
+        pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerIdWithoutDuplicates", 1);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
                 "testGetProducerIdWithoutDuplicates", pulsar.getClient());
@@ -132,8 +130,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
                 InactiveTopicDeleteMode.delete_when_no_subscriptions, 0, true));
 
         String topic = namespace + "/testGetProducerIdNoRetention";
-        // we need a non-partitioned topic
-        pulsar.getAdminClient().topics().createNonPartitionedTopic(topic);
+        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 1);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(topic, pulsar.getClient());
         manager1.initialize().get();
@@ -163,8 +160,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         manager2.shutdown();
     }
 
-    @Test(enabled = false, description = "This test does not pass on Luna Streaming, but on ASF Pulsar it works,"
-            + "  in LS we are missing some fixes about Reader#hasMessageAvailalable")
+    @Test
     public void testGetProducerIdWithTTL() throws Exception {
         String namespace = "public/namespace-no-retention-ttl";
         pulsar.getAdminClient().namespaces().createNamespace(namespace);
@@ -175,7 +171,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
         pulsar.getAdminClient().namespaces().setNamespaceMessageTTL(namespace, 1);
 
         String topic = namespace + "/testGetProducerIdNoRetention";
-        // we need a non-partitioned topic
+        // we prefer a non-partitioned topic, it is easier for this test to check the stats
         pulsar.getAdminClient().topics().createNonPartitionedTopic(topic);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(topic, pulsar.getClient(), 1);
