@@ -74,7 +74,7 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructOffsetsTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
-                true, conf.getOffsetsTopicNumPartitions(), false);
+                conf.getOffsetsTopicNumPartitions(), false);
     }
 
     public static void createTxnMetadataIfMissing(String tenant,
@@ -85,23 +85,12 @@ public class MetadataUtils {
         KopTopic kopTopic = new KopTopic(constructTxnLogTopicBaseName(tenant, conf),
                 constructMetadataNamespace(tenant, conf));
         createKafkaMetadataIfMissing(tenant, conf.getKafkaMetadataNamespace(), pulsarAdmin, clusterData, conf, kopTopic,
-                true, conf.getKafkaTxnLogTopicNumPartitions(), false);
+                conf.getKafkaTxnLogTopicNumPartitions(), false);
         if (conf.isKafkaTransactionProducerIdsStoredOnPulsar()) {
             KopTopic producerIdKopTopic = new KopTopic(constructTxnProducerIdTopicBaseName(tenant, conf),
                     constructMetadataNamespace(tenant, conf));
-            createTopicIfNotExist(conf, pulsarAdmin, producerIdKopTopic.getFullName(), false, 1);
+            createTopicIfNotExist(conf, pulsarAdmin, producerIdKopTopic.getFullName(), 1);
         }
-    }
-
-    public static void createSchemaRegistryMetadataIfMissing(String tenant,
-                                                  PulsarAdmin pulsarAdmin,
-                                                  ClusterData clusterData,
-                                                  KafkaServiceConfiguration conf)
-            throws PulsarAdminException {
-        KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
-                constructMetadataNamespace(tenant, conf));
-        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData,
-                conf, kopTopic, false, 1, true);
     }
 
     /**
@@ -124,7 +113,6 @@ public class MetadataUtils {
                                                      ClusterData clusterData,
                                                      KafkaServiceConfiguration conf,
                                                      KopTopic kopTopic,
-                                                     boolean partitioned,
                                                      int partitionNum,
                                                      boolean infiniteRetention)
         throws PulsarAdminException {
@@ -172,7 +160,7 @@ public class MetadataUtils {
             namespaceExists = true;
 
             // Check if the offsets topic exists and create it if not
-            createTopicIfNotExist(conf, pulsarAdmin, kopTopic.getFullName(), partitioned, partitionNum);
+            createTopicIfNotExist(conf, pulsarAdmin, kopTopic.getFullName(), partitionNum);
             offsetsTopicExists = true;
         } catch (PulsarAdminException e) {
             if (e instanceof ConflictException) {
@@ -337,25 +325,27 @@ public class MetadataUtils {
     private static void createTopicIfNotExist(final KafkaServiceConfiguration conf,
                                               final PulsarAdmin admin,
                                               final String topic,
-                                              boolean partitioned,
                                               final int numPartitions) throws PulsarAdminException {
-        if (partitioned) {
-            try {
-                admin.topics().createPartitionedTopic(topic, numPartitions);
-            } catch (PulsarAdminException.ConflictException e) {
-                log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
-            }
-            try {
-                // Ensure all partitions are created
-                admin.topics().createMissedPartitions(topic);
-            } catch (PulsarAdminException ignored) {
-            }
-        } else {
-            try {
-                admin.topics().createNonPartitionedTopic(topic);
-            } catch (PulsarAdminException.ConflictException e) {
-                log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
-            }
+        try {
+            admin.topics().createPartitionedTopic(topic, numPartitions);
+        } catch (PulsarAdminException.ConflictException e) {
+            log.info("Resources concurrent creating for topic : {}, caused by : {}", topic, e.getMessage());
         }
+        try {
+            // Ensure all partitions are created
+            admin.topics().createMissedPartitions(topic);
+        } catch (PulsarAdminException ignored) {
+        }
+    }
+
+    public static void createSchemaRegistryMetadataIfMissing(String tenant,
+                                                             PulsarAdmin pulsarAdmin,
+                                                             ClusterData clusterData,
+                                                             KafkaServiceConfiguration conf)
+            throws PulsarAdminException {
+        KopTopic kopTopic = new KopTopic(constructSchemaRegistryTopicName(tenant, conf),
+                constructMetadataNamespace(tenant, conf));
+        createKafkaMetadataIfMissing(tenant, conf.getKopSchemaRegistryNamespace(), pulsarAdmin, clusterData,
+                conf, kopTopic, 1, true);
     }
 }

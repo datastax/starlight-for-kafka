@@ -281,8 +281,13 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                                             "Invalid tenant " + op.tenant + ", expected " + tenant)));
                                 } else {
                                     byte[] serialized = serializeOp(op);
-                                    sendHandles.add(opProducer.sendAsync(serialized).thenAccept((msgId) -> {
-                                        log.info("written {} as {} to Pulsar", op, msgId);
+                                    String key = op.buildMessageKey();
+                                    sendHandles.add(opProducer
+                                            .newMessage()
+                                            .key(key)
+                                            .value(serialized)
+                                            .sendAsync().thenAccept((msgId) -> {
+                                        log.info("written {} as {} with key {} to Pulsar", op, msgId, key);
                                         // write to local memory
                                         applyOpToLocalMemory(op);
                                     }));
@@ -567,6 +572,14 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .status(status)
                     .type(type)
                     .build();
+        }
+
+        String buildMessageKey() {
+            if (compatibilityMode != null) {
+                return tenant + "_" + subject + "_" + "compatibilityMode";
+            } else {
+                return tenant + "_" + subject + "_v" + schemaVersion;
+            }
         }
     }
 }
