@@ -50,8 +50,8 @@ public class PartitionLogManager {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
 
         return logMap.computeIfAbsent(kopTopic, key ->
-                new PartitionLog(kafkaConfig, time, topicPartition, namespacePrefix, kopTopic, formatter,
-                        new ProducerStateManager(kopTopic), kafkaTopicManagerSharedState)
+                new PartitionLog(kafkaConfig, time, topicPartition, kopTopic, formatter,
+                        new ProducerStateManager(kopTopic))
         );
     }
 }
