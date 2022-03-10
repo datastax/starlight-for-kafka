@@ -53,7 +53,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
 
     @Test
     public void testGetProducerId() throws Exception {
-        pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerId", 1);
+        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerId");
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
                 "testGetProducerId", pulsar.getClient());
@@ -86,7 +86,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
     @Test
     public void testGetProducerIdWithoutDuplicates() throws Exception {
 
-        pulsar.getAdminClient().topics().createPartitionedTopic("testGetProducerIdWithoutDuplicates", 1);
+        pulsar.getAdminClient().topics().createNonPartitionedTopic("testGetProducerIdWithoutDuplicates");
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(
                 "testGetProducerIdWithoutDuplicates", pulsar.getClient());
@@ -130,7 +130,7 @@ public class PulsarStorageProducerIdManagerImplTest extends KopProtocolHandlerTe
                 InactiveTopicDeleteMode.delete_when_no_subscriptions, 0, true));
 
         String topic = namespace + "/testGetProducerIdNoRetention";
-        pulsar.getAdminClient().topics().createPartitionedTopic(topic, 1);
+        pulsar.getAdminClient().topics().createNonPartitionedTopic(topic);
 
         ProducerIdManager manager1 = new PulsarStorageProducerIdManagerImpl(topic, pulsar.getClient());
         manager1.initialize().get();

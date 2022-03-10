@@ -27,6 +27,7 @@ import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.client.api.ProducerAccessMode;
 import org.apache.pulsar.client.api.PulsarClient;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.client.api.Reader;
 
 /**
@@ -74,6 +75,23 @@ public class PulsarStorageProducerIdManagerImpl implements ProducerIdManager {
                             nextId.set(newId);
                             return readNextMessageIfAvailable(reader);
                         });
+                    }
+                }).exceptionally(err -> {
+                    log.info("Error while reading from the {} topic", topic, err);
+                    if (err.getCause() instanceof PulsarClientException.BrokerMetadataException
+                            && err.getCause().getMessage()
+                            .contains("Message not found, the ledgerId does not belong "
+                                    + "to this topic or has been deleted")) {
+                        // this problem happens on Luna Streaming/Apache Pulsar 2.8.0,
+                        // it has been fixed from Luna Streaming/Apache Pulsar 2.8.3 onwards.
+                        log.info("Maybe the topic {} has been trimmed due to retention policy, ignoring the error");
+                        return null;
+                    } else {
+                        if (err instanceof CompletionException) {
+                            throw (CompletionException) err;
+                        } else {
+                            throw new CompletionException(err);
+                        }
                     }
                 });
     }
