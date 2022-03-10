@@ -18,6 +18,7 @@ import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
@@ -87,6 +88,7 @@ public class PartitionLog {
     private final String fullPartitionName;
     private final EntryFormatter entryFormatter;
     private final ProducerStateManager producerStateManager;
+    private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
 
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
@@ -262,7 +264,7 @@ public class PartitionLog {
         appendRecordsContext.getTopicManager().registerProducerInPersistentTopic(fullPartitionName, persistentTopic);
 
         // collect metrics
-        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix);
+        encodeResult.updateProducerStats(topicPartition, requestStats, namespacePrefix, kafkaTopicManagerSharedState);
 
         final int numMessages = encodeResult.getNumMessages();
         final ByteBuf byteBuf = encodeResult.getEncodedByteBuf();

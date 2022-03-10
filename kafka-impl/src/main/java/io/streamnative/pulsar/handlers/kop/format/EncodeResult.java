@@ -22,7 +22,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.TOPIC_SCOPE;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
-import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicManagerSharedState;
 import io.streamnative.pulsar.handlers.kop.RequestStats;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
@@ -85,10 +85,11 @@ public class EncodeResult {
 
     public void updateProducerStats(final TopicPartition topicPartition,
                                     final RequestStats requestStats,
-                                    final String namespacePrefix) {
+                                    final String namespacePrefix,
+                                    final KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
         final int numBytes = encodedByteBuf.readableBytes();
 
-        final Producer producer = KafkaTopicManager
+        final Producer producer = kafkaTopicManagerSharedState
                 .getReferenceProducer(KopTopic.toString(topicPartition, namespacePrefix));
         producer.updateRates(numMessages, numBytes);
         producer.getTopic().incrementPublishCount(numMessages, numBytes);
