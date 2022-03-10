@@ -290,7 +290,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(getFirstHeadersFromRecords(receivedRecords), headers);
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 40000)
     public void testDeletePartition() throws Exception {
         final String topic = "test-delete-partition";
 
@@ -315,8 +315,9 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         sendSingleMessages(kafkaProducer, topic, Arrays.asList("g", "h", "i"));
 
-
-        pulsar.getAdminClient().topics().delete(topic + "-partition-1", true);
+        String partition = topic + "-partition-1";
+        log.info("Deleting {}", partition);
+        pulsar.getAdminClient().topics().delete(partition, true);
         // "h" is usually written to Partition 1, so deleting partition-1 means that we lose "h"
         expectValues = Arrays.asList("g", "i");
 
