@@ -397,6 +397,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private boolean kafkaTransactionProducerIdsStoredOnPulsar = true;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            required = true,
+            doc = "The namespace used for storing Kafka Producer Id"
+    )
+    private String kafkaTransactionProducerIdsNamespace = "__kafka_producerid";
+
+    @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Flag to enable transaction coordinator"
     )
