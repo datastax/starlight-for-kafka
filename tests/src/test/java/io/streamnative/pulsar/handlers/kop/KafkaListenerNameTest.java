@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -148,7 +149,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 30000)
-    public void testMultipleListenerName() throws Exception {
+    public void testLegacyMultipleListenerName() throws Exception {
         super.resetConfig();
         conf.setAdvertisedAddress(null);
         final String localAddress = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(null);
@@ -159,6 +160,7 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         final String kafkaListeners = "kafka://0.0.0.0:" + kafkaBrokerPort
                 + ",kafka_external://0.0.0.0:" + externalPort;
         conf.setKafkaListeners(kafkaListeners);
+        // Before 2.9, we must configure advertisedListeners to enable multiple listeners
         final String advertisedListeners =
                 "pulsar:pulsar://" + localAddress + ":" + brokerPort
                         + ",kafka:pulsar://localhost:" + kafkaBrokerPort
@@ -170,6 +172,16 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         kafkaProducerSend("localhost:" + kafkaBrokerPort);
         kafkaProducerSend("localhost:" + externalPort);
 
+        final Map<String, Set<Node>> brokers = new HashMap<>(getProtocolHandler().getAdminManager().getAllBrokers());
+        Node node = getFirst(brokers.get("kafka"));
+        // However, the advertised address is not the same with the host in advertisedListeners unless we configured
+        // the kafkaAdvertisedListeners in 2.9 and later.
+        Assert.assertEquals(node.host(), "0.0.0.0");
+        Assert.assertEquals(node.port(), kafkaBrokerPort);
+
+        node = getFirst(brokers.get("kafka_external"));
+        Assert.assertEquals(node.host(), "0.0.0.0");
+        Assert.assertEquals(node.port(), externalPort);
         super.internalCleanup();
     }
 
@@ -177,12 +189,10 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
     public void testConnectListenerNotExist() throws Exception {
         final int externalPort = PortManager.nextFreePort();
         super.resetConfig();
-        conf.setAdvertisedAddress(null);
         conf.setKafkaListeners("kafka://0.0.0.0:" + kafkaBrokerPort + ",kafka_external://0.0.0.0:" + externalPort);
         conf.setKafkaProtocolMap("kafka:PLAINTEXT,kafka_external:PLAINTEXT");
-        conf.setAdvertisedListeners("pulsar:pulsar://localhost:" + brokerPort
-                + ",kafka:pulsar://localhost:" + kafkaBrokerPort
-                + ",kafka_external:pulsar://localhost:" + externalPort);
+        conf.setKafkaAdvertisedListeners(
+                "kafka://localhost:" + kafkaBrokerPort + ",kafka_external://localhost:" + externalPort);
         super.internalSetup();
         final Properties props = newKafkaProducerProperties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + kafkaBrokerPort);
@@ -191,6 +201,15 @@ public class KafkaListenerNameTest extends KopProtocolHandlerTestBase {
         Assert.assertNotNull(recordMetadata);
         Assert.assertEquals(0, recordMetadata.offset());
         producer.close();
+
+        final Map<String, Set<Node>> brokers = new HashMap<>(getProtocolHandler().getAdminManager().getAllBrokers());
+        Node node = getFirst(brokers.get("kafka"));
+        Assert.assertEquals(node.host(), "localhost");
+        Assert.assertEquals(node.port(), kafkaBrokerPort);
+
+        node = getFirst(brokers.get("kafka_external"));
+        Assert.assertEquals(node.host(), "localhost");
+        Assert.assertEquals(node.port(), externalPort);
         super.internalCleanup();
     }
 

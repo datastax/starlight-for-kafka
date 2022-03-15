@@ -33,6 +33,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -84,6 +85,7 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
+import org.testng.Assert;
 
 /**
  * Unit test to test KoP handler.
@@ -160,6 +162,7 @@ public abstract class KopProtocolHandlerTestBase {
     /**
      * Port to be used by clients.
      * It can be overridden with a different port, in order to pass via the proxy
+     *
      * @return the port
      */
     protected int getClientPort() {
@@ -215,7 +218,7 @@ public abstract class KopProtocolHandlerTestBase {
         String protocolHandlerDir = getProtocolHandlerDir();
 
         kafkaConfig.setProtocolHandlerDirectory(
-            protocolHandlerDir
+                protocolHandlerDir
         );
         kafkaConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
 
@@ -243,7 +246,7 @@ public abstract class KopProtocolHandlerTestBase {
      * Trigger topic to lookup.
      * It will load namespace bundle into {@link org.apache.pulsar.broker.namespace.OwnershipCache}.
      *
-     * @param topicName topic to lookup.
+     * @param topicName     topic to lookup.
      * @param numPartitions the topic partition nums.
      */
     protected void triggerTopicLookup(String topicName, int numPartitions) {
@@ -307,7 +310,7 @@ public abstract class KopProtocolHandlerTestBase {
                 .build();
 
         mockZooKeeper = createMockZooKeeper(configClusterName, serviceUrl, serviceUrlTls, brokerServiceUrl,
-            brokerServiceUrlTls);
+                brokerServiceUrlTls);
         mockBookKeeper = createMockBookKeeper(bkExecutor);
 
 
@@ -406,7 +409,8 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     public static MockZooKeeper createMockZooKeeper(String clusterName, String brokerUrl, String brokerUrlTls,
-            String brokerServiceUrl, String brokerServiceUrlTls) throws Exception {
+                                                    String brokerServiceUrl, String brokerServiceUrlTls)
+            throws Exception {
         MockZooKeeper zk = MockZooKeeper.newInstance(MoreExecutors.newDirectExecutorService());
         List<ACL> dummyAclList = new ArrayList<>(0);
 
@@ -420,8 +424,9 @@ public abstract class KopProtocolHandlerTestBase {
 
         ZkUtils.createFullPathOptimistic(zk, "/admin/clusters/" + clusterName,
             String.format("{\"serviceUrl\" : \"%s\", \"serviceUrlTls\" : \"%s\", \"brokerServiceUrl\" : \"%s\","
-            + "\"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl, brokerServiceUrlTls)
-                .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
+                           + "\"brokerServiceUrlTls\" : \"%s\"}", brokerUrl, brokerUrlTls, brokerServiceUrl,
+                            brokerServiceUrlTls)
+                    .getBytes(ZookeeperClientFactoryImpl.ENCODING_SCHEME), dummyAclList, CreateMode.PERSISTENT);
 
         return zk;
     }
@@ -497,7 +502,7 @@ public abstract class KopProtocolHandlerTestBase {
     };
 
     public static void retryStrategically(Predicate<Void> predicate, int retryCount, long intSleepTimeInMillis)
-        throws Exception {
+            throws Exception {
         for (int i = 0; i < retryCount; i++) {
             if (predicate.test(null) || i == (retryCount - 1)) {
                 break;
@@ -507,7 +512,7 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     public static void setFieldValue(Class clazz, Object classObj, String fieldName, Object fieldValue)
-        throws Exception {
+            throws Exception {
         Field field = clazz.getDeclaredField(fieldName);
         field.setAccessible(true);
         field.set(classObj, fieldValue);
@@ -543,7 +548,7 @@ public abstract class KopProtocolHandlerTestBase {
 
             if (null != username && null != password) {
                 String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
-                    + "required username=\"%s\" password=\"%s\";";
+                        + "required username=\"%s\" password=\"%s\";";
                 String jaasCfg = String.format(jaasTemplate, username, password);
                 props.put("sasl.jaas.config", jaasCfg);
                 props.put("security.protocol", "SASL_PLAINTEXT");
@@ -621,8 +626,8 @@ public abstract class KopProtocolHandlerTestBase {
             long elapsedTime = System.currentTimeMillis() - startTime;
             if (metadata != null) {
                 System.out.println(
-                    "message(" + key + ", " + message + ") sent to partition(" + metadata.partition()
-                        + "), " + "offset(" + metadata.offset() + ") in " + elapsedTime + " ms");
+                        "message(" + key + ", " + message + ") sent to partition(" + metadata.partition()
+                                + "), " + "offset(" + metadata.offset() + ") in " + elapsedTime + " ms");
             } else {
                 exception.printStackTrace();
             }
@@ -640,10 +645,10 @@ public abstract class KopProtocolHandlerTestBase {
         private final String consumerGroup;
 
         public KConsumer(
-            String topic, String host, int port,
-            boolean autoCommit, String username, String password,
-            String consumerGroup, String keyDeser, String valueDeser,
-            String isolation) {
+                String topic, String host, int port,
+                boolean autoCommit, String username, String password,
+                String consumerGroup, String keyDeser, String valueDeser,
+                String isolation) {
             Properties props = new Properties();
             props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, host + ":" + port);
             props.put(ConsumerConfig.GROUP_ID_CONFIG, consumerGroup);
@@ -661,7 +666,7 @@ public abstract class KopProtocolHandlerTestBase {
 
             if (null != username && null != password) {
                 String jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule "
-                    + "required username=\"%s\" password=\"%s\";";
+                        + "required username=\"%s\" password=\"%s\";";
                 String jaasCfg = String.format(jaasTemplate, username, password);
                 props.put("sasl.jaas.config", jaasCfg);
                 props.put("security.protocol", "SASL_PLAINTEXT");
@@ -670,9 +675,9 @@ public abstract class KopProtocolHandlerTestBase {
 
             props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
             props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
-                keyDeser);
+                    keyDeser);
             props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
-                valueDeser);
+                    valueDeser);
 
             this.consumer = new KafkaConsumer<>(props);
             this.topic = topic;
@@ -762,11 +767,11 @@ public abstract class KopProtocolHandlerTestBase {
             return null;
         }
 
-        return new byte[] {
-            (byte) (data >>> 24),
-            (byte) (data >>> 16),
-            (byte) (data >>> 8),
-            data.byteValue()
+        return new byte[]{
+                (byte) (data >>> 24),
+                (byte) (data >>> 16),
+                (byte) (data >>> 8),
+                data.byteValue()
         };
     }
 
@@ -799,7 +804,6 @@ public abstract class KopProtocolHandlerTestBase {
         adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         return adminProps;
     }
-
 
     protected String computeKafkaProxyBrokerPortToKopMapping() {
         // Map Pulsar port to KOP port
@@ -862,15 +866,21 @@ public abstract class KopProtocolHandlerTestBase {
         pulsarProxy.start();
     }
 
-    protected void stopProxy() throws Exception{
+    protected void stopProxy() throws Exception {
         if (pulsarProxy != null) {
             pulsarProxy.close();
         }
     }
 
-    public KafkaChannelInitializer getFirstChannelInitializer() {
-        final KafkaProtocolHandler handler = (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
-        return (KafkaChannelInitializer) handler.getChannelInitializerMap().entrySet().iterator().next().getValue();
+    public KafkaProtocolHandler getProtocolHandler() {
+        return (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+    }
+
+    public static <T> T getFirst(Set<T> set) {
+        Assert.assertNotNull(set);
+        final Iterator<T> iterator = set.iterator();
+        Assert.assertTrue(iterator.hasNext());
+        return iterator.next();
     }
 
     public KafkaRequestHandler newRequestHandler() throws Exception {
