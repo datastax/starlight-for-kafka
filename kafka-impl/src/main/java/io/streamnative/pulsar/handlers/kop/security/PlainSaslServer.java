@@ -100,7 +100,7 @@ public class PlainSaslServer implements SaslServer {
                 }
             } else {
                 authorizationId = authState.getAuthRole();
-                log.info("Authenticated User {}", authorizationId);
+                log.info("Authenticated User {} tenant (username) {}", authorizationId, username);
             }
             complete = true;
             return new byte[0];
