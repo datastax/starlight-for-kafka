@@ -61,7 +61,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     // Queue to make response get responseFuture in order and limit the max request size
     private final LinkedBlockingQueue<ResponseAndRequest> requestQueue;
     @Getter
-    protected final RequestStats requestStats;
+    @Setter
+    protected RequestStats requestStats;
     @Getter
     protected final KafkaServiceConfiguration kafkaConfig;
 
