@@ -17,11 +17,9 @@ import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 import com.google.common.collect.ImmutableMap;
-import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.util.concurrent.DefaultThreadFactory;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
@@ -41,6 +39,7 @@ import java.util.function.Supplier;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.lang.StringUtils;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.PulsarServerException;
@@ -53,7 +52,6 @@ import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.configuration.PulsarConfigurationLoader;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.apache.pulsar.policies.data.loadbalancer.ServiceLookupData;
 import org.apache.pulsar.proxy.server.ProxyConfiguration;
 import org.apache.pulsar.proxy.server.ProxyService;
@@ -101,27 +99,19 @@ public class KafkaProtocolProxyMain {
         return kafkaAddress;
     });
 
-    public static void main(String... args) throws Exception {
-        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-            @Override
-            public void uncaughtException(Thread t, Throwable e) {
-                log.info("uncaughtException in thread {}", t, e);
-            }
-        });
-        String configFile = args.length > 0 ? args[0] : "conf/kop_proxy.conf";
-        KafkaProtocolProxyMain proxy = new KafkaProtocolProxyMain();
-        ProxyConfiguration serviceConfiguration = PulsarConfigurationLoader.create(configFile,
-                ProxyConfiguration.class);
-        proxy.initialize(serviceConfiguration, null);
-        proxy.startStandalone();
-        log.info("Started");
-        Thread.sleep(Integer.MAX_VALUE);
-        proxy.close();
-    }
-
     public void initialize(ProxyConfiguration conf, ProxyService proxyService) throws Exception {
+        // init config
+        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
+        statsProvider = new PrometheusMetricsProvider();
+        PropertiesConfiguration statsConf = new PropertiesConfiguration();
+        statsConf.addProperty("prometheusStatsLatencyRolloverSeconds",
+                kafkaConfig.getKopPrometheusStatsLatencyRolloverSeconds());
+        statsProvider.start(statsConf);
+        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
+        requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
         this.proxyConfiguration = conf;
         if (proxyService != null) {
+            proxyService.addPrometheusRawMetricsProvider(statsProvider);
             authenticationService = proxyService.getAuthenticationService();
             if (proxyService.getDiscoveryProvider() != null) {
                 brokerAddressMapper = new BrokerAddressMapper(proxyService);
@@ -138,8 +128,6 @@ public class KafkaProtocolProxyMain {
             log.info("Using Broker address mapping by convention");
         }
 
-        // init config
-        kafkaConfig = ConfigurationUtils.create(conf.getProperties(), KafkaServiceConfiguration.class);
 
         // some of the configs value in conf.properties may not updated.
         // So need to get latest value from conf itself
@@ -179,34 +167,6 @@ public class KafkaProtocolProxyMain {
                 KopVersion.getBuildUser(),
                 KopVersion.getBuildHost(),
                 KopVersion.getBuildTime());
-        statsProvider = new PrometheusMetricsProvider();
-        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
-        requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
-    }
-
-    public void startStandalone() {
-
-        eventLoopGroupStandaloneMode =
-                EventLoopUtil.newEventLoopGroup(16, false, new DefaultThreadFactory("kop-broker-connection"));
-
-        log.info("Starting KafkaProtocolProxy, kop version is: '{}'", KopVersion.getVersion());
-        log.info("Git Revision {}", KopVersion.getGitSha());
-        log.info("Built by {} on {} at {}",
-                KopVersion.getBuildUser(),
-                KopVersion.getBuildHost(),
-                KopVersion.getBuildTime());
-        newChannelInitializers().forEach((address, initializer) -> {
-            System.out.println("Starting protocol at " + address);
-            ServerBootstrap bootstrap = new ServerBootstrap()
-                    .group(eventLoopGroupStandaloneMode)
-                    .channel(EventLoopUtil.getServerSocketChannelClass(eventLoopGroupStandaloneMode));
-            bootstrap.childHandler(initializer);
-            try {
-                bootstrap.bind(address).sync();
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
     }
 
     public void close() throws Exception {
@@ -216,6 +176,9 @@ public class KafkaProtocolProxyMain {
         }
         if (schemaRegistryProxyManager != null) {
             schemaRegistryProxyManager.close();
+        }
+        if (statsProvider != null) {
+            statsProvider.stop();
         }
     }
 
