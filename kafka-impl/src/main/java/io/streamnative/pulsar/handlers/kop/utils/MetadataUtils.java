@@ -129,6 +129,7 @@ public class MetadataUtils {
         }
         String cluster = conf.getClusterName();
         String kafkaMetadataNamespace = tenant + "/" + namespace;
+        log.info("createKafkaMetadataIfMissing {}", kafkaMetadataNamespace);
 
         boolean clusterExists = false;
         boolean tenantExists = false;
@@ -161,8 +162,9 @@ public class MetadataUtils {
 
             // Check if the metadata namespace exists and create it if not
             Namespaces namespaces = pulsarAdmin.namespaces();
+
             createNamespaceIfMissing(tenant, conf, cluster, kafkaMetadataNamespace, namespaces,
-                    true, infiniteRetention);
+                    infiniteRetention, true);
 
             namespaceExists = true;
 
@@ -208,52 +210,51 @@ public class MetadataUtils {
     }
 
     private static void createNamespaceIfMissing(String tenant, KafkaServiceConfiguration conf, String cluster,
-                                                 String kafkaMetadataNamespace, Namespaces namespaces,
-                                                 boolean handlePolicies,
-                                                 boolean infiniteRetention)
+                                                 String kafkaNamespace, Namespaces namespaces,
+                                                 boolean infiniteRetention,
+                                                 boolean isMetadataNamespace)
                                                  throws PulsarAdminException {
-        if (!namespaces.getNamespaces(tenant).contains(kafkaMetadataNamespace)) {
+        if (!namespaces.getNamespaces(tenant).contains(kafkaNamespace)) {
             log.info("Namespaces: {} does not exist in tenant: {}, creating it ...",
-                    kafkaMetadataNamespace, tenant);
+                    kafkaNamespace, tenant);
             Set<String> replicationClusters = Sets.newHashSet(cluster);
-            namespaces.createNamespace(kafkaMetadataNamespace, replicationClusters);
-            namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, replicationClusters);
+            namespaces.createNamespace(kafkaNamespace, replicationClusters);
+            namespaces.setNamespaceReplicationClusters(kafkaNamespace, replicationClusters);
+
+            // set namespace config only when offset metadata namespace first create
+            if (isMetadataNamespace) {
+                int retentionMinutes = infiniteRetention ? -1 : (int) conf.getOffsetsRetentionMinutes();
+                RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaNamespace);
+                if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
+                    namespaces.setRetention(kafkaNamespace,
+                            new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
+                }
+
+                if (!infiniteRetention) {
+                    Long compactionThreshold = namespaces.getCompactionThreshold(kafkaNamespace);
+                    if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
+                        namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
+                    }
+                }
+
+                Integer targetMessageTTL = infiniteRetention ? null : conf.getOffsetsMessageTTL();
+                Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaNamespace);
+                if (messageTTL == null || !Objects.equals(messageTTL, targetMessageTTL)) {
+                    if (targetMessageTTL == null) {
+                        namespaces.removeNamespaceMessageTTL(kafkaNamespace);
+                    } else {
+                        namespaces.setNamespaceMessageTTL(kafkaNamespace, targetMessageTTL);
+                    }
+                }
+            }
         } else {
-            List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaMetadataNamespace);
+            List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);
             if (!replicationClusters.contains(cluster)) {
                 log.info("Namespace: {} exists but cluster: {} is not in the replicationClusters list,"
-                        + "updating it ...", kafkaMetadataNamespace, cluster);
+                        + "updating it ...", kafkaNamespace, cluster);
                 Set<String> newReplicationClusters = Sets.newHashSet(replicationClusters);
                 newReplicationClusters.add(cluster);
-                namespaces.setNamespaceReplicationClusters(kafkaMetadataNamespace, newReplicationClusters);
-            }
-        }
-
-        if (handlePolicies) {
-
-            // set namespace config if namespace existed
-            int retentionMinutes = infiniteRetention ? -1 : (int) conf.getOffsetsRetentionMinutes();
-            RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaMetadataNamespace);
-            if (retentionPolicies == null || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes) {
-                namespaces.setRetention(kafkaMetadataNamespace,
-                        new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), -1));
-            }
-
-            if (!infiniteRetention) {
-                Long compactionThreshold = namespaces.getCompactionThreshold(kafkaMetadataNamespace);
-                if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
-                    namespaces.setCompactionThreshold(kafkaMetadataNamespace, MAX_COMPACTION_THRESHOLD);
-                }
-            }
-
-            Integer targetMessageTTL = infiniteRetention ? null : conf.getOffsetsMessageTTL();
-            Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaMetadataNamespace);
-            if (messageTTL == null || !Objects.equals(messageTTL, targetMessageTTL)) {
-                if (targetMessageTTL == null) {
-                    namespaces.removeNamespaceMessageTTL(kafkaMetadataNamespace);
-                } else {
-                    namespaces.setNamespaceMessageTTL(kafkaMetadataNamespace, targetMessageTTL);
-                }
+                namespaces.setNamespaceReplicationClusters(kafkaNamespace, newReplicationClusters);
             }
         }
     }
@@ -310,7 +311,9 @@ public class MetadataUtils {
 
             Namespaces namespaces = pulsarAdmin.namespaces();
             // Check if the kafka namespace exists and create it if not
-            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces, false, false);
+            createNamespaceIfMissing(tenant, conf, cluster, kafkaNamespace, namespaces,
+                     false, false);
+
             namespaceExists = true;
 
         } catch (PulsarAdminException e) {
