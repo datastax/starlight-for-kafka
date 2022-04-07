@@ -66,9 +66,10 @@ public class IdempotentProducerTest extends KopProtocolHandlerTestBase {
         // isBatch
         return new Object[][]{
                 {true, true},
-                {false, true},
-                {true, false},
-                {false, false}
+                {false, true}
+                // commented out, waiting for a release of LS280 with
+                //{true, false},
+                //{false, false}
         };
     }
 
