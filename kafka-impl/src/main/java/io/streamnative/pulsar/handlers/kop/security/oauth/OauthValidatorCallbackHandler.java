@@ -27,10 +27,9 @@ import javax.security.auth.login.AppConfigurationEntry;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
-import org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallback;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerIllegalTokenException;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerValidationResult;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authentication.AuthenticationState;
@@ -77,8 +76,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
     @Override
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
         for (Callback callback : callbacks) {
-            if (callback instanceof OAuthBearerValidatorCallback) {
-                OAuthBearerValidatorCallback validatorCallback = (OAuthBearerValidatorCallback) callback;
+            if (callback instanceof KopOAuthBearerValidatorCallback) {
+                KopOAuthBearerValidatorCallback validatorCallback = (KopOAuthBearerValidatorCallback) callback;
                 try {
                     handleCallback(validatorCallback);
                 } catch (OAuthBearerIllegalTokenException e) {
@@ -93,7 +92,7 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
         }
     }
 
-    private void handleCallback(OAuthBearerValidatorCallback callback) {
+    private void handleCallback(KopOAuthBearerValidatorCallback callback) {
         if (callback.tokenValue() == null) {
             throw new IllegalArgumentException("Callback has null token value!");
         }
@@ -111,7 +110,8 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
             final AuthenticationState authState = authenticationProvider.newAuthState(
                     AuthData.of(token.getBytes(StandardCharsets.UTF_8)), null, null);
             final String role = authState.getAuthRole();
-            callback.token(new OAuthBearerToken() {
+            AuthenticationDataSource authDataSource = authState.getAuthDataSource();
+            callback.token(new KopOAuthBearerToken() {
                 @Override
                 public String value() {
                     return token;
@@ -131,6 +131,11 @@ public class OauthValidatorCallbackHandler implements AuthenticateCallbackHandle
                 @Override
                 public String principalName() {
                     return role;
+                }
+
+                @Override
+                public AuthenticationDataSource authDataSource() {
+                    return authDataSource;
                 }
 
                 @Override

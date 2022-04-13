@@ -23,6 +23,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerSaslServer;
+import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerUnsecuredValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
@@ -57,11 +59,9 @@ import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer;
-import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler;
+import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
-import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 
@@ -90,6 +90,7 @@ public class SaslAuthenticator {
     private boolean enableKafkaSaslAuthenticateHeaders;
     private ByteBuf authenticationFailureResponse = null;
     private ChannelHandlerContext ctx = null;
+    private String defaultKafkaMetadataTenant;
 
     private enum State {
         HANDSHAKE_OR_VERSIONS_REQUEST,
@@ -115,6 +116,29 @@ public class SaslAuthenticator {
 
         public UnsupportedSaslMechanismException(String mechanism) {
             super("SASL mechanism '" + mechanism + "' requested by client is not supported");
+        }
+    }
+
+    /**
+     * The exception to indicate that the SaslServer doesn't have the expected property.
+     */
+    public static class NoExpectedPropertyException extends AuthenticationException {
+
+        public NoExpectedPropertyException(String propertyName, String msg) {
+            super("No expected property for " + propertyName + ": " + msg);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T safeGetProperty(final SaslServer saslServer, final String propertyName) {
+        try {
+            final Object property = saslServer.getNegotiatedProperty(propertyName);
+            if (property == null) {
+                throw new NoExpectedPropertyException(propertyName, "property not found");
+            }
+            return (T) property;
+        } catch (ClassCastException e) {
+            throw new NoExpectedPropertyException(propertyName, e.getMessage());
         }
     }
 
@@ -151,6 +175,7 @@ public class SaslAuthenticator {
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
                 ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
+        this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
     }
 
     /**
@@ -253,7 +278,7 @@ public class SaslAuthenticator {
                 throw new RuntimeException("Failed to cast " + className + ": " + e.getMessage());
             }
         } else {
-            handler = new OAuthBearerUnsecuredValidatorCallbackHandler();
+            handler = new KopOAuthBearerUnsecuredValidatorCallbackHandler();
         }
 
         final Properties props = config.getKopOauth2Properties();
@@ -279,7 +304,7 @@ public class SaslAuthenticator {
                 throw new IllegalArgumentException("No OAuth2CallbackHandler found when mechanism is "
                         + OAuthBearerLoginModule.OAUTHBEARER_MECHANISM);
             }
-            saslServer = new OAuthBearerSaslServer(oauth2CallbackHandler);
+            saslServer = new KopOAuthBearerSaslServer(oauth2CallbackHandler, defaultKafkaMetadataTenant);
         } else {
             throw new AuthenticationException("KoP doesn't support '" + mechanism + "' mechanism");
         }
@@ -423,19 +448,14 @@ public class SaslAuthenticator {
                 nioBuffer.get(clientToken, 0, clientToken.length);
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
-                    ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
-                    final Session newSession;
-                    if (saslServer.isComplete()) {
-                        newSession = new Session(
-                                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
-                                        safeGetProperty(saslServer, USER_NAME_PROP),
-                                        safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
-                                "old-clientId");
-                        if (!tenantAccessValidationFunction.apply(newSession)) {
-                            throw new AuthenticationException("User is not allowed to access this tenant");
-                        }
-                    } else {
-                        newSession = null;
+                    ByteBuf byteBuf = Unpooled.wrappedBuffer(response);
+                    final Session newSession = new Session(
+                            new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
+                                    safeGetProperty(saslServer, USER_NAME_PROP),
+                                    safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
+                            "old-clientId");
+                    if (!tenantAccessValidationFunction.apply(newSession)) {
+                        throw new AuthenticationException("User is not allowed to access this tenant");
                     }
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {
                         if (!future.isSuccess()) {
@@ -481,7 +501,6 @@ public class SaslAuthenticator {
 
             try {
                 byte[] responseToken =
-
                         saslServer.evaluateResponse(saslAuthenticateRequest.data().authBytes());
                 byte[] responseBuf = (responseToken == null) ? EMPTY_BUFFER : responseToken;
                 if (saslServer.isComplete()) {
@@ -506,7 +525,6 @@ public class SaslAuthenticator {
                         throw e;
                     }
                 }
-
                 registerRequestLatency.accept(apiKey, startProcessTime);
                 if (!tenantAccessValidationFunction.apply(session)) {
                     AuthenticationException e =
@@ -613,26 +631,4 @@ public class SaslAuthenticator {
         }
     }
 
-    /**
-     * The exception to indicate that the SaslServer doesn't have the expected property.
-     */
-    public static class NoExpectedPropertyException extends AuthenticationException {
-
-        public NoExpectedPropertyException(String propertyName, String msg) {
-            super("No expected property for " + propertyName + ": " + msg);
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> T safeGetProperty(final SaslServer saslServer, final String propertyName) {
-        try {
-            final Object property = saslServer.getNegotiatedProperty(propertyName);
-            if (property == null) {
-                throw new NoExpectedPropertyException(propertyName, "property not found");
-            }
-            return (T) property;
-        } catch (ClassCastException e) {
-            throw new NoExpectedPropertyException(propertyName, e.getMessage());
-        }
-    }
 }
