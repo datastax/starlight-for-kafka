@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.security.auth.KafkaMockAuthorizationProvider;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import java.net.URL;
@@ -47,7 +48,7 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
         conf.setBrokerDeduplicationEnabled(true);
         conf.setAuthenticationEnabled(true);
         conf.setAuthorizationEnabled(true);
-        conf.setAuthorizationProvider(SaslOAuthKopHandlersTest.OAuthMockAuthorizationProvider.class.getName());
+        conf.setAuthorizationProvider(OauthMockAuthorizationProvider.class.getName());
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
         conf.setBrokerClientAuthenticationPlugin(AuthenticationOAuth2.class.getName());
         conf.setBrokerClientAuthenticationParameters(String.format("{\"type\":\"client_credentials\","
@@ -97,6 +98,15 @@ public class TransactionWithOAuthBearerAuthTest extends TransactionTest {
                 adminCredentialPath,
                 AUDIENCE
         ));
+    }
+
+
+    public static class OauthMockAuthorizationProvider extends KafkaMockAuthorizationProvider {
+
+        @Override
+        public boolean roleAuthorized(String role) {
+            return role.equals(ADMIN_USER);
+        }
     }
 
 }
