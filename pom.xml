@@ -92,6 +92,7 @@
     <module>oauth-client</module>
     <module>proxy</module>
     <module>tests</module>
+    <module>test-listener</module>
   </modules>
 
 
@@ -126,6 +127,12 @@
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-original</artifactId>
+        <version>${pulsar.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>${pulsar.group.id}</groupId>
+        <artifactId>pulsar-common</artifactId>
         <version>${pulsar.version}</version>
       </dependency>
 
@@ -223,6 +230,11 @@
         <artifactId>commons-compress</artifactId>
         <version>${commons-compress.version}</version>
       </dependency>
+     <dependency>
+       <groupId>io.streamnative.pulsar.handlers</groupId>
+       <artifactId>test-listener</artifactId>
+       <version>${project.version}</version>
+     </dependency>
    </dependencies>
   </dependencyManagement>
 
@@ -451,6 +463,16 @@
           <forkCount>1</forkCount>
           <redirectTestOutputToFile>${redirectTestOutputToFile}</redirectTestOutputToFile>
           <trimStackTrace>false</trimStackTrace>
+          <properties>
+            <property>
+              <name>usedefaultlisteners</name>
+              <value>false</value> <!-- disabling default listeners is optional -->
+            </property>
+            <property>
+              <name>listener</name>
+              <value>io.streamnative.pulsar.handlers.kop.common.test.TimeOutTestListener</value>
+            </property>
+          </properties>
         </configuration>
       </plugin>
 
