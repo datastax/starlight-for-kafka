@@ -14,6 +14,10 @@ jobs:
       with:
         java-version: 11
 
+    - name: Start and init the oauth server
+      run: ./ci/init_hydra_oauth_server.sh
+      timeout-minutes: 5
+
     - name: Build with Maven skipTests
       run: mvn clean checkstyle:check install -ntp -B -DskipTests
 
