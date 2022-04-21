@@ -84,11 +84,7 @@ public class KafkaSchemaRegistryProxyManager {
                     serverSslCtxRefresher = null;
                 } else {
                     serverSSLContextAutoRefreshBuilder = null;
-                    serverSslCtxRefresher = new NettyServerSslContextBuilder(kafkaConfig.isTlsAllowInsecureConnection(),
-                            kafkaConfig.getTlsTrustCertsFilePath(), kafkaConfig.getTlsCertificateFilePath(),
-                            kafkaConfig.getTlsKeyFilePath(), kafkaConfig.getTlsCiphers(), kafkaConfig.getTlsProtocols(),
-                            kafkaConfig.isTlsRequireTrustedClientCertOnConnect(),
-                            kafkaConfig.getTlsCertRefreshCheckDurationSec());
+                    serverSslCtxRefresher = KafkaProxyChannelInitializer.buildNettyServerSslContextBuilder(kafkaConfig);
                 }
             } else {
                 this.serverSslCtxRefresher = null;

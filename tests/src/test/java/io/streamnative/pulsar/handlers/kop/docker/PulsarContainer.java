@@ -81,13 +81,17 @@ public class PulsarContainer implements AutoCloseable {
                 new GenericContainer<>(PULSAR_IMAGE)
                         .withNetwork(network)
                         .withNetworkAliases("pulsarproxy")
-                        .withExposedPorts(8089, 9092, 8081) // ensure that the ports are listening
+                        .withExposedPorts(8089, 9092, 8081, 9093) // ensure that the ports are listening
                         .withCopyFileToContainer(
                                 MountableFile.forHostPath(getProxyExtensionPath()),
                                 "/pulsar/proxyextensions/kop.nar")
                         .withCopyFileToContainer(
                                 MountableFile.forClasspathResource("proxy_with_kop.conf"),
                                 "/pulsar/conf/proxy.conf")
+                        .withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/certificate/broker.keystore.pem"),
+                                "/pulsar/conf/broker.keystore.pem")
+
                         .withCommand(
                                 "bin/pulsar",
                                 "proxy")
