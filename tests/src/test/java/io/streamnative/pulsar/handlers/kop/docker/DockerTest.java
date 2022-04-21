@@ -22,10 +22,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.OutputFrame;
+import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 @Slf4j
 public class DockerTest {
+
+    private static final String IMAGE_LS280 = "datastax/lunastreaming:2.8.0_1.1.40";
+    private static final String IMAGE_LS283 = "datastax/lunastreaming:2.8.3_1.0.7";
+    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
 
     @Test
     public void test() throws Exception {
@@ -33,8 +38,19 @@ public class DockerTest {
     }
 
     @Test
-    public void testProxy() throws Exception {
-        test("pulsarproxy:9092", true);
+    public void testProxyLS280() throws Exception {
+        test("pulsarproxy:9092", true, IMAGE_LS280);
+    }
+
+    @Test
+    public void testProxyLS283() throws Exception {
+        test("pulsarproxy:9092", true, IMAGE_LS283);
+    }
+
+    @Test
+    @Ignore("Error: Unexpected latest offset -1 (< 0) for topic persistent://public/default/test-partition-0")
+    public void testProxyPulsar210() throws Exception {
+        test("pulsarproxy:9092", true, IMAGE_PULSAR210);
     }
 
     @Test
@@ -48,10 +64,14 @@ public class DockerTest {
     }
 
     private void test(String kafkaAddress, boolean proxy) throws Exception {
+        test(kafkaAddress, proxy, IMAGE_LS280);
+    }
+
+    private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image);) {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);
@@ -101,7 +121,7 @@ public class DockerTest {
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, IMAGE_LS280);) {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);

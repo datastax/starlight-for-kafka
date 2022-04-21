@@ -21,6 +21,10 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
+import io.netty.handler.ssl.SslProvider;
+import java.lang.reflect.Constructor;
+import java.util.Arrays;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.Getter;
@@ -28,11 +32,15 @@ import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
  */
 public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChannel> {
+
+    private static final Logger log = LoggerFactory.getLogger(KafkaProxyChannelInitializer.class);
 
     public static final int MAX_FRAME_LENGTH = 100 * 1024 * 1024; // 100MB
 
@@ -94,15 +102,63 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
                 serverSslCtxRefresher = null;
             } else {
                 serverSSLContextAutoRefreshBuilder = null;
-                serverSslCtxRefresher = new NettyServerSslContextBuilder(serviceConfig.isTlsAllowInsecureConnection(),
+                serverSslCtxRefresher = buildNettyServerSslContextBuilder(serviceConfig);
+            }
+        } else {
+            this.serverSslCtxRefresher = null;
+        }
+    }
+
+    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(
+            KafkaServiceConfiguration serviceConfig) {
+        try {
+            try {
+                Constructor<NettyServerSslContextBuilder> constructor283 =
+                        NettyServerSslContextBuilder.class.getConstructor(
+                                SslProvider.class,
+                                Boolean.TYPE,
+                                String.class,
+                                String.class,
+                                String.class,
+                                Set.class,
+                                Set.class,
+                                Boolean.TYPE,
+                                Long.TYPE);
+                SslProvider sslProvider = null;
+                if (serviceConfig.getTlsProvider() != null) {
+                    sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
+                }
+                return constructor283.newInstance(
+                        sslProvider,
+                        serviceConfig.isTlsAllowInsecureConnection(),
+                        serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
+                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
+                        serviceConfig.getTlsProtocols(),
+                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
+                        serviceConfig.getTlsCertRefreshCheckDurationSec());
+            } catch (NoSuchMethodException fallbackTo2880) {
+                Constructor<NettyServerSslContextBuilder> constructor280 =
+                        NettyServerSslContextBuilder.class.getConstructor(
+                                Boolean.TYPE,
+                                String.class,
+                                String.class,
+                                String.class,
+                                Set.class,
+                                Set.class,
+                                Boolean.TYPE,
+                                Long.TYPE);
+                return constructor280.newInstance(serviceConfig.isTlsAllowInsecureConnection(),
                         serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
                         serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
                         serviceConfig.getTlsProtocols(),
                         serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
                         serviceConfig.getTlsCertRefreshCheckDurationSec());
             }
-        } else {
-            this.serverSslCtxRefresher = null;
+        } catch (Throwable t) {
+            Arrays.asList(NettyServerSslContextBuilder.class.getConstructors()).forEach(c -> {
+                log.info("Available constructor: {}", c);
+            });
+            throw new RuntimeException(t);
         }
     }
 

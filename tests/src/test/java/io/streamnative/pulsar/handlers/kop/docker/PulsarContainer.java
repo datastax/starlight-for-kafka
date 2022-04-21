@@ -31,23 +31,24 @@ public class PulsarContainer implements AutoCloseable {
 
   protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/protocols/test-protocol-handler.nar";
   protected static final String PROXY_EXTENSION_TEST_NAR = "/proxyextensions/test-proxy-extension.nar";
-  private static final String PULSAR_IMAGE = "datastax/lunastreaming:2.8.0_1.1.27";
 
   @Getter
   private GenericContainer<?> pulsarContainer;
   private GenericContainer<?> proxyContainer;
   private final Network network;
   private final boolean startProxy;
+  private final String image;
 
-  public PulsarContainer(Network network, boolean startProxy) {
+  public PulsarContainer(Network network, boolean startProxy, String image) {
     this.network = network;
     this.startProxy = startProxy;
+    this.image = image;
   }
 
   public void start() throws Exception {
     CountDownLatch pulsarReady = new CountDownLatch(1);
     pulsarContainer =
-        new GenericContainer<>(PULSAR_IMAGE)
+        new GenericContainer<>(image)
             .withNetwork(network)
             .withNetworkAliases("pulsar")
                 .withExposedPorts(8080, 9092, 8001) // ensure that the ports are listening
@@ -78,16 +79,26 @@ public class PulsarContainer implements AutoCloseable {
     if (startProxy) {
         CountDownLatch proxyReady = new CountDownLatch(1);
         proxyContainer =
-                new GenericContainer<>(PULSAR_IMAGE)
+                new GenericContainer<>(image)
                         .withNetwork(network)
                         .withNetworkAliases("pulsarproxy")
-                        .withExposedPorts(8089, 9092, 8081) // ensure that the ports are listening
+                        .withExposedPorts(8089, 9092, 8081, 9093) // ensure that the ports are listening
                         .withCopyFileToContainer(
                                 MountableFile.forHostPath(getProxyExtensionPath()),
                                 "/pulsar/proxyextensions/kop.nar")
                         .withCopyFileToContainer(
                                 MountableFile.forClasspathResource("proxy_with_kop.conf"),
                                 "/pulsar/conf/proxy.conf")
+                        .withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/proxy/proxy.cert.pem"),
+                                "/pulsar/conf/proxy.cert.pem")
+                        .withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/proxy/proxy.key-pk8.pem"),
+                                "/pulsar/conf/proxy.key-pk8.pem")
+                        .withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/proxy/ca.cert.pem"),
+                                "/pulsar/conf/ca.cert.pem")
+
                         .withCommand(
                                 "bin/pulsar",
                                 "proxy")
