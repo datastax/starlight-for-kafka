@@ -111,7 +111,11 @@ public class KafkaProtocolProxyMain {
         requestStats = new RequestStats(rootStatsLogger.scope(SERVER_SCOPE));
         this.proxyConfiguration = conf;
         if (proxyService != null) {
-            proxyService.addPrometheusRawMetricsProvider(statsProvider);
+            try {
+                proxyService.addPrometheusRawMetricsProvider(statsProvider);
+            } catch (NoSuchMethodError notAvailableOnPulsar210) {
+                log.error("Metrics are not available on this version of Pulsar due to {}", notAvailableOnPulsar210 + "");
+            }
             authenticationService = proxyService.getAuthenticationService();
             if (proxyService.getDiscoveryProvider() != null) {
                 brokerAddressMapper = new BrokerAddressMapper(proxyService);

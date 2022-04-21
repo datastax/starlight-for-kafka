@@ -27,15 +27,13 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 import lombok.Getter;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
@@ -111,7 +109,8 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         }
     }
 
-    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(KafkaServiceConfiguration serviceConfig) {
+    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(
+            KafkaServiceConfiguration serviceConfig) {
         try {
             try {
                 Constructor<NettyServerSslContextBuilder> constructor283 =
