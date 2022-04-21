@@ -114,7 +114,8 @@ public class KafkaProtocolProxyMain {
             try {
                 proxyService.addPrometheusRawMetricsProvider(statsProvider);
             } catch (NoSuchMethodError notAvailableOnPulsar210) {
-                log.error("Metrics are not available on this version of Pulsar due to {}", notAvailableOnPulsar210 + "");
+                log.error("Metrics are not available on this version of Pulsar due to {}",
+                        notAvailableOnPulsar210 + "");
             }
             authenticationService = proxyService.getAuthenticationService();
             if (proxyService.getDiscoveryProvider() != null) {
