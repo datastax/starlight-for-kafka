@@ -256,7 +256,7 @@ public class SimpleAclAuthorizerTest extends KopProtocolHandlerTestBase {
                 new KafkaPrincipal(KafkaPrincipal.USER_TYPE, TENANT_ADMIN_USER, null,
                         new AuthenticationDataCommand(TENANT_ADMIN_USER)),
                 Resource.of(ResourceType.TOPIC, TOPIC)).get();
-        assertFalse(isAuthorized);
+        assertTrue(isAuthorized);
 
         // TENANT_ADMIN_USER can create or delete Topic
         isAuthorized = simpleAclAuthorizer.canManageTenantAsync(
