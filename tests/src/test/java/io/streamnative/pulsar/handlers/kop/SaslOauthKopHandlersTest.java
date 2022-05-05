@@ -57,6 +57,7 @@ import sh.ory.hydra.model.OAuth2Client;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
+@Test(enabled=false)
 public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
