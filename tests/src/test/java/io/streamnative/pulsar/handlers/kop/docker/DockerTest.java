@@ -28,32 +28,26 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LS280 = "datastax/lunastreaming:2.8.0_1.1.40";
-    private static final String IMAGE_LS283 = "datastax/lunastreaming:2.8.3_1.0.7";
-    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
+    private static final String IMAGE_PULSAR210 = "harbor.sjc.dsinternal.org/pulsar/lunastreaming:latest-210";
 
     @Test
     public void test() throws Exception {
-        test("pulsar:9092", false);
+        test("pulsar:9092", false, IMAGE_PULSAR210);
     }
 
     @Test
     public void testProxy() throws Exception {
-        test("pulsarproxy:9092", true);
+        test("pulsarproxy:9092", true, IMAGE_PULSAR210);
     }
 
     @Test
     public void testAvro() throws Exception {
-        testAvro("pulsar:9092", "http://pulsar:8001", false);
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_PULSAR210);
     }
 
     @Test
     public void testAvroProxy() throws Exception {
-        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true);
-    }
-
-    private void test(String kafkaAddress, boolean proxy) throws Exception {
-        test(kafkaAddress, proxy, IMAGE_PULSAR210);
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR210);
     }
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
@@ -106,11 +100,11 @@ public class DockerTest {
         }
     }
 
-    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy) throws Exception {
+    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy, String image) throws Exception {
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, IMAGE_LS280);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image);) {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);
