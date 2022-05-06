@@ -586,6 +586,17 @@
       <url>https://repo.datastax.com/artifactory/datastax-public-releases-local</url>
     </repository>
 
+    <repository>
+      <id>datastax-snapshots-local</id>
+      <url>https://repo.sjc.dsinternal.org/artifactory/datastax-snapshots-local</url>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+    </repository>
+
   </repositories>
 
   <distributionManagement>
