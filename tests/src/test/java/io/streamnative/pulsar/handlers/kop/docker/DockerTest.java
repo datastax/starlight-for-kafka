@@ -38,19 +38,8 @@ public class DockerTest {
     }
 
     @Test
-    public void testProxyLS280() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_LS280);
-    }
-
-    @Test
-    public void testProxyLS283() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_LS283);
-    }
-
-    @Test
-    @Ignore("Error: Unexpected latest offset -1 (< 0) for topic persistent://public/default/test-partition-0")
-    public void testProxyPulsar210() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_PULSAR210);
+    public void testProxy() throws Exception {
+        test("pulsarproxy:9092", true);
     }
 
     @Test
@@ -64,7 +53,7 @@ public class DockerTest {
     }
 
     private void test(String kafkaAddress, boolean proxy) throws Exception {
-        test(kafkaAddress, proxy, IMAGE_LS280);
+        test(kafkaAddress, proxy, IMAGE_PULSAR210);
     }
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {

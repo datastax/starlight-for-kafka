@@ -284,7 +284,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     /**
      * Returns the position in the ManagedLedger for the given offset.
      * @param offset
-     * @return null if not found, PositionImpl.latest if the offset matches the end of the topic
+     * @return null if not found, PositionImpl.LATEST if the offset matches the end of the topic
      */
     public CompletableFuture<Position> findPositionForIndex(Long offset) {
         if (closed.get()) {
@@ -303,7 +303,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     && Objects.equals(lastConfirmedEntry.getNext(), position)) {
                 log.debug("Found position {} for offset {}, LAC {} -> RETURN LATEST",
                         position, offset, lastConfirmedEntry);
-                return PositionImpl.latest;
+                return PositionImpl.LATEST;
             } else {
                 return position;
             }

@@ -589,7 +589,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 String tenant = namespace.substring(0, slash);
                 results.add(pulsarService.getPulsarResources()
                         .getNamespaceResources()
-                        .getChildrenAsync(path(tenant))
+                        .listNamespacesAsync(tenant)
                         .thenAccept(children -> {
                             children.forEach(ns -> {
                                 result.add(tenant + "/" + ns);

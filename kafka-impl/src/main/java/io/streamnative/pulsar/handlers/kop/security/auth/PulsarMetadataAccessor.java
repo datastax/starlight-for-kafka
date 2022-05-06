@@ -40,25 +40,17 @@ public interface PulsarMetadataAccessor {
 
         private PulsarService pulsarService;
 
-        private static String path(String... parts) {
-            StringBuilder sb = new StringBuilder();
-            sb.append(POLICY_ROOT);
-            Joiner.on('/').appendTo(sb, parts);
-            return sb.toString();
-        }
-
         public CompletableFuture<Optional<TenantInfo>> getTenantInfoAsync(String tenant) {
             return pulsarService.getPulsarResources()
                         .getTenantResources()
-                        .getAsync(path(tenant));
+                        .getTenantAsync(tenant);
         }
 
         public CompletableFuture<Optional<Policies>> getNamespacePoliciesAsync(NamespaceName namespace) {
-                String policiesPath = path(namespace.toString());
                 return pulsarService
                         .getPulsarResources()
                         .getNamespaceResources()
-                        .getAsync(policiesPath);
+                        .getPoliciesAsync(namespace.getNamespaceObject());
         }
 
         public ServiceConfiguration getConfiguration() {

@@ -587,7 +587,7 @@ public final class MessageFetchContext {
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);
             }
-        }, null, PositionImpl.latest);
+        }, null, PositionImpl.LATEST);
 
         return readFuture;
     }
