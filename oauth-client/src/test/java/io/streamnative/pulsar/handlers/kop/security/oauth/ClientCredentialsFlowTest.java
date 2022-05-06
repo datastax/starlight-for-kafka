@@ -20,7 +20,7 @@ import org.testng.annotations.Test;
 
 public class ClientCredentialsFlowTest {
 
-    @Test
+    @Test(enabled = false)
     public void testFindAuthorizationServer() throws IOException {
         final ClientCredentialsFlow flow = new ClientCredentialsFlow(ClientConfigHelper.create(
                 "http://localhost:4444", // a local OAuth2 server started by init_hydra_oauth_server.sh
