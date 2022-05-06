@@ -13,8 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop.schemaregistry.model;
 
-import static junit.framework.TestCase.assertFalse;
-import static org.testng.AssertJUnit.assertTrue;
+import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
 
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.impl.MemorySchemaStorage;
 import java.util.HashSet;
