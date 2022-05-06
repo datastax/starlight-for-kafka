@@ -57,7 +57,6 @@ import sh.ory.hydra.model.OAuth2Client;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
-@Test(enabled=false)
 public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
@@ -158,12 +157,12 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         return "file://" + file.getAbsolutePath();
     }
 
-    @Test(timeOut = 15000)
+    @Test(timeOut = 15000, enabled = false)
     public void testSimpleProduceConsume() throws Exception {
         super.testSimpleProduceConsume();
     }
 
-    @Test(timeOut = 15000)
+    @Test(timeOut = 15000, enabled = false)
     public void testGrantAndRevokePermission() throws Exception {
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
         final String topic = "test-grant-and-revoke-permission";
@@ -197,7 +196,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         Assert.assertEquals(records.iterator().next().value(), "msg-0");
     }
 
-    @Test(timeOut = 15000)
+    @Test(timeOut = 15000, enabled = false)
     public void testWrongSecret() throws IOException {
         final Properties producerProps = newKafkaProducerProperties();
         internalConfigureOauth2(producerProps,
@@ -210,7 +209,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         }
     }
 
-    @Test(timeOut = 15000)
+    @Test(timeOut = 15000, enabled = false)
     public void testProduceWithoutAuth() throws Exception {
         super.testProduceWithoutAuth();
     }
