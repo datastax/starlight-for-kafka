@@ -251,6 +251,8 @@ public class MetadataUtils {
                         namespaces.setNamespaceMessageTTL(kafkaNamespace, targetMessageTTL);
                     }
                 }
+
+                namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
             }
         } else {
             List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);
