@@ -22,7 +22,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.OutputFrame;
-import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 @Slf4j

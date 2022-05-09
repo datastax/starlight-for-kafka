@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.security.auth;
 
-import com.google.common.base.Joiner;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
