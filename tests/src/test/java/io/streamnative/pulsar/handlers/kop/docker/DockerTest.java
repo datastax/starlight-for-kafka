@@ -27,7 +27,8 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_PULSAR210 = "harbor.sjc.dsinternal.org/pulsar/lunastreaming:latest-210";
+    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_0.1";
+    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
 
     @Test
     public void test() throws Exception {
@@ -47,6 +48,26 @@ public class DockerTest {
     @Test
     public void testAvroProxy() throws Exception {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR210);
+    }
+
+    @Test
+    public void testLunaStreaming() throws Exception {
+        test("pulsar:9092", false, IMAGE_LUNASTREAMING210);
+    }
+
+    @Test
+    public void testProxyLunaStreaming() throws Exception {
+        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING210);
+    }
+
+    @Test
+    public void testAvroLunaStreaming() throws Exception {
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING210);
+    }
+
+    @Test
+    public void testAvroProxyLunaStreaming() throws Exception {
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210);
     }
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
