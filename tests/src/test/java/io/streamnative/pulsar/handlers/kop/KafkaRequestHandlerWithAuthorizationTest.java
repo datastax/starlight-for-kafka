@@ -28,6 +28,7 @@ import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.concurrent.EventExecutor;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
@@ -166,6 +167,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         ChannelHandlerContext mockCtx = mock(ChannelHandlerContext.class);
         Channel mockChannel = mock(Channel.class);
         doReturn(mockChannel).when(mockCtx).channel();
+        EventExecutor executor = pulsar.getBrokerService()
+                .getListenChannel().eventLoop();
+        doReturn(executor).when(mockCtx).executor();
         handler.ctx = mockCtx;
 
         serviceAddress = new InetSocketAddress(pulsar.getBindAddress(), kafkaBrokerPort);

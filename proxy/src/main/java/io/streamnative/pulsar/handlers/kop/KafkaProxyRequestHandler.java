@@ -292,7 +292,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void completeCloseOnAuthenticationFailure() {
         if (isActive.get() && authenticator != null) {
-            authenticator.sendAuthenticationFailureResponse();
+            authenticator.sendAuthenticationFailureResponse(__ -> {});
         }
     }
 

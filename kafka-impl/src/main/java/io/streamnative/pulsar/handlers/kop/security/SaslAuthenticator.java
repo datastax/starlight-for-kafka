@@ -20,6 +20,8 @@ import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
@@ -29,6 +31,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.sasl.SaslException;
@@ -40,6 +43,8 @@ import org.apache.bookkeeper.util.MathUtils;
 import org.apache.kafka.common.errors.AuthenticationException;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ApiVersionsRequestData;
+import org.apache.kafka.common.errors.IllegalSaslStateException;
+import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -68,11 +73,12 @@ public class SaslAuthenticator {
 
     public static final String USER_NAME_PROP = "username";
     public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
+    public static final String AUTHENTICATION_SERVER_OBJ = "authenticationServerObj";
 
     private static final byte[] EMPTY_BUFFER = new byte[0];
 
     @Getter
-    private static volatile AuthenticationService authenticationService = null;
+    private final AuthenticationService authenticationService;
 
     private final PulsarAdmin admin;
     private final Set<String> allowedMechanisms;
@@ -114,7 +120,7 @@ public class SaslAuthenticator {
 
     /**
      * Build a {@link ByteBuf} response on authenticate failure. The actual response is sent out when
-     * {@link #sendAuthenticationFailureResponse()} is called.
+     * {@link #sendAuthenticationFailureResponse(Consumer)} is called.
      */
     private void buildResponseOnAuthenticateFailure(RequestHeader header,
                                                     AbstractRequest request,
@@ -126,24 +132,19 @@ public class SaslAuthenticator {
     /**
      * Send any authentication failure response that may have been previously built.
      */
-    public void sendAuthenticationFailureResponse() {
+    public void sendAuthenticationFailureResponse(Consumer<Future<? super Void>> listener) {
         if (authenticationFailureResponse == null) {
+            listener.accept(null);
             return;
         }
-        this.sendKafkaResponse(authenticationFailureResponse);
+        this.sendKafkaResponse(authenticationFailureResponse, listener::accept);
         authenticationFailureResponse = null;
-    }
-
-    private static void setCurrentAuthenticationService(AuthenticationService authenticationService) {
-        if (SaslAuthenticator.authenticationService == null) {
-            SaslAuthenticator.authenticationService = authenticationService;
-        }
     }
 
     public SaslAuthenticator(PulsarService pulsarService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        setCurrentAuthenticationService(pulsarService.getBrokerService().getAuthenticationService());
+        this.authenticationService = pulsarService.getBrokerService().getAuthenticationService();
         this.admin = pulsarService.getAdminClient();
         this.allowedMechanisms = allowedMechanisms;
         this.proxyRoles = config.getProxyRoles();
@@ -164,7 +165,7 @@ public class SaslAuthenticator {
                              AuthenticationService authenticationService,
                              Set<String> allowedMechanisms,
                              KafkaServiceConfiguration config) throws PulsarServerException {
-        setCurrentAuthenticationService(authenticationService);
+        this.authenticationService = authenticationService;
         this.proxyRoles = config.getProxyRoles();
         this.admin = admin;
         this.allowedMechanisms = allowedMechanisms;
@@ -262,7 +263,9 @@ public class SaslAuthenticator {
                 "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule",
                 AppConfigurationEntry.LoginModuleControlFlag.REQUIRED,
                 oauth2Configs);
-        handler.configure(null, OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
+        HashMap<String, Object> configs = new HashMap<>();
+        configs.put(AUTHENTICATION_SERVER_OBJ, this.getAuthenticationService());
+        handler.configure(configs, OAuthBearerLoginModule.OAUTHBEARER_MECHANISM,
                 Collections.singletonList(appConfigurationEntry));
         return handler;
     }
@@ -359,9 +362,10 @@ public class SaslAuthenticator {
         });
     }
 
-    private void sendKafkaResponse(ByteBuf response) {
+    private void sendKafkaResponse(ByteBuf response,
+                                   GenericFutureListener<? extends Future<? super Void>> listener) {
         ctx.channel().eventLoop().execute(() -> {
-            ctx.channel().writeAndFlush(response);
+            ctx.channel().writeAndFlush(response).addListener(listener);
         });
     }
 
@@ -419,15 +423,20 @@ public class SaslAuthenticator {
                 nioBuffer.get(clientToken, 0, clientToken.length);
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
-                    final Session newSession = new Session(
-                            new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
-                                    (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                    (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
-                            "old-clientId");
-                    if (!tenantAccessValidationFunction.apply(newSession)) {
-                        throw new AuthenticationException("User is not allowed to access this tenant");
-                    }
                     ByteBuf byteBuf = sizePrefixed(ByteBuffer.wrap(response));
+                    final Session newSession;
+                    if (saslServer.isComplete()) {
+                        newSession = new Session(
+                                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
+                                        safeGetProperty(saslServer, USER_NAME_PROP),
+                                        safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
+                                "old-clientId");
+                        if (!tenantAccessValidationFunction.apply(newSession)) {
+                            throw new AuthenticationException("User is not allowed to access this tenant");
+                        }
+                    } else {
+                        newSession = null;
+                    }
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {
                         if (!future.isSuccess()) {
                             log.error("[{}] Failed to write {}", ctx.channel(), future.cause());
@@ -506,23 +515,21 @@ public class SaslAuthenticator {
                     buildResponseOnAuthenticateFailure(header, request, null, e);
                     throw e;
                 }
+                registerRequestLatency.accept(apiKey, startProcessTime);
                 sendKafkaResponse(ctx,
                         header,
                         request,
                         KafkaResponseUtils.newSaslAuthenticate(responseBuf),
                         null);
-                if (log.isDebugEnabled()) {
-                    log.debug("Authenticate successfully for client, header {}, request {}, session {} username {},"
-                                    + " authDataSource {}",
-                            header, saslAuthenticateRequest, session,
-                            saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                            saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP));
-                }
+            } catch (SaslAuthenticationException e) {
+                buildResponseOnAuthenticateFailure(header, request,
+                        KafkaResponseUtils.newSaslAuthenticate(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), e);
+                throw e;
             } catch (SaslException e) {
                 registerRequestLatency.accept(apiKey, startProcessTime);
                 buildResponseOnAuthenticateFailure(header, request,
                         KafkaResponseUtils.newSaslAuthenticate(Errors.SASL_AUTHENTICATION_FAILED, e.getMessage()), e);
-                sendAuthenticationFailureResponse();
+                sendAuthenticationFailureResponse((__ -> {}));
                 if (log.isDebugEnabled()) {
                     log.debug("Authenticate failed for client, header {}, request {}, reason {}",
                             header, saslAuthenticateRequest, e.getMessage(), e);
