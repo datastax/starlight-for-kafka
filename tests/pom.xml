@@ -52,12 +52,6 @@
       <version>${kafka.version}</version>
     </dependency>
     <dependency>
-      <groupId>org.codehaus.jackson</groupId>
-      <artifactId>jackson-mapper-asl</artifactId>
-      <version>1.9.13</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
       <groupId>io.streamnative.pulsar.handlers</groupId>
       <artifactId>pulsar-protocol-handler-kafka</artifactId>
       <version>${project.version}</version>
@@ -187,6 +181,11 @@
       <groupId>sh.ory.hydra</groupId>
       <artifactId>hydra-client</artifactId>
       <version>${hydra.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.fusionauth</groupId>
+      <artifactId>fusionauth-jwt</artifactId>
     </dependency>
 
   </dependencies>
