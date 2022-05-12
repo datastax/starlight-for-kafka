@@ -272,6 +272,12 @@
         <version>${commons-compress.version}</version>
       </dependency>
       <dependency>
+        <groupId>io.fusionauth</groupId>
+        <artifactId>fusionauth-jwt</artifactId>
+        <version>${fusionauth-jwt.version}</version>
+      </dependency>
+
+      <dependency>
         <groupId>io.streamnative.pulsar.handlers</groupId>
         <artifactId>test-listener</artifactId>
         <version>${project.version}</version>
