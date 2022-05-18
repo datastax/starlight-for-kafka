@@ -54,7 +54,7 @@ public final class MessagePublishContext implements PublishContext {
      *
      * See: https://github.com/streamnative/kop/issues/1225
      */
-    //@Override  we need a release of LS for this
+    @Override
     public boolean isMarkerMessage() {
         return !this.enableDeduplication;
     }
