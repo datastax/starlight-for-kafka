@@ -330,13 +330,12 @@ public class SimpleAclAuthorizer implements Authorizer {
     public CompletableFuture<Boolean> canGetTopicList(KafkaPrincipal principal, Resource resource) {
         checkArgument(resource.getResourceType() == ResourceType.NAMESPACE,
                 String.format("Expected resource type is NAMESPACE, but have [%s]", resource.getResourceType()));
-        // this is different from KOP because we would need changes from Pulsar 2.9
-//        return authorizationService.allowNamespaceOperationAsync(
-//                NamespaceName.get(resource.getName()),
-//                NamespaceOperation.GET_TOPICS,
-//                principal.getName(),
-//                principal.getAuthenticationData());
-        return canConsumeAsync(principal, Resource.of(ResourceType.TOPIC, resource.getName() + "/*"));
+
+        return authorizationService.allowNamespaceOperationAsync(
+                NamespaceName.get(resource.getName()),
+                NamespaceOperation.GET_TOPICS,
+                principal.getName(),
+                principal.getAuthenticationData());
     }
 
     @Override
