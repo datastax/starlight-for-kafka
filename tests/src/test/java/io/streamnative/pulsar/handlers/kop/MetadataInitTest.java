@@ -20,6 +20,7 @@ import static org.testng.Assert.assertThrows;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.Optional;
@@ -113,12 +114,21 @@ public class MetadataInitTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-    private static String getProtocolHandlerDirectory() throws URISyntaxException {
-        final URL url = MetadataInitTest.class.getClassLoader().getResource("test-protocol-handler.nar");
-        if (url == null) {
-            throw new IllegalStateException("Failed to load test-protocol-handler.nar from resource directory");
+    protected String getProtocolHandlerDirectory() {
+        URL testHandlerUrl = this.getClass().getResource(PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
+        Path handlerPath;
+        try {
+            if (testHandlerUrl == null) {
+                throw new RuntimeException("Cannot find " + PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR);
+            }
+            handlerPath = Paths.get(testHandlerUrl.toURI());
+        } catch (Exception e) {
+            log.error("failed to get handler Path, handlerUrl: {}. Exception: ", testHandlerUrl, e);
+            throw new RuntimeException(e);
         }
-        return Paths.get(url.toURI()).toFile().getParent();
+
+        String protocolHandlerDir = handlerPath.toFile().getParent();
+        return protocolHandlerDir;
     }
 
     private KafkaServiceConfiguration createConfig() {
