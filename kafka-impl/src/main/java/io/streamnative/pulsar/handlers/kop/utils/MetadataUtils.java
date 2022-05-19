@@ -17,7 +17,6 @@ import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.internals.Topic;

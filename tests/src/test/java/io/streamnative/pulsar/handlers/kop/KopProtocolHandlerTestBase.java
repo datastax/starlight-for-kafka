@@ -329,11 +329,12 @@ public abstract class KopProtocolHandlerTestBase {
             startBroker();
             createAdmin();
             createClient();
-
             MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
             if (conf.isKafkaTransactionCoordinatorEnabled()) {
                 MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
             }
+            // we don't want user topic to use compaction
+            admin.namespaces().removeCompactionThreshold(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
         }
 
     }

@@ -18,7 +18,6 @@ import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertThrows;
 
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
