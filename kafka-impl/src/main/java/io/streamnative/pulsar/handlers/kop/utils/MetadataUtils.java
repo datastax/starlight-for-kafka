@@ -223,36 +223,22 @@ public class MetadataUtils {
 
             // set namespace config only when offset metadata namespace first create
             if (isMetadataNamespace) {
-                int retentionMinutes = (int) conf.getOffsetsRetentionMinutes();
-                int retentionSizeInMB = conf.getSystemTopicRetentionSizeInMB();
-                RetentionPolicies retentionPolicies = namespaces.getRetention(kafkaNamespace);
-
-                if (retentionPolicies == null
-                        || retentionPolicies.getRetentionTimeInMinutes() != retentionMinutes
-                        || retentionPolicies.getRetentionSizeInMB() != retentionSizeInMB
-                ) {
-                    namespaces.setRetention(kafkaNamespace,
-                            new RetentionPolicies((int) conf.getOffsetsRetentionMinutes(), retentionSizeInMB));
+                if (infiniteRetention) {
+                    log.info("Namespaces: {}, setting infinite retention",
+                            kafkaNamespace, tenant);
+                    namespaces.setRetention(kafkaNamespace, new RetentionPolicies(-1, -1)
+                    );
+                } else {
+                    log.info("Namespaces: {}, setting retention and TTL",
+                            kafkaNamespace, tenant);
+                    namespaces.setRetention(kafkaNamespace, new RetentionPolicies(
+                            (int) conf.getOffsetsRetentionMinutes(),
+                            conf.getSystemTopicRetentionSizeInMB())
+                    );
+                    namespaces.setNamespaceMessageTTL(kafkaNamespace, conf.getOffsetsMessageTTL());
                 }
-
-                if (!infiniteRetention) {
-                    Long compactionThreshold = namespaces.getCompactionThreshold(kafkaNamespace);
-                    if (compactionThreshold != null && compactionThreshold != MAX_COMPACTION_THRESHOLD) {
-                        namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
-                    }
-                }
-
-                Integer targetMessageTTL = infiniteRetention ? null : conf.getOffsetsMessageTTL();
-                Integer messageTTL = namespaces.getNamespaceMessageTTL(kafkaNamespace);
-                if (messageTTL == null || !Objects.equals(messageTTL, targetMessageTTL)) {
-                    if (targetMessageTTL == null) {
-                        namespaces.removeNamespaceMessageTTL(kafkaNamespace);
-                    } else {
-                        namespaces.setNamespaceMessageTTL(kafkaNamespace, targetMessageTTL);
-                    }
-                }
-
                 namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
+
             }
         } else {
             List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);
