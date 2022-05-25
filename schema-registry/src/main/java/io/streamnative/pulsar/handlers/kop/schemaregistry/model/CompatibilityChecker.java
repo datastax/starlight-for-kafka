@@ -70,7 +70,7 @@ public class CompatibilityChecker {
         final List<Integer> idsToCheck;
         if (mode == Mode.BACKWARD || mode == Mode.FORWARD) {
             // only latest
-            idsToCheck = Arrays.asList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
+            idsToCheck = Collections.singletonList(versions.stream().mapToInt(Integer::intValue).max().getAsInt());
         } else {
             // all the versions
             idsToCheck = versions;
@@ -90,35 +90,8 @@ public class CompatibilityChecker {
             return true;
         }
         io.apicurio.registry.rules.compatibility.CompatibilityChecker checker = createChecker(type);
-        boolean onlyLatest = false;
-        CompatibilityLevel level;
-        switch (mode) {
-            case BACKWARD:
-                level = CompatibilityLevel.BACKWARD;
-                onlyLatest = true;
-                break;
-            case BACKWARD_TRANSITIVE:
-                level = CompatibilityLevel.BACKWARD_TRANSITIVE;
-                break;
-            case FORWARD:
-                level = CompatibilityLevel.FORWARD;
-                onlyLatest = true;
-                break;
-            case FORWARD_TRANSITIVE:
-                level = CompatibilityLevel.FORWARD_TRANSITIVE;
-                break;
-            case FULL:
-                level = CompatibilityLevel.FULL;
-                onlyLatest = true;
-                break;
-            case FULL_TRANSITIVE:
-                level = CompatibilityLevel.FULL_TRANSITIVE;
-                break;
-            default:
-                level = CompatibilityLevel.NONE;
-                onlyLatest = true;
-                break;
-        }
+        final boolean onlyLatest = mode.checkOnlyLatest();
+        final CompatibilityLevel level = mode.toCompatibilityLevel();
         List<String> schemas = allSchemas
                 .stream()
                 .sorted(Comparator.comparingInt(Schema::getId))
@@ -128,21 +101,23 @@ public class CompatibilityChecker {
             // only latest
             schemas = schemas.subList(schemas.size() - 1, schemas.size());
         }
-        log.info("New schema {}", schemaDefinition);
-        for (String s : schemas) {
-            log.info("Existing schema {}", s);
+        if (log.isDebugEnabled()) {
+            log.debug("New schema {}", schemaDefinition);
+            for (String s : schemas) {
+                log.debug("Existing schema {}", s);
+            }
         }
         try {
             CompatibilityExecutionResult compatibilityExecutionResult =
                     checker.testCompatibility(level, schemas, schemaDefinition);
-            log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
             if (!compatibilityExecutionResult.isCompatible()) {
+                log.info("CompatibilityExecutionResult {}", compatibilityExecutionResult.isCompatible());
                 for (CompatibilityDifference error : compatibilityExecutionResult.getIncompatibleDifferences()) {
                     log.info("CompatibilityExecutionResult error {}", error);
                 }
             }
             return compatibilityExecutionResult.isCompatible();
-        } catch (java.lang.IllegalStateException notSupported) {
+        } catch (IllegalStateException notSupported) {
             return false;
         }
     }
@@ -172,6 +147,29 @@ public class CompatibilityChecker {
 
         public static final Collection<Mode> SUPPORTED_FOR_PROTOBUF =
                 Collections.unmodifiableCollection(Arrays.asList(BACKWARD, BACKWARD_TRANSITIVE, NONE));
+
+        public CompatibilityLevel toCompatibilityLevel() {
+            switch (this) {
+                case BACKWARD:
+                    return CompatibilityLevel.BACKWARD;
+                case BACKWARD_TRANSITIVE:
+                    return CompatibilityLevel.BACKWARD_TRANSITIVE;
+                case FORWARD:
+                    return CompatibilityLevel.FORWARD;
+                case FORWARD_TRANSITIVE:
+                    return CompatibilityLevel.FORWARD_TRANSITIVE;
+                case FULL:
+                    return CompatibilityLevel.FULL;
+                case FULL_TRANSITIVE:
+                    return CompatibilityLevel.FULL_TRANSITIVE;
+                default:
+                    return CompatibilityLevel.NONE;
+            }
+        }
+
+        public boolean checkOnlyLatest() {
+            return this == BACKWARD || this == FORWARD || this == FULL || this == NONE;
+        }
     }
 
     public static final class IncompatibleSchemaChangeException extends RuntimeException {

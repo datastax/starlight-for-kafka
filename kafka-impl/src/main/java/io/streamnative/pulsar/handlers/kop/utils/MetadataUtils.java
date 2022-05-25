@@ -126,8 +126,8 @@ public class MetadataUtils {
             log.info("Skipping initialization of topic {} for tenant {}", kopTopic.getFullName(), tenant);
             return;
         }
-        String cluster = conf.getClusterName();
         String kafkaMetadataNamespace = tenant + "/" + namespace;
+        String cluster = conf.getClusterName();
         log.info("createKafkaMetadataIfMissing {}", kafkaMetadataNamespace);
 
         boolean clusterExists = false;
@@ -237,7 +237,6 @@ public class MetadataUtils {
                     namespaces.setNamespaceMessageTTL(kafkaNamespace, conf.getOffsetsMessageTTL());
                 }
                 namespaces.setCompactionThreshold(kafkaNamespace, MAX_COMPACTION_THRESHOLD);
-
             }
         } else {
             List<String> replicationClusters = namespaces.getNamespaceReplicationClusters(kafkaNamespace);

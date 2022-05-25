@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -202,9 +203,6 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
             });
         } else {
             // we are happy with the result, so return it to the caller
-            if (isDeleted.apply(res)) {
-                return CompletableFuture.completedFuture(null);
-            }
             return CompletableFuture.completedFuture(res);
         }
 
@@ -220,7 +218,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .sorted(Comparator.comparing(SchemaEntry::getId)) // this is good for unit tests
                         .collect(Collectors.toList())
                 , (res) -> false  // not applicable
-                , (res) -> res.isEmpty())  // fetch again if nothing found, useful for demos/testing
+                , List::isEmpty)  // fetch again if nothing found, useful for demos/testing
                 .thenApply(l -> {
                     return l
                             .stream()
@@ -315,7 +313,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
         try {
             return MAPPER.writeValueAsBytes(op);
         } catch (JsonProcessingException err) {
-            throw new RuntimeException(err);
+            throw new IllegalArgumentException(err);
         }
     }
 
@@ -383,8 +381,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .filter(s -> s.getTenant().equals(tenant)
                             && s.getSubject().equals(subject)
                             && s.getSchemaDefinition().equals(schemaDefinition))
-                    .sorted(Comparator.comparing(SchemaEntry::getVersion).reversed())
-                    .findFirst()
+                    .max(Comparator.comparing(SchemaEntry::getVersion))
                     .orElse(null));
             return found.thenCompose(schemaEntry -> {
                 if (schemaEntry != null) {
@@ -422,14 +419,11 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                         .stream()
                         .filter(s -> s.getSubject().equals(subject)
                                 && s.getSchemaDefinition().equals(schemaDefinition))
-                        .sorted(Comparator.comparing(SchemaEntry::getVersion).reversed())
-                        .findFirst()
+                        .max(Comparator.comparing(SchemaEntry::getVersion))
                         .orElse(null);
 
                 if (found != null) {
-                    List<Map.Entry<Op, SchemaEntry>> cachedRes =
-                            Arrays.asList(new AbstractMap.SimpleImmutableEntry<>((Op) null, found));
-                    return cachedRes;
+                    return Collections.singletonList(new AbstractMap.SimpleImmutableEntry<>((Op) null, found));
                 }
             }
 
@@ -472,8 +466,7 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .stream()
                     .filter(s -> s.getSubject().equals(subject))
                     .map(SchemaEntry::getVersion)
-                    .sorted(Comparator.reverseOrder())
-                    .findFirst()
+                    .max(Comparator.reverseOrder())
                     .orElse(0) + 1;
             Op newSchema = Op
                     .builder()
@@ -485,7 +478,8 @@ public class PulsarSchemaStorage implements SchemaStorage, Closeable {
                     .tenant(tenant)
                     .build();
 
-            return Arrays.asList(new AbstractMap.SimpleImmutableEntry<>(newSchema, newSchema.toSchemaEntry()));
+            return Collections.singletonList(
+                    new AbstractMap.SimpleImmutableEntry<>(newSchema, newSchema.toSchemaEntry()));
         };
     }
 

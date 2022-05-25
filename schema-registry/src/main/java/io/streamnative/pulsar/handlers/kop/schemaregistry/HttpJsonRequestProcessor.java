@@ -20,6 +20,7 @@ import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.io.DataInput;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -56,17 +57,13 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
         if (!request.method().name().equals(method)) {
             return false;
         }
-        List<String> groups = detectGroups(request);
-        if (groups == null) {
-            return false;
-        }
-        return true;
+        return detectGroups(request) != null;
     }
 
     @Override
     public CompletableFuture<FullHttpResponse> processRequest(FullHttpRequest request) {
         List<String> groups = detectGroups(request);
-        try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content());) {
+        try (ByteBufInputStream inputStream = new ByteBufInputStream(request.content())) {
             K decodeRequest;
             if (requestModel == Void.class) {
                 decodeRequest = null;
@@ -92,8 +89,8 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
                 log.error("Error while processing request", err);
                 return buildJsonErrorResponse(err);
             });
-        } catch (Exception err) {
-            log.error("Error while processing request", err);
+        } catch (IOException err) {
+            log.error("Cannot decode request", err);
             return CompletableFuture.completedFuture(buildErrorResponse(HttpResponseStatus.BAD_REQUEST,
                     "Cannot decode request: " + err.getMessage(), "text/plain"));
         }
@@ -101,6 +98,9 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
 
     private List<String> detectGroups(FullHttpRequest request) {
         String uri = request.uri();
+        // TODO: here we are discarding the query string part
+        // in the future we will probably have to implement
+        // query string parameters
         int questionMark = uri.lastIndexOf('?');
         if (questionMark > 0) {
             uri = uri.substring(0, questionMark);
