@@ -1561,7 +1561,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             });
         }
         TransactionCoordinator transactionCoordinator = null;
-        if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)) {
+        if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)
+                && kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             transactionCoordinator = getTransactionCoordinator();
         }
         String namespacePrefix = currentNamespacePrefix();
