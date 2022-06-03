@@ -20,6 +20,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
