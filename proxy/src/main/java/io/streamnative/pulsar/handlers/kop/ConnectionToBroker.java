@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import io.netty.bootstrap.Bootstrap;
@@ -31,6 +32,8 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.handler.ssl.SslHandler;
+import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.AbstractMap;
@@ -54,6 +57,7 @@ import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 @Slf4j
 class ConnectionToBroker {
@@ -66,6 +70,8 @@ class ConnectionToBroker {
     private final ConcurrentHashMap<Integer, PendingAction> pendingRequests = new ConcurrentHashMap<>();
     private volatile boolean closed;
     private CompletableFuture<Channel> connectionFuture;
+    private final SslContextFactory.Client sslContextFactory;
+    private boolean enableTls;
 
     ConnectionToBroker(KafkaProxyRequestHandler kafkaProxyRequestHandler, String connectionKey, String brokerHost,
                        int brokerPort) {
@@ -73,6 +79,13 @@ class ConnectionToBroker {
         this.connectionKey = connectionKey;
         this.brokerHost = brokerHost;
         this.brokerPort = brokerPort;
+        KafkaServiceConfiguration kafkaConfig = kafkaProxyRequestHandler.getKafkaConfig();
+        this.enableTls = kafkaConfig.isKopTlsEnabledWithBroker();
+        if (this.enableTls) {
+            sslContextFactory = SSLUtils.createClientSslContextFactory(kafkaConfig);
+        } else {
+            sslContextFactory = null;
+        }
     }
 
     private synchronized CompletableFuture<Channel> ensureConnection() {
@@ -97,6 +110,10 @@ class ConnectionToBroker {
         b.handler(new ChannelInitializer<SocketChannel>() {
             @Override
             public void initChannel(SocketChannel ch) throws Exception {
+                if (enableTls) {
+                    ch.pipeline().addLast(TLS_HANDLER,
+                            new SslHandler(SSLUtils.createClientSslEngine(sslContextFactory)));
+                }
                 ch.pipeline().addLast(new LengthFieldPrepender(4));
                 ch.pipeline().addLast("frameDecoder",
                         new LengthFieldBasedFrameDecoder(KafkaProxyChannelInitializer.MAX_FRAME_LENGTH, 0, 4, 0, 4));

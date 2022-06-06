@@ -320,8 +320,13 @@ public class KafkaProtocolProxyMain {
             } else {
                 res = rawServiceUrl.substring(0, colon + 1) + kafkaConfig.getKopSchemaRegistryPort();
             }
-            // no https to talk with the internal KOP broker
-            res = res.replace("http://", "http://");
+            // no https to talk with the internal KOP broker by default
+            res = res.replace("https://", "http://");
+
+            // force using HTTPs
+            if (kafkaConfig.isKopTlsEnabledWithBroker()) {
+                res = res.replace("http://", "https://");
+            }
             log.info("SchemaRegistry mapping {} to {}", rawServiceUrl, res);
             return res;
         }
