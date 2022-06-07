@@ -37,7 +37,6 @@ public class PulsarSchemaStorageAccessor implements SchemaStorageAccessor {
             String fullTopicName = "persistent://" + t + "/" + namespaceName + "/" + topicName;
             log.info("Building Pulsar Client for Schema Registry for Tenant {}, data topic {}", tenant, fullTopicName);
             PulsarClient pulsarClient = authenticatedClientBuilder.apply(t);
-            log.info("Done {} {}", tenant, fullTopicName);
             return new PulsarSchemaStorage(t, pulsarClient, fullTopicName);
         });
     }
