@@ -57,9 +57,7 @@ import org.apache.pulsar.common.policies.data.ClusterData;
 public class SchemaRegistryManager {
     private final KafkaServiceConfiguration kafkaConfig;
     private final PulsarService pulsar;
-    private final AuthenticationService authenticationService;
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
-    private final Authorizer authorizer;
     private final PulsarClient pulsarClient;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
@@ -68,10 +66,10 @@ public class SchemaRegistryManager {
         this.kafkaConfig = kafkaConfig;
         this.pulsarClient = SystemTopicClient.createPulsarClient(pulsar, kafkaConfig, (___) -> {});
         this.pulsar = pulsar;
-        this.authenticationService = authenticationService;
-        this.authorizer = new SimpleAclAuthorizer(new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
+        Authorizer authorizer = new SimpleAclAuthorizer(
+                new PulsarMetadataAccessor.PulsarServiceMetadataAccessor(pulsar));
         this.schemaRegistryRequestAuthenticator = new HttpRequestAuthenticator(this.kafkaConfig,
-                this.authenticationService, this.authorizer);
+                authenticationService, authorizer);
     }
 
     @AllArgsConstructor
