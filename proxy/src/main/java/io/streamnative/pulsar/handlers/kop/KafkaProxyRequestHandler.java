@@ -97,6 +97,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequest;
+import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
@@ -1412,10 +1413,72 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     protected void handleListOffsetRequestV0(KafkaHeaderAndRequest listOffset,
                                              CompletableFuture<AbstractResponse> resultFuture) {
-        log.error("{} ListOffset v0 is not supported", this);
-        resultFuture.complete(listOffset
-                .getRequest()
-                .getErrorResponse(new Exception("V0 not supported")));
+// use offsetData
+        ListOffsetRequestV0 request =
+                byteBufToListOffsetRequestV0(listOffset.getBuffer());
+
+        Map<TopicPartition, ListOffsetResponse.PartitionData> map = new ConcurrentHashMap<>();
+        AtomicInteger expectedCount = new AtomicInteger(request.offsetData().size());
+
+        BiConsumer<String, ListOffsetResponse> onResponse = (topic, topicResponse) -> {
+            topicResponse.responseData().forEach((tp, data) -> {
+                map.put(tp, data);
+                if (expectedCount.decrementAndGet() == 0) {
+                    ListOffsetResponse response = new ListOffsetResponse(map);
+                    resultFuture.complete(response);
+                }
+            });
+        };
+        String namespacePrefix = currentNamespacePrefix();
+        for (Map.Entry<TopicPartition, ListOffsetRequestV0.PartitionData> entry : request.offsetData().entrySet()) {
+            final String fullPartitionName = KopTopic.toString(entry.getKey(), namespacePrefix);
+
+            int dummyCorrelationId = getDummyCorrelationId();
+            RequestHeader header = new RequestHeader(
+                    listOffset.getHeader().apiKey(),
+                    listOffset.getHeader().apiVersion(),
+                    listOffset.getHeader().clientId(),
+                    dummyCorrelationId
+            );
+
+            Map<TopicPartition, ListOffsetRequestV0.PartitionData> tsData = new HashMap<>();
+            tsData.put(entry.getKey(), entry.getValue());
+            ListOffsetRequestV0 requestForSinglePartition = ListOffsetRequestV0.Builder
+                    .forConsumer(false, request.isolationLevel())
+                    .setOffsetData(tsData)
+                    .build(request.version());
+            ByteBuffer buffer = requestForSinglePartition.serialize(header);
+
+            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                    header,
+                    requestForSinglePartition,
+                    Unpooled.wrappedBuffer(buffer),
+                    null
+            );
+
+            findBroker(TopicName.get(fullPartitionName))
+                    .thenAccept(brokerAddress -> {
+                        grabConnectionToBroker(brokerAddress.leader().host(), brokerAddress.leader().port())
+                                .forwardRequest(singlePartitionRequest)
+                                .thenAccept(theResponse -> {
+                                    onResponse.accept(fullPartitionName, (ListOffsetResponse) theResponse);
+                                }).exceptionally(err -> {
+                                    ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                                    dummyResponse.responseData().put(entry.getKey(),
+                                            new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                                    0, 0, Optional.empty()));
+                                    onResponse.accept(fullPartitionName, dummyResponse);
+                                    return null;
+                                });
+                    }).exceptionally(err -> {
+                        ListOffsetResponse dummyResponse = new ListOffsetResponse(new HashMap<>());
+                        dummyResponse.responseData().put(entry.getKey(),
+                                new ListOffsetResponse.PartitionData(Errors.BROKER_NOT_AVAILABLE,
+                                        0, 0, Optional.empty()));
+                        onResponse.accept(fullPartitionName, dummyResponse);
+                        return null;
+                    });
+        }
     }
 
     protected void handleListOffsetRequestV1(KafkaHeaderAndRequest listOffset,
