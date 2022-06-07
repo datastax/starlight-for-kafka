@@ -41,6 +41,7 @@ import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationProvider;
@@ -59,6 +60,8 @@ public class SchemaRegistryManager {
     private final PulsarService pulsar;
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
     private final PulsarClient pulsarClient;
+    @Getter
+    private volatile SchemaStorageAccessor schemaStorage;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
                                  PulsarService pulsar,
@@ -202,7 +205,7 @@ public class SchemaRegistryManager {
         }
         PulsarAdmin pulsarAdmin = pulsar.getAdminClient();
         SchemaRegistryHandler handler = new SchemaRegistryHandler();
-        SchemaStorageAccessor schemaStorage = new PulsarSchemaStorageAccessor((tenant) -> {
+        schemaStorage = new PulsarSchemaStorageAccessor((tenant) -> {
             try {
                 BrokerService brokerService = pulsar.getBrokerService();
                 final ClusterData clusterData = ClusterData.builder()

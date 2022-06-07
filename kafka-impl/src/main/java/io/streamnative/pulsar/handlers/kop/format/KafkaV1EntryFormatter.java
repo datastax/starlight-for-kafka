@@ -15,9 +15,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import java.util.List;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
@@ -29,6 +27,10 @@ import org.apache.pulsar.common.protocol.Commands;
  */
 @Slf4j
 public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
+
+    public KafkaV1EntryFormatter(boolean applyAvroSchemaOnDecode) {
+        super(applyAvroSchemaOnDecode);
+    }
 
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
@@ -42,11 +44,6 @@ public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
         recordsWrapper.release();
 
         return EncodeResult.get(records, buf, numMessages, 0, 0L);
-    }
-
-    @Override
-    public DecodeResult decode(List<Entry> entries, byte magic) {
-        return super.decode(entries, magic);
     }
 
     private static MessageMetadata getMessageMetadataWithNumberMessages(int numMessages) {

@@ -29,14 +29,15 @@ public class PulsarSchemaStorageAccessor implements SchemaStorageAccessor {
     private final String topicName;
 
     @Override
-    public PulsarSchemaStorage getSchemaStorageForTenant(String tenant) throws SchemaStorageException {
+    public PulsarSchemaStorage getSchemaStorageForTenant(String tenant) {
         if (tenant == null) {
-            throw new SchemaStorageException("Invalid Tenant null");
+            throw new IllegalArgumentException("Invalid Tenant null");
         }
         return tenants.computeIfAbsent(tenant, t -> {
             String fullTopicName = "persistent://" + t + "/" + namespaceName + "/" + topicName;
             log.info("Building Pulsar Client for Schema Registry for Tenant {}, data topic {}", tenant, fullTopicName);
             PulsarClient pulsarClient = authenticatedClientBuilder.apply(t);
+            log.info("Done {} {}", tenant, fullTopicName);
             return new PulsarSchemaStorage(t, pulsarClient, fullTopicName);
         });
     }

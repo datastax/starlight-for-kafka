@@ -33,6 +33,8 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.PulsarAdminSchemaManager;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -185,6 +187,7 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     private static final String POLICY_ROOT = "/admin/policies/";
 
+    private final SchemaRegistryManager schemaRegistryManager;
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
     private final TenantContextManager tenantContextManager;
@@ -294,8 +297,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
-                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               SchemaRegistryManager schemaRegistryManager) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
+        this.schemaRegistryManager = schemaRegistryManager;
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
@@ -2601,4 +2606,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return this.executor;
     }
 
+    public SchemaManager getSchemaManager() {
+        return new PulsarAdminSchemaManager(getCurrentTenant(), getAdmin(),
+                this.schemaRegistryManager.getSchemaStorage());
+    }
 }

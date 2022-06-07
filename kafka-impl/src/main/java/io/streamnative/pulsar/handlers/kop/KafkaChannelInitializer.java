@@ -48,6 +48,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+    private final SchemaRegistryManager schemaRegistryManager;
 
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -75,8 +76,10 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
-                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   SchemaRegistryManager schemaRegistryManager) {
         super();
+        this.schemaRegistryManager = schemaRegistryManager;
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.tenantContextManager = tenantContextManager;
@@ -120,7 +123,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, schemaRegistryManager);
     }
 
     @VisibleForTesting
@@ -130,7 +133,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, schemaRegistryManager);
     }
 
 }

@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.stream.StreamSupport;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
-import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -43,6 +42,10 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     //// for Batch messages
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
+
+    public PulsarEntryFormatter(boolean applyAvroSchemaOnDecode) {
+        super(applyAvroSchemaOnDecode);
+    }
 
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
@@ -111,11 +114,6 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         return EncodeResult.get(records, buf, numMessages, numMessagesInBatch,
                 MathUtils.elapsedNanos(startConversionNanos));
-    }
-
-    @Override
-    public DecodeResult decode(final List<Entry> entries, final byte magic) {
-        return super.decode(entries, magic);
     }
 
     // convert kafka Record to Pulsar Message.

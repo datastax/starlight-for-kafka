@@ -16,12 +16,27 @@ package io.streamnative.pulsar.handlers.kop;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Factory;
 
 /**
  * Test for KoP with Confluent Schema Registry.
  */
 @Slf4j
 public class SchemaRegistryProxyTest extends SchemaRegistryTest {
+
+    @Factory
+    public static Object[] instances() {
+        return new Object[] {
+                new SchemaRegistryProxyTest("pulsar", false),
+                new SchemaRegistryProxyTest("pulsar", true),
+                new SchemaRegistryProxyTest("kafka", false),
+                new SchemaRegistryProxyTest("kafka", true)
+        };
+    }
+
+    public SchemaRegistryProxyTest(String entryFormat, boolean applyAvroSchemaOnDecode) {
+        super(entryFormat, applyAvroSchemaOnDecode);
+    }
 
     @BeforeClass
     @Override

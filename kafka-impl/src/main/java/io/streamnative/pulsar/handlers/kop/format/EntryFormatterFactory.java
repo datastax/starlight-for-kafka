@@ -30,15 +30,16 @@ public class EntryFormatterFactory {
 
     public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig) {
         final String format = kafkaConfig.getEntryFormat();
+        final boolean applyAvroSchemaOnDecode = kafkaConfig.isApplyAvroSchemaOnDecode();
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
             switch (entryFormat) {
                 case PULSAR:
-                    return new PulsarEntryFormatter();
+                    return new PulsarEntryFormatter(applyAvroSchemaOnDecode);
                 case KAFKA:
-                    return new KafkaV1EntryFormatter();
+                    return new KafkaV1EntryFormatter(applyAvroSchemaOnDecode);
                 case MIXED_KAFKA:
-                    return new KafkaMixedEntryFormatter();
+                    return new KafkaMixedEntryFormatter(applyAvroSchemaOnDecode);
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }

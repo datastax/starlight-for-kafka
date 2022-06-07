@@ -103,6 +103,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private OrderedScheduler sendResponseScheduler;
     private NamespaceBundleOwnershipListenerImpl bundleListener;
 
+    @Getter
     private SchemaRegistryManager schemaRegistryManager;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
@@ -406,7 +407,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig.isSkipMessagesWithoutIndex(),
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState,
+                schemaRegistryManager);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
