@@ -15,7 +15,9 @@ package io.streamnative.pulsar.handlers.kop;
 
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Factory;
 
 /**
@@ -38,7 +40,7 @@ public class SchemaRegistryProxyTest extends SchemaRegistryTest {
         super(entryFormat, applyAvroSchemaOnDecode);
     }
 
-    @BeforeClass
+    @BeforeMethod
     @Override
     protected void setup() throws Exception {
         super.setup();
@@ -47,9 +49,10 @@ public class SchemaRegistryProxyTest extends SchemaRegistryTest {
         bootstrapServers = "localhost:" + getClientPort();
     }
 
-    @AfterClass
+    @AfterMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
+        log.info("STOPPING");
         stopProxy();
         super.cleanup();
     }

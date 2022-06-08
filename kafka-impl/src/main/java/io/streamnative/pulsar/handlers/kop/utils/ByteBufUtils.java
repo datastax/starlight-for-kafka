@@ -25,6 +25,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import javax.annotation.processing.Completion;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -99,15 +100,7 @@ public class ByteBufUtils {
         buffer.getBytes(buffer.readerIndex(), bytes);
         return ByteBuffer.wrap(bytes);
     }
-
-    public static CompletableFuture<DecodeResult> decodePulsarEntryToKafkaRecords(final String pulsarTopicName,
-                                                                                 final MessageMetadata metadata,
-                                                                                 final ByteBuf payload,
-                                                                                 final long baseOffset,
-                                                                                 final byte magic,
-                                                                                 final SchemaManager schemaManager,
-                                                                                 final boolean applyAvroSchemaOnFetch)
-            throws IOException {
+    public static DecodeResult decodeMarker(final MessageMetadata metadata, final long baseOffset) {
         if (metadata.hasMarkerType()) {
             ControlRecordType controlRecordType;
             switch (metadata.getMarkerType()) {
@@ -121,129 +114,162 @@ public class ByteBufUtils {
                     controlRecordType = ControlRecordType.UNKNOWN;
                     break;
             }
-            return CompletableFuture.completedFuture(DecodeResult.get(MemoryRecords.withEndTransactionMarker(
+            return DecodeResult.get(MemoryRecords.withEndTransactionMarker(
                     baseOffset,
                     metadata.getPublishTime(),
                     0,
                     metadata.getTxnidMostBits(),
                     (short) metadata.getTxnidLeastBits(),
                     new EndTransactionMarker(controlRecordType, 0)
-                    )));
+            ));
+        } else {
+            return null;
         }
-        CompletableFuture<SchemaManager.KeyValueSchemaIds> schemaIdsFuture = CompletableFuture.completedFuture(null);
-        if (applyAvroSchemaOnFetch && metadata.hasSchemaVersion()) {
+    }
+    public static DecodeResult decodePulsarEntryToKafkaRecords(final String pulsarTopicName,
+                                                                                  final MessageMetadata metadata,
+                                                                                  final ByteBuf payload,
+                                                                                  final long baseOffset,
+                                                                                  final byte magic,
+                                                                                  final SchemaManager schemaManager,
+                                                                                  final boolean applyAvroSchemaOnFetch)
+            throws IOException {
+        DecodeResult decodeResultForMarker = decodeMarker(metadata, baseOffset);
+        if (decodeResultForMarker != null) {
+            return decodeResultForMarker;
+        }
+        return encodeKafkaResponse(metadata, payload, baseOffset, magic, null);
+    }
+
+    public static CompletableFuture<DecodeResult> decodePulsarEntryToKafkaRecordsAsync(final String pulsarTopicName,
+                                                                                 final MessageMetadata metadata,
+                                                                                 final ByteBuf payload,
+                                                                                 final long baseOffset,
+                                                                                 final byte magic,
+                                                                                 final SchemaManager schemaManager) {
+        DecodeResult decodeResultForMarker = decodeMarker(metadata, baseOffset);
+        if (decodeResultForMarker != null) {
+            return CompletableFuture.completedFuture(decodeResultForMarker);
+        }
+        CompletableFuture<SchemaManager.KeyValueSchemaIds> schemaIdsFuture
+                = CompletableFuture.completedFuture(null);
+        if (metadata.hasSchemaVersion()) {
             BytesSchemaVersion version = BytesSchemaVersion.of(metadata.getSchemaVersion());
             if (version != null) {
                 schemaIdsFuture = schemaManager.getSchemaIds(pulsarTopicName, version);
             }
         }
         return schemaIdsFuture.thenApply((SchemaManager.KeyValueSchemaIds schemaIds) -> {
-            try {
-                int keySchemaId = schemaIds == null ? -1 : schemaIds.getKeySchemaId();
-                int valueSchemaId = schemaIds == null ? -1 : schemaIds.getValueSchemaId();
-                long startConversionNanos = MathUtils.nowInNano();
-                final int uncompressedSize = metadata.getUncompressedSize();
-                final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
-                final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
+                try {
+                    return encodeKafkaResponse(metadata, payload, baseOffset, magic, schemaIds);
+                } catch (IOException err) {
+                            throw new CompletionException(err);
+                }}
+        );
+    }
 
-                final DirectBufferOutputStream directBufferOutputStream =
-                        new DirectBufferOutputStream(DEFAULT_BUFFER_SIZE);
-                final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(directBufferOutputStream,
-                        magic,
-                        CompressionType.NONE,
-                        TimestampType.CREATE_TIME,
-                        baseOffset,
-                        metadata.getPublishTime(),
-                        RecordBatch.NO_PRODUCER_ID,
-                        RecordBatch.NO_PRODUCER_EPOCH,
-                        RecordBatch.NO_SEQUENCE,
-                        metadata.hasTxnidMostBits() && metadata.hasTxnidLeastBits(),
-                        false,
-                        RecordBatch.NO_PARTITION_LEADER_EPOCH,
-                        MAX_RECORDS_BUFFER_SIZE);
-                if (metadata.hasTxnidMostBits()) {
-                    builder.setProducerState(metadata.getTxnidMostBits(), (short) metadata.getTxnidLeastBits(), 0,
-                            true);
+    @NonNull
+    private static DecodeResult encodeKafkaResponse(MessageMetadata metadata, ByteBuf payload, long baseOffset, byte magic,
+                                                SchemaManager.KeyValueSchemaIds schemaIds) throws IOException {
+
+        int keySchemaId = schemaIds == null ? -1 : schemaIds.getKeySchemaId();
+        int valueSchemaId = schemaIds == null ? -1 : schemaIds.getValueSchemaId();
+        long startConversionNanos = MathUtils.nowInNano();
+        final int uncompressedSize = metadata.getUncompressedSize();
+        final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
+        final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
+
+        final DirectBufferOutputStream directBufferOutputStream =
+                new DirectBufferOutputStream(DEFAULT_BUFFER_SIZE);
+        final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(directBufferOutputStream,
+                magic,
+                CompressionType.NONE,
+                TimestampType.CREATE_TIME,
+                baseOffset,
+                metadata.getPublishTime(),
+                RecordBatch.NO_PRODUCER_ID,
+                RecordBatch.NO_PRODUCER_EPOCH,
+                RecordBatch.NO_SEQUENCE,
+                metadata.hasTxnidMostBits() && metadata.hasTxnidLeastBits(),
+                false,
+                RecordBatch.NO_PARTITION_LEADER_EPOCH,
+                MAX_RECORDS_BUFFER_SIZE);
+        if (metadata.hasTxnidMostBits()) {
+            builder.setProducerState(metadata.getTxnidMostBits(), (short) metadata.getTxnidLeastBits(), 0,
+                    true);
+        }
+        int conversionCount = 0;
+        if (metadata.hasNumMessagesInBatch()) {
+            final int numMessages = metadata.getNumMessagesInBatch();
+            conversionCount += numMessages;
+            for (int i = 0; i < numMessages; i++) {
+                final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
+                final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
+                        uncompressedPayload, singleMessageMetadata, i, numMessages);
+
+                final long timestamp = (metadata.getEventTime() > 0)
+                        ? metadata.getEventTime()
+                        : metadata.getPublishTime();
+                ByteBuffer value = singleMessageMetadata.isNullValue()
+                        ? null
+                        : getNioBuffer(singleMessagePayload);
+                ByteBuffer keyByteBuffer = getKeyByteBuffer(singleMessageMetadata);
+                if (keySchemaId >= 0) {
+                    keyByteBuffer = prependSchemaId(keyByteBuffer, keySchemaId);
                 }
-                int conversionCount = 0;
-                if (metadata.hasNumMessagesInBatch()) {
-                    final int numMessages = metadata.getNumMessagesInBatch();
-                    conversionCount += numMessages;
-                    for (int i = 0; i < numMessages; i++) {
-                        final SingleMessageMetadata singleMessageMetadata = new SingleMessageMetadata();
-                        final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
-                                uncompressedPayload, singleMessageMetadata, i, numMessages);
-
-                        final long timestamp = (metadata.getEventTime() > 0)
-                                ? metadata.getEventTime()
-                                : metadata.getPublishTime();
-                        ByteBuffer value = singleMessageMetadata.isNullValue()
-                                ? null
-                                : getNioBuffer(singleMessagePayload);
-                        ByteBuffer keyByteBuffer = getKeyByteBuffer(singleMessageMetadata);
-                        if (keySchemaId >= 0) {
-                            keyByteBuffer = prependSchemaId(keyByteBuffer, keySchemaId);
-                        }
-                        if (valueSchemaId >= 0) {
-                            value = prependSchemaId(value, valueSchemaId);
-                        }
-                        if (magic >= RecordBatch.MAGIC_VALUE_V2) {
-                            final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
-                            builder.appendWithOffset(baseOffset + i,
-                                    timestamp,
-                                    keyByteBuffer,
-                                    value,
-                                    headers);
-                        } else {
-                            // record less than magic=2, no header attribute
-                            builder.appendWithOffset(baseOffset + i,
-                                    timestamp,
-                                    keyByteBuffer,
-                                    value);
-                        }
-                        singleMessagePayload.release();
-                    }
+                if (valueSchemaId >= 0) {
+                    value = prependSchemaId(value, valueSchemaId);
+                }
+                if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                    final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
+                    builder.appendWithOffset(baseOffset + i,
+                            timestamp,
+                            keyByteBuffer,
+                            value,
+                            headers);
                 } else {
-                    conversionCount += 1;
-                    final long timestamp = (metadata.getEventTime() > 0)
-                            ? metadata.getEventTime()
-                            : metadata.getPublishTime();
-                    ByteBuffer value = getNioBuffer(uncompressedPayload);
-                    ByteBuffer keyByteBuffer = getKeyByteBuffer(metadata);
-                    if (keySchemaId >= 0) {
-                        keyByteBuffer = prependSchemaId(keyByteBuffer, keySchemaId);
-                    }
-                    if (valueSchemaId >= 0) {
-                        value = prependSchemaId(value, valueSchemaId);
-                    }
-                    if (magic >= RecordBatch.MAGIC_VALUE_V2) {
-                        final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
-                        builder.appendWithOffset(baseOffset,
-                                timestamp,
-                                keyByteBuffer,
-                                value,
-                                headers);
-                    } else {
-                        builder.appendWithOffset(baseOffset,
-                                timestamp,
-                                keyByteBuffer,
-                                value);
-                    }
+                    // record less than magic=2, no header attribute
+                    builder.appendWithOffset(baseOffset + i,
+                            timestamp,
+                            keyByteBuffer,
+                            value);
                 }
-
-                final MemoryRecords records = builder.build();
-                uncompressedPayload.release();
-                return DecodeResult.get(records,
-                        directBufferOutputStream.getByteBuf(),
-                        conversionCount,
-                        MathUtils.elapsedNanos(startConversionNanos));
-            } catch (IOException err) {
-                throw new CompletionException(err);
+                singleMessagePayload.release();
             }
-        }).exceptionally(err -> {
-            log.error("Bad error", err);
-            throw new CompletionException(err);
-        });
+        } else {
+            conversionCount += 1;
+            final long timestamp = (metadata.getEventTime() > 0)
+                    ? metadata.getEventTime()
+                    : metadata.getPublishTime();
+            ByteBuffer value = getNioBuffer(uncompressedPayload);
+            ByteBuffer keyByteBuffer = getKeyByteBuffer(metadata);
+            if (keySchemaId >= 0) {
+                keyByteBuffer = prependSchemaId(keyByteBuffer, keySchemaId);
+            }
+            if (valueSchemaId >= 0) {
+                value = prependSchemaId(value, valueSchemaId);
+            }
+            if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                final Header[] headers = getHeadersFromMetadata(metadata.getPropertiesList());
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        keyByteBuffer,
+                        value,
+                        headers);
+            } else {
+                builder.appendWithOffset(baseOffset,
+                        timestamp,
+                        keyByteBuffer,
+                        value);
+            }
+        }
+
+        final MemoryRecords records = builder.build();
+        uncompressedPayload.release();
+        return DecodeResult.get(records,
+                directBufferOutputStream.getByteBuf(),
+                conversionCount,
+                MathUtils.elapsedNanos(startConversionNanos));
     }
 
     @NonNull

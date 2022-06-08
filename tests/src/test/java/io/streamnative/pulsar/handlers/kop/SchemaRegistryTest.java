@@ -47,7 +47,9 @@ import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.schema.KeyValueEncodingType;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
@@ -77,7 +79,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         this.applyAvroSchemaOnDecode = applyAvroSchemaOnDecode;
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     protected void setup() throws Exception {
         super.enableSchemaRegistry = true;
@@ -86,7 +88,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
 
-    @AfterMethod(alwaysRun = true)
+    @AfterClass(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
         this.internalCleanup();
@@ -233,7 +235,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         if (!applyAvroSchemaOnDecode) {
             return;
         }
-        String topic = "SchemaRegistryTest-testProduceAvroPulsarAndConsume_"
+        String topic = "SchemaRegistryTest-testProduceAvroKeyValuePulsarAndConsume_"
                 + entryFormat + "_" + applyAvroSchemaOnDecode + "_" + enableBatching;
         @Cleanup
         Producer<KeyValue<PojoKey, Pojo>> pojoProducer = pulsarClient.newProducer(
