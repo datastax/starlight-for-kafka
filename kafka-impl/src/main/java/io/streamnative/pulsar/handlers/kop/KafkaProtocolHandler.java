@@ -19,7 +19,9 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
@@ -38,6 +40,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.Map;
@@ -45,6 +48,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.Consumer;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -65,6 +69,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -448,7 +453,19 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
-            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
+            Consumer<ChannelPipeline> tlsConfigurator = null;
+            if (kafkaConfig.isKopSchemaRegistryProxyEnableTls()) {
+                SslContextFactory.Server sslContextFactory =
+                        SSLUtils.createSslContextFactory(kafkaConfig);
+                tlsConfigurator = (ChannelPipeline pipeline) ->{
+                    try {
+                        pipeline.addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
+                    } catch (Exception err) {
+                        throw new RuntimeException(err);
+                    }
+                };
+            }
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build(tlsConfigurator);
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
             }

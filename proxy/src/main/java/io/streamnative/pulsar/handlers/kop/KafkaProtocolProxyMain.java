@@ -310,7 +310,10 @@ public class KafkaProtocolProxyMain {
 
         @Override
         public String get() {
-            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
+            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURLTLS();
+            if (StringUtils.isEmpty(rawServiceUrl)) {
+                rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
+            }
 
             int colon = rawServiceUrl.lastIndexOf(':');
             String res;
