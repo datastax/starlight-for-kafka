@@ -161,7 +161,6 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
                 i++;
             }
         }
-        consumer.close();
     }
 
     @Data
@@ -225,7 +224,6 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(numMessages, i);
-        consumer.close();
     }
 
     @Test(timeOut = 120000, dataProvider = "enableBatchingProvider")
@@ -275,6 +273,5 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(numMessages, i);
-        consumer.close();
     }
 }
