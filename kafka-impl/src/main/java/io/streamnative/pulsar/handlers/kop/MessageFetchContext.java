@@ -22,6 +22,7 @@ import io.streamnative.pulsar.handlers.kop.KafkaCommandDecoder.KafkaHeaderAndReq
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
 import io.streamnative.pulsar.handlers.kop.exceptions.MetadataCorruptedException;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.security.auth.Resource;
 import io.streamnative.pulsar.handlers.kop.security.auth.ResourceType;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
@@ -471,41 +472,48 @@ public final class MessageFetchContext {
                 });
 
         // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
-        groupNameFuture.whenCompleteAsync((groupName, ex) -> {
+        groupNameFuture.whenCompleteAsync((_groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
-                groupName = "";
+                _groupName = "";
             }
 
-
+            final String groupName = _groupName;
             final long startDecodingEntriesNanos = MathUtils.nowInNano();
-            final DecodeResult decodeResult = requestHandler
-                    .getEntryFormatter().decode(entries, magic);
-            requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                    MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
-            decodeResults.add(decodeResult);
+            String fullTopicName = KopTopic.toString(topicPartition, namespacePrefix);
+            SchemaManager schemaManager = requestHandler.getSchemaManager();
+            final CompletableFuture<DecodeResult> decodeResultFuture = requestHandler
+                    .getEntryFormatter().decode(entries, magic, fullTopicName, schemaManager);
+            decodeResultFuture.thenAccept((DecodeResult decodeResult) -> {
+                requestHandler.requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                        MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+                decodeResults.add(decodeResult);
 
-            final MemoryRecords kafkaRecords = decodeResult.getRecords();
-            // collect consumer metrics
-            decodeResult.updateConsumerStats(topicPartition,
-                    entries.size(),
-                    groupName,
-                    statsLogger);
-            List<FetchResponse.AbortedTransaction> abortedTransactions;
-            if (readCommitted) {
-                abortedTransactions = partitionLog.getAbortedIndexList(partitionData.fetchOffset);
-            } else {
-                abortedTransactions = null;
-            }
-            responseData.put(topicPartition, new PartitionData<>(
-                    Errors.NONE,
-                    highWatermark,
-                    lso,
-                    highWatermark, // TODO: should it be changed to the logStartOffset?
-                    abortedTransactions,
-                    kafkaRecords));
-            bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
-            tryComplete();
+                final MemoryRecords kafkaRecords = decodeResult.getRecords();
+                // collect consumer metrics
+                decodeResult.updateConsumerStats(topicPartition,
+                        entries.size(),
+                        groupName,
+                        statsLogger);
+                List<FetchResponse.AbortedTransaction> abortedTransactions;
+                if (readCommitted) {
+                    abortedTransactions = partitionLog.getAbortedIndexList(partitionData.fetchOffset);
+                } else {
+                    abortedTransactions = null;
+                }
+                responseData.put(topicPartition, new PartitionData<>(
+                        Errors.NONE,
+                        highWatermark,
+                        lso,
+                        highWatermark, // TODO: should it be changed to the logStartOffset?
+                        abortedTransactions,
+                        kafkaRecords));
+                bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
+                tryComplete();
+            }).exceptionally(err -> {
+                log.error("Internal error while decoding entries in topic {}", fullTopicName, err);
+                return null;
+            });
         }, requestHandler.getDecodeExecutor());
     }
 

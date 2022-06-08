@@ -22,10 +22,12 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import lombok.Getter;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.pulsar.broker.PulsarService;
@@ -48,6 +50,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     private final KopBrokerLookupManager kopBrokerLookupManager;
     @Getter
     private final KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+    private final Function<String, SchemaManager> schemaManagerForTenant;
 
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -75,8 +78,10 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    boolean skipMessagesWithoutIndex,
                                    RequestStats requestStats,
                                    OrderedScheduler sendResponseScheduler,
-                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState) {
+                                   KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                                   Function<String, SchemaManager> schemaManagerForTenant) {
         super();
+        this.schemaManagerForTenant = schemaManagerForTenant;
         this.pulsarService = pulsarService;
         this.kafkaConfig = kafkaConfig;
         this.tenantContextManager = tenantContextManager;
@@ -120,7 +125,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, schemaManagerForTenant);
     }
 
     @VisibleForTesting
@@ -130,7 +135,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, RequestStats.NULL_INSTANCE,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState);
+                kafkaTopicManagerSharedState, schemaManagerForTenant);
     }
 
 }

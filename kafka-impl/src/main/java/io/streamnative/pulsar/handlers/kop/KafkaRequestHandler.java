@@ -33,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
@@ -194,6 +195,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private final String clusterName;
     private final ScheduledExecutorService executor;
+    private final Function<String, SchemaManager> schemaManagerForTenant;
     private final PulsarAdmin admin;
     private final MetadataStoreExtended metadataStore;
     private final SaslAuthenticator authenticator;
@@ -294,8 +296,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                boolean skipMessagesWithoutIndex,
                                RequestStats requestStats,
                                OrderedScheduler sendResponseScheduler,
-                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState) throws Exception {
+                               KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
+                               Function<String, SchemaManager> schemaManagerForTenant) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
+        this.schemaManagerForTenant = schemaManagerForTenant;
         this.pulsarService = pulsarService;
         this.tenantContextManager = tenantContextManager;
         this.kopBrokerLookupManager = kopBrokerLookupManager;
@@ -2601,4 +2605,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return this.executor;
     }
 
+    public SchemaManager getSchemaManager() {
+        return schemaManagerForTenant.apply(getCurrentTenant());
+    }
 }
