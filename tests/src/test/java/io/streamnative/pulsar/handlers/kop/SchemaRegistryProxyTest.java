@@ -50,7 +50,6 @@ public class SchemaRegistryProxyTest extends SchemaRegistryTest {
     @AfterMethod(alwaysRun = true)
     @Override
     protected void cleanup() throws Exception {
-        log.info("STOPPING");
         stopProxy();
         super.cleanup();
     }
