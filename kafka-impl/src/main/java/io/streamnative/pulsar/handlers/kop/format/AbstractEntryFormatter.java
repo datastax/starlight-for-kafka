@@ -96,53 +96,15 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     conversionTimeNanos.get()));
             return;
         }
-        Entry entry = entries.get(index);
+        final Entry entry = entries.get(index);
+        final long startOffset;
+        final ByteBuf byteBuf;
+        final MessageMetadata metadata;
+
         try {
-            long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
-            final ByteBuf byteBuf = entry.getDataBuffer();
-            final MessageMetadata metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
-            if (isKafkaEntryFormat(metadata)) {
-                decodeKafkaEntry(magic, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf, entry,
-                        startOffset, byteBuf);
-                entry.release();
-                // next entry
-                processEntry(entries, index + 1, magic,
-                        pulsarTopicName, schemaManager, totalSize,
-                        conversionCount, conversionTimeNanos, batchedByteBuf,
-                        result);
-
-            } else {
-                ByteBufUtils.decodePulsarEntryToKafkaRecordsAsync(pulsarTopicName,
-                                metadata, byteBuf, startOffset,
-                                magic, schemaManager)
-                        .thenAccept((DecodeResult decodeResult) -> {
-
-                     decodePulsarEntry(decodeResult, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf);
-
-                    // next entry
-                    processEntry(entries, index + 1, magic,
-                                    pulsarTopicName, schemaManager, totalSize,
-                                    conversionCount, conversionTimeNanos, batchedByteBuf,
-                                    result);
-                }).exceptionally(err -> {
-                    log.error("Error while decoding entry", err);
-                    entry.release();
-
-                    // see below
-                    if ((err.getCause() instanceof MetadataCorruptedException)
-                        || (err.getCause() instanceof IOException)
-                            || (err.getCause() instanceof KafkaException)) {
-                        // next entry
-                        processEntry(entries, index + 1, magic,
-                                pulsarTopicName, schemaManager, totalSize,
-                                conversionCount, conversionTimeNanos, batchedByteBuf,
-                                result);
-                    } else {
-                        result.completeExceptionally(err);
-                    }
-                    return null;
-                });
-            }
+            startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+            byteBuf = entry.getDataBuffer();
+            metadata = MessageMetadataUtils.parseMessageMetadata(byteBuf);
 
             // Almost all exceptions in Kafka inherit from KafkaException and will be captured
             // and processed in KafkaApis. Here, whether it is down-conversion or the IOException
@@ -152,12 +114,62 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
             entry.release();
 
             // next entry
-            log.error("[{}:{}] Failed to decode entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+            log.error("[{}:{}] Failed to decode entry. skipping.", entry.getLedgerId(), entry.getEntryId(), e);
             processEntry(entries, index + 1, magic,
                     pulsarTopicName, schemaManager, totalSize,
                     conversionCount, conversionTimeNanos, batchedByteBuf,
                     result);
+            return;
+        } catch (RuntimeException e) {
+            log.error("[{}:{}] Fatal error while decoding entry. ", entry.getLedgerId(), entry.getEntryId(), e);
+            result.completeExceptionally(e);
+            return;
         }
+
+        if (isKafkaEntryFormat(metadata)) {
+            decodeKafkaEntry(magic, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf, entry,
+                    startOffset, byteBuf);
+            entry.release();
+            // next entry (same thread)
+            processEntry(entries, index + 1, magic,
+                    pulsarTopicName, schemaManager, totalSize,
+                    conversionCount, conversionTimeNanos, batchedByteBuf,
+                    result);
+        } else {
+            // handle schema, this MAY require some async operations
+            // the entry MAY be processed in a different thread
+            ByteBufUtils.decodePulsarEntryToKafkaRecordsAsync(pulsarTopicName,
+                            metadata, byteBuf, startOffset,
+                            magic, schemaManager)
+                    .thenAccept((DecodeResult decodeResult) -> {
+
+                decodePulsarEntry(decodeResult, totalSize, conversionCount, conversionTimeNanos, batchedByteBuf);
+
+                // next entry
+                processEntry(entries, index + 1, magic,
+                                pulsarTopicName, schemaManager, totalSize,
+                                conversionCount, conversionTimeNanos, batchedByteBuf,
+                                result);
+            }).exceptionally(err -> {
+                log.error("Error while decoding entry", err);
+                // see below
+                if ((err.getCause() instanceof MetadataCorruptedException)
+                    || (err.getCause() instanceof IOException)
+                        || (err.getCause() instanceof KafkaException)) {
+                    // next entry
+                    processEntry(entries, index + 1, magic,
+                            pulsarTopicName, schemaManager, totalSize,
+                            conversionCount, conversionTimeNanos, batchedByteBuf,
+                            result);
+                } else {
+                    result.completeExceptionally(err);
+                }
+                return null;
+            }).whenComplete((___, err) -> {
+               entry.release();
+            });
+        }
+
     }
 
     private DecodeResult decodeSync(List<Entry> entries, byte magic,

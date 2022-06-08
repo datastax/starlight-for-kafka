@@ -180,7 +180,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         if (kafkaConfig.isKafkaApplyAvroSchemaOnDecode()
                 && !kafkaConfig.isKopSchemaRegistryEnable()) {
-            throw new RuntimeException("You myst enable the SchemaRegistry "
+            throw new RuntimeException("You must enable the SchemaRegistry "
                     + "if you want to use kafkaApplyAvroSchemaOnDecode feature");
         }
 
