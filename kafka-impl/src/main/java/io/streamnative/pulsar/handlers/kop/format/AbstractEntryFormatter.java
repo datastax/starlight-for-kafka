@@ -121,6 +121,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
                     result);
             return;
         } catch (RuntimeException e) {
+            entry.release();
             log.error("[{}:{}] Fatal error while decoding entry. ", entry.getLedgerId(), entry.getEntryId(), e);
             result.completeExceptionally(e);
             return;
