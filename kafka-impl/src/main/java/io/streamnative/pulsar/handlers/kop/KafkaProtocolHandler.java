@@ -81,7 +81,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private PrometheusMetricsProvider statsProvider;
     @Getter
     private KopBrokerLookupManager kopBrokerLookupManager;
-    private PulsarAdmin pulsarAdmin;
+    private volatile PulsarAdmin pulsarAdmin;
     @VisibleForTesting
     @Getter
     private AdminManager adminManager = null;
@@ -224,7 +224,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
         brokerService = service;
         kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
-        PulsarAdmin pulsarAdmin;
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
@@ -423,7 +422,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 requestStats,
                 sendResponseScheduler,
                 kafkaTopicManagerSharedState,
-                schemaRegistryManager);
+                schemaManagerForTenant);
     }
 
     // this is called after initialize, and with kafkaConfig, brokerService all set.
