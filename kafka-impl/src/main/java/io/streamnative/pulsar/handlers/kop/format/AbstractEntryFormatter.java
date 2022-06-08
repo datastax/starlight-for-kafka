@@ -24,7 +24,6 @@ import io.streamnative.pulsar.handlers.kop.utils.MessageMetadataUtils;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.extern.slf4j.Slf4j;
@@ -71,7 +70,7 @@ public abstract class AbstractEntryFormatter implements EntryFormatter {
      * @return
      */
     private CompletableFuture<DecodeResult> decodeAsync(List<Entry> entries, byte magic,
-                                                              String pulsarTopicName, SchemaManager schemaManager) {
+                                                        String pulsarTopicName, SchemaManager schemaManager) {
         AtomicInteger totalSize = new AtomicInteger();
         AtomicInteger conversionCount = new AtomicInteger();
         AtomicLong conversionTimeNanos = new AtomicLong();

@@ -407,7 +407,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP,
             doc = "Encode the Fetch results using KafkaAvroDeserializer format in case of AVRO data written by Pulsar"
     )
-    private boolean applyAvroSchemaOnDecode = false;
+    private boolean kafkaApplyAvroSchemaOnDecode = false;
 
     @FieldContext(
         category = CATEGORY_KOP,

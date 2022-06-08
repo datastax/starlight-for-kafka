@@ -510,6 +510,9 @@ public final class MessageFetchContext {
                         kafkaRecords));
                 bytesReadable.getAndAdd(kafkaRecords.sizeInBytes());
                 tryComplete();
+            }).exceptionally(err -> {
+                log.error("Internal error while decoding entries in topic {}", fullTopicName, err);
+                return null;
             });
         }, requestHandler.getDecodeExecutor());
     }

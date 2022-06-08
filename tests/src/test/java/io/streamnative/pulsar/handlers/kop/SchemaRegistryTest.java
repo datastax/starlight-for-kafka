@@ -48,9 +48,7 @@ import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.schema.KeyValueEncodingType;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.testng.annotations.AfterClass;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
@@ -83,7 +81,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.enableSchemaRegistry = true;
-        this.conf.setApplyAvroSchemaOnDecode(applyAvroSchemaOnDecode);
+        this.conf.setKafkaApplyAvroSchemaOnDecode(applyAvroSchemaOnDecode);
         this.internalSetup();
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }

@@ -30,7 +30,7 @@ public class EntryFormatterFactory {
 
     public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig) {
         final String format = kafkaConfig.getEntryFormat();
-        final boolean applyAvroSchemaOnDecode = kafkaConfig.isApplyAvroSchemaOnDecode();
+        final boolean applyAvroSchemaOnDecode = kafkaConfig.isKafkaApplyAvroSchemaOnDecode();
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
             switch (entryFormat) {

@@ -25,7 +25,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import javax.annotation.processing.Completion;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -151,8 +150,8 @@ public class ByteBufUtils {
         if (decodeResultForMarker != null) {
             return CompletableFuture.completedFuture(decodeResultForMarker);
         }
-        CompletableFuture<SchemaManager.KeyValueSchemaIds> schemaIdsFuture
-                = CompletableFuture.completedFuture(null);
+        CompletableFuture<SchemaManager.KeyValueSchemaIds> schemaIdsFuture =
+                CompletableFuture.completedFuture(null);
         if (metadata.hasSchemaVersion()) {
             BytesSchemaVersion version = BytesSchemaVersion.of(metadata.getSchemaVersion());
             if (version != null) {
@@ -164,13 +163,14 @@ public class ByteBufUtils {
                     return encodeKafkaResponse(metadata, payload, baseOffset, magic, schemaIds);
                 } catch (IOException err) {
                             throw new CompletionException(err);
-                }}
-        );
+                }
+        });
     }
 
     @NonNull
-    private static DecodeResult encodeKafkaResponse(MessageMetadata metadata, ByteBuf payload, long baseOffset, byte magic,
-                                                SchemaManager.KeyValueSchemaIds schemaIds) throws IOException {
+    private static DecodeResult encodeKafkaResponse(MessageMetadata metadata, ByteBuf payload, long baseOffset,
+                                                    byte magic, SchemaManager.KeyValueSchemaIds schemaIds)
+            throws IOException {
 
         int keySchemaId = schemaIds == null ? -1 : schemaIds.getKeySchemaId();
         int valueSchemaId = schemaIds == null ? -1 : schemaIds.getValueSchemaId();

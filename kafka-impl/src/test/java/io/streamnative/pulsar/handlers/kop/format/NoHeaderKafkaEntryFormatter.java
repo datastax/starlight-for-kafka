@@ -37,6 +37,6 @@ public class NoHeaderKafkaEntryFormatter implements EntryFormatter {
     public CompletableFuture<DecodeResult> decode(List<Entry> entries, byte magic,
                                                   String topic, SchemaManager schemaManager) {
         // Do nothing
-        return null;
+        return CompletableFuture.completedFuture(null);
     }
 }
