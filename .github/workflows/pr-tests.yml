@@ -1,6 +1,11 @@
 name: kop tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - 2.10_ds
+  pull_request:
+
 
 jobs:
   build:

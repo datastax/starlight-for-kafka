@@ -1,6 +1,10 @@
 name: kop mvn build check and kafka-impl test
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - 2.10_ds
+  pull_request:
 
 jobs:
   build:
