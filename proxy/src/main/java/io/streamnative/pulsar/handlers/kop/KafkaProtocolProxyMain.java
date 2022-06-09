@@ -421,8 +421,7 @@ public class KafkaProtocolProxyMain {
                                 Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
                                 Authentication authenticationWithPrincipal =
                                         new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
-                                log.info("qui isTlsAllowInsecureConnection {} isTlsHostnameVerificationEnabled {}", proxyConfiguration.isTlsAllowInsecureConnection(), proxyConfiguration.isTlsHostnameVerificationEnabled());
-                                 PulsarAdminBuilder builder = PulsarAdmin
+                                PulsarAdminBuilder builder = PulsarAdmin
                                     .builder()
                                     .authentication(authenticationWithPrincipal)
                                     .serviceHttpUrl(brokerWebServiceURL)
@@ -437,11 +436,15 @@ public class KafkaProtocolProxyMain {
                                                 .tlsProtocols(proxyConfiguration.getBrokerClientTlsProtocols());
                                         if (proxyConfiguration.isBrokerClientTlsEnabledWithKeyStore()) {
                                             builder.useKeyStoreTls(true)
-                                                    .tlsTrustStoreType(proxyConfiguration.getBrokerClientTlsTrustStoreType())
-                                                    .tlsTrustStorePath(proxyConfiguration.getBrokerClientTlsTrustStore())
-                                                    .tlsTrustStorePassword(proxyConfiguration.getBrokerClientTlsTrustStorePassword());
+                                                    .tlsTrustStoreType(
+                                                            proxyConfiguration.getBrokerClientTlsTrustStoreType())
+                                                    .tlsTrustStorePath(
+                                                            proxyConfiguration.getBrokerClientTlsTrustStore())
+                                                    .tlsTrustStorePassword(
+                                                            proxyConfiguration.getBrokerClientTlsTrustStorePassword());
                                         } else {
-                                            builder.tlsTrustCertsFilePath(proxyConfiguration.getBrokerClientTrustCertsFilePath());
+                                            builder.tlsTrustCertsFilePath(
+                                                    proxyConfiguration.getBrokerClientTrustCertsFilePath());
                                         }
                                     }
                                 return builder.build();
