@@ -13,14 +13,11 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
-
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
@@ -31,7 +28,6 @@ import java.util.function.Function;
 import lombok.Getter;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.pulsar.broker.PulsarService;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
  * A channel initializer that initialize channels for kafka protocol.
@@ -60,8 +56,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
     @Getter
     private final EndPoint advertisedEndPoint;
     private final boolean skipMessagesWithoutIndex;
-    @Getter
-    private final SslContextFactory.Server sslContextFactory;
+    private SSLUtils.ServerSideTLSSupport tlsSupport;
     @Getter
     private final RequestStats requestStats;
     private final OrderedScheduler sendResponseScheduler;
@@ -94,9 +89,9 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.skipMessagesWithoutIndex = skipMessagesWithoutIndex;
         this.requestStats = requestStats;
         if (enableTls) {
-            sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
+            tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
         } else {
-            sslContextFactory = null;
+            tlsSupport = null;
         }
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
@@ -110,8 +105,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                         kafkaConfig.getConnectionMaxIdleMs(),
                         0,
                         TimeUnit.MILLISECONDS));
-        if (this.enableTls) {
-            ch.pipeline().addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
+        if (tlsSupport != null) {
+            tlsSupport.addTlsHandler(ch);
         }
         ch.pipeline().addLast(new LengthFieldPrepender(4));
         ch.pipeline().addLast("frameDecoder",

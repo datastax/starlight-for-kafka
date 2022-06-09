@@ -21,7 +21,6 @@ import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.OffsetConfig;
@@ -69,7 +68,6 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -455,14 +453,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     );
             Consumer<ChannelPipeline> tlsConfigurator = null;
             if (kafkaConfig.isKopSchemaRegistryProxyEnableTls()) {
-                SslContextFactory.Server sslContextFactory =
-                        SSLUtils.createSslContextFactory(kafkaConfig);
+                SSLUtils.ServerSideTLSSupport tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
                 tlsConfigurator = (ChannelPipeline pipeline) ->{
-                    try {
-                        pipeline.addLast(TLS_HANDLER, new SslHandler(SSLUtils.createSslEngine(sslContextFactory)));
-                    } catch (Exception err) {
-                        throw new RuntimeException(err);
-                    }
+                    tlsSupport.addTlsHandler((SocketChannel) pipeline.channel());
                 };
             }
             Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer =

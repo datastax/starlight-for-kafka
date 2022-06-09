@@ -413,7 +413,6 @@ public class KafkaProtocolProxyMain {
                     if (StringUtils.isEmpty(brokerWebServiceURL)) {
                         brokerWebServiceURL = proxyConfiguration.getBrokerWebServiceURL();
                     }
-                    log.info("Creating PulsarAdmin for principal {} to {}", principal, brokerWebServiceURL);
                     try {
                                 String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
                                 String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
