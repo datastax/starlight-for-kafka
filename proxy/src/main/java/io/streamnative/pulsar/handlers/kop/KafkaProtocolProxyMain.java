@@ -46,6 +46,7 @@ import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
+import org.apache.pulsar.client.admin.PulsarAdminBuilder;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.AuthenticationDataProvider;
 import org.apache.pulsar.client.api.PulsarClientException;
@@ -408,25 +409,43 @@ public class KafkaProtocolProxyMain {
             }
             try {
                 return cache.computeIfAbsent(originalPrincipal, principal -> {
-                            try {
+                    String brokerWebServiceURL = proxyConfiguration.getBrokerWebServiceURLTLS();
+                    if (StringUtils.isEmpty(brokerWebServiceURL)) {
+                        brokerWebServiceURL = proxyConfiguration.getBrokerWebServiceURL();
+                    }
+                    log.info("Creating PulsarAdmin for principal {} to {}", principal, brokerWebServiceURL);
+                    try {
                                 String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
                                 String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
 
                                 Authentication proxyAuthentication = AuthenticationUtil.create(auth, authParams);
                                 Authentication authenticationWithPrincipal =
                                         new OriginalPrincipalAwareAuthentication(proxyAuthentication, principal);
-                                return PulsarAdmin
-                                        .builder()
-                                        .authentication(authenticationWithPrincipal)
-                                        .serviceHttpUrl(proxyConfiguration.getBrokerWebServiceURL())
-                                        .allowTlsInsecureConnection(
-                                                proxyConfiguration.isTlsAllowInsecureConnection())
-                                        .enableTlsHostnameVerification(
-                                                proxyConfiguration.isTlsHostnameVerificationEnabled())
-                                        .readTimeout(5000, TimeUnit.MILLISECONDS)
-                                        .connectionTimeout(5000, TimeUnit.MILLISECONDS)
-                                        .build();
-                            } catch (PulsarClientException err) {
+                                log.info("qui isTlsAllowInsecureConnection {} isTlsHostnameVerificationEnabled {}", proxyConfiguration.isTlsAllowInsecureConnection(), proxyConfiguration.isTlsHostnameVerificationEnabled());
+                                 PulsarAdminBuilder builder = PulsarAdmin
+                                    .builder()
+                                    .authentication(authenticationWithPrincipal)
+                                    .serviceHttpUrl(brokerWebServiceURL)
+                                    .allowTlsInsecureConnection(
+                                            proxyConfiguration.isTlsAllowInsecureConnection())
+                                    .enableTlsHostnameVerification(
+                                            proxyConfiguration.isTlsHostnameVerificationEnabled())
+                                    .readTimeout(5000, TimeUnit.MILLISECONDS)
+                                    .connectionTimeout(5000, TimeUnit.MILLISECONDS);
+                                    if (proxyConfiguration.isTlsEnabledWithBroker()) {
+                                        builder.tlsCiphers(proxyConfiguration.getBrokerClientTlsCiphers())
+                                                .tlsProtocols(proxyConfiguration.getBrokerClientTlsProtocols());
+                                        if (proxyConfiguration.isBrokerClientTlsEnabledWithKeyStore()) {
+                                            builder.useKeyStoreTls(true)
+                                                    .tlsTrustStoreType(proxyConfiguration.getBrokerClientTlsTrustStoreType())
+                                                    .tlsTrustStorePath(proxyConfiguration.getBrokerClientTlsTrustStore())
+                                                    .tlsTrustStorePassword(proxyConfiguration.getBrokerClientTlsTrustStorePassword());
+                                        } else {
+                                            builder.tlsTrustCertsFilePath(proxyConfiguration.getBrokerClientTrustCertsFilePath());
+                                        }
+                                    }
+                                return builder.build();
+                            } catch (Exception err) {
                                 throw new RuntimeException(err);
                             }
                         }

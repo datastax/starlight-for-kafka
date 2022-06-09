@@ -1317,7 +1317,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 principal = kafkaConfig.getKafkaProxySuperUserRole();
             }
             return CompletableFuture.completedFuture(admin.getAdminForPrincipal(principal));
-        } catch (PulsarClientException err) {
+        } catch (Exception err) {
             return FutureUtil.failedFuture(err);
         }
     }
@@ -1327,8 +1327,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     public CompletableFuture<PartitionMetadata> findBroker(TopicName topic, boolean system) {
-        if (log.isTraceEnabled()) {
-            log.trace("[{}] Handle Lookup for {}", ctx.channel(), topic);
+        if (log.isDebugEnabled()) {
+            log.debug("[{}] Handle Lookup for {}", ctx.channel(), topic);
         }
         CompletableFuture<PartitionMetadata> returnFuture = new CompletableFuture<>();
 
@@ -1358,7 +1358,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     // It's the `kafkaAdvertisedListeners` config that's written to ZK
                     final String listeners = stringOptional.get();
                     // here we always connect in pleintext to the Pulsar broker
-                    final EndPoint endPoint = EndPoint.getPlainTextEndPoint(listeners);
+                    final EndPoint endPoint = kafkaConfig.isKopTlsEnabledWithBroker()
+                            ? EndPoint.getSslEndPoint(listeners) : EndPoint.getPlainTextEndPoint(listeners);
                     final Node node = newNode(endPoint.getInetAddress());
 
                     if (log.isTraceEnabled()) {
