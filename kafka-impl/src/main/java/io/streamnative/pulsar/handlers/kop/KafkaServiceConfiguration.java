@@ -312,6 +312,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private boolean kopTlsEnabledWithBroker = false;
 
     @FieldContext(
+            category = CATEGORY_KOP_SSL,
+            doc = "Enable hostname verification while connecting to other brokers"
+    )
+    private boolean tlsHostnameVerificationEnabled = false;
+
+    @FieldContext(
         category = CATEGORY_KOP_SSL,
         doc = "Kafka ssl configuration map with: SSL_KEYSTORE_LOCATION_CONFIG = \"ssl.keystore.location\""
     )

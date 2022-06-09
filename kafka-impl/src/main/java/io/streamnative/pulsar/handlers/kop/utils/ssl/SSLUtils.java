@@ -325,14 +325,20 @@ public class SSLUtils {
                 sslConfigValues.put(key, obj);
             }
         });
-        return createClientSslContextFactory(sslConfigValues.build());
+        return createClientSslContextFactory(sslConfigValues.build(),
+                kafkaServiceConfiguration.isTlsHostnameVerificationEnabled());
     }
 
-    public static SslContextFactory.Client createClientSslContextFactory(Map<String, Object> sslConfigValues) {
+    public static SslContextFactory.Client createClientSslContextFactory(Map<String, Object> sslConfigValues,
+                                                                         boolean tlsHostnameVerificationEnabled) {
         SslContextFactory.Client ssl = new SslContextFactory.Client();
         configureSslContextFactoryTrustStore(ssl, sslConfigValues);
         configureSslContextFactoryAlgorithms(ssl, sslConfigValues);
-        ssl.setEndpointIdentificationAlgorithm(null);
+        if (!tlsHostnameVerificationEnabled) {
+            ssl.setEndpointIdentificationAlgorithm("");
+        } else {
+            ssl.setEndpointIdentificationAlgorithm("HTTPS");
+        }
         return ssl;
     }
 
