@@ -22,12 +22,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.output.OutputFrame;
+import org.testcontainers.utility.MountableFile;
 import org.testng.annotations.Test;
 
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_0.1";
+    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_0.5";
     private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
 
     @Test
@@ -36,8 +37,18 @@ public class DockerTest {
     }
 
     @Test
+    public void testTls() throws Exception {
+        test("pulsar:9093", false, IMAGE_PULSAR210, true);
+    }
+
+    @Test
     public void testProxy() throws Exception {
         test("pulsarproxy:9092", true, IMAGE_PULSAR210);
+    }
+
+    @Test
+    public void testProxyTls() throws Exception {
+        test("pulsarproxy:9093", true, IMAGE_PULSAR210);
     }
 
     @Test
@@ -61,6 +72,11 @@ public class DockerTest {
     }
 
     @Test
+    public void testProxyLunaStreamingTls() throws Exception {
+        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING210, true);
+    }
+
+    @Test
     public void testAvroLunaStreaming() throws Exception {
         testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING210);
     }
@@ -70,18 +86,29 @@ public class DockerTest {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210);
     }
 
+
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
+        test(kafkaAddress, proxy, image, false);
+    }
+
+    private void test(String kafkaAddress, boolean proxy, String image, boolean tls) throws Exception {
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image, tls);) {
                 pulsarContainer.start();
 
+                String consumerConfigurationTls = "";
+                String producerConfigurationTls = "";
+                if (tls) {
+                    consumerConfigurationTls = "--consumer.config /home/appuser/client.properties";
+                    producerConfigurationTls = "--producer.config /home/appuser/client.properties";
+                }
                 CountDownLatch received = new CountDownLatch(1);
                 try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-kafka:latest")
                         .withNetwork(network)
                         .withCommand("bash", "-c", "kafka-console-consumer --bootstrap-server " + kafkaAddress
-                                + " --topic test --from-beginning")
+                                + " --topic test --from-beginning " + consumerConfigurationTls)
                         .withLogConsumer(new Consumer<OutputFrame>() {
                             @Override
                             public void accept(OutputFrame outputFrame) {
@@ -91,6 +118,14 @@ public class DockerTest {
                                 }
                             }
                         })) {
+                    if (tls) {
+                        clientContainer.withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/docker/kafka_client_config_tls.properties"),
+                                "/home/appuser/client.properties");
+                        clientContainer.withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/docker/ca.jks"),
+                                "/home/appuser/ca.jks");
+                    }
                     clientContainer.start();
 
                     CountDownLatch sent = new CountDownLatch(1);
@@ -99,7 +134,7 @@ public class DockerTest {
                             .withCommand("bash", "-c",
                                     "echo This-is-my-message > file.txt && "
                                             + "kafka-console-producer --bootstrap-server " + kafkaAddress
-                                            + "  --topic test < file.txt && "
+                                            + "  --topic test " + producerConfigurationTls + " < file.txt && "
                                             + "echo FINISHEDPRODUCER")
                             .withLogConsumer(new Consumer<OutputFrame>() {
                                 @Override
@@ -110,6 +145,14 @@ public class DockerTest {
                                     }
                                 }
                             })) {
+                        if (tls) {
+                            producerContainer.withCopyFileToContainer(
+                                    MountableFile.forClasspathResource("ssl/docker/kafka_client_config_tls.properties"),
+                                    "/home/appuser/client.properties");
+                            producerContainer.withCopyFileToContainer(
+                                    MountableFile.forClasspathResource("ssl/docker/ca.jks"),
+                                    "/home/appuser/ca.jks");
+                        }
                         producerContainer.start();
                         assertTrue(sent.await(60, TimeUnit.SECONDS));
                     }
@@ -124,7 +167,7 @@ public class DockerTest {
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image, false);) {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);
