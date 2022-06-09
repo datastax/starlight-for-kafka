@@ -13,14 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
-
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.DummyOptionsCORSProcessor;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryHandler;
@@ -205,7 +201,8 @@ public class SchemaRegistryManager {
         return new InetSocketAddress(kafkaConfig.getKopSchemaRegistryPort());
     }
 
-    public Optional<SchemaRegistryChannelInitializer> build(Consumer<ChannelPipeline> tlsConfigurator) throws Exception {
+    public Optional<SchemaRegistryChannelInitializer> build(Consumer<ChannelPipeline> tlsConfigurator)
+            throws Exception {
         if (!kafkaConfig.isKopSchemaRegistryEnable()) {
             return Optional.empty();
         }

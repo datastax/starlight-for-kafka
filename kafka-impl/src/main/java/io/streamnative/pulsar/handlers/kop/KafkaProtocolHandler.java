@@ -465,7 +465,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     }
                 };
             }
-            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build(tlsConfigurator);
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer =
+                    schemaRegistryManager.build(tlsConfigurator);
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
             }
