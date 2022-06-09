@@ -185,10 +185,10 @@ public class SSLUtils {
             ssl.setTrustStorePath(sslTruststoreLocation);
         }
 
-        Password sslTruststorePassword =
-            new Password((String) sslConfigValues.get(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG));
-        if (sslTruststorePassword != null) {
-            ssl.setTrustStorePassword(sslTruststorePassword.value());
+        String sslTruststorePassword =
+            (String) sslConfigValues.get(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG);
+        if (!StringUtils.isEmpty(sslTruststorePassword)) {
+            ssl.setTrustStorePassword(sslTruststorePassword);
         }
     }
 
