@@ -176,6 +176,7 @@ public class PulsarContainer implements AutoCloseable {
                                     }
                                     log.info(text);
                                 });
+        proxyContainer.withEnv("JAVA_JDK_OPTIONS", "-Djdk.tls.disabledAlgorithms=");
         proxyContainer.withEnv("PULSAR_LOG_LEVEL", "info");
         proxyContainer.withEnv("PULSAR_PREFIX_brokerServiceURL", "pulsar://pulsar:6650");
         proxyContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURL", "http://pulsar:8080");
