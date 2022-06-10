@@ -48,5 +48,5 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           cancelMode: allDuplicates
-          workflowFileName: pr-tests.yaml
+          workflowFileName: pr-tests.yml
 
