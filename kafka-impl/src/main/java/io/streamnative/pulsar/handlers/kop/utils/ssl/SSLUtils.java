@@ -211,13 +211,13 @@ public class SSLUtils {
         if (sslProvider != null) {
             ssl.setProvider(sslProvider);
         }
-        log.info("sslProvider: {}", sslProvider);
+//        log.info("sslProvider: {}", sslProvider);
 
         ssl.setProtocol(
             (String) getOrDefault(sslConfigValues, SslConfigs.SSL_PROTOCOL_CONFIG, SslConfigs.DEFAULT_SSL_PROTOCOL));
 
-        log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
-        log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
+//        log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
+//        log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
 
         Set<String> sslCipherSuites = (Set<String>) sslConfigValues.get(SslConfigs.SSL_CIPHER_SUITES_CONFIG);
         if (sslCipherSuites != null && !sslCipherSuites.isEmpty()) {
@@ -365,10 +365,10 @@ public class SSLUtils {
             if (serviceConfig.getTlsProvider() != null) {
                 sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
             }
-            log.info("sslProvider: {}", sslProvider);
-            log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
-            log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
-            log.info("getTlsCiphers: {}", serviceConfig.getTlsCiphers());
+//            log.info("sslProvider: {}", sslProvider);
+//            log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
+//            log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
+//            log.info("getTlsCiphers: {}", serviceConfig.getTlsCiphers());
 
             return new NettyServerSslContextBuilder(
                     sslProvider,
