@@ -19,6 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupConfig;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
@@ -38,12 +39,14 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
+import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.Getter;
 import lombok.NonNull;
@@ -448,7 +451,15 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
-            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer = schemaRegistryManager.build();
+            Consumer<ChannelPipeline> tlsConfigurator = null;
+            if (kafkaConfig.isKopSchemaRegistryProxyEnableTls()) {
+                SSLUtils.ServerSideTLSSupport tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
+                tlsConfigurator = (ChannelPipeline pipeline) ->{
+                    tlsSupport.addTlsHandler((SocketChannel) pipeline.channel());
+                };
+            }
+            Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer =
+                    schemaRegistryManager.build(tlsConfigurator);
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
             }

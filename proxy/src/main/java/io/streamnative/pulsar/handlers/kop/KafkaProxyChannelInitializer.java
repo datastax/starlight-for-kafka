@@ -13,25 +13,17 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
-
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.handler.ssl.SslContext;
-import io.netty.handler.ssl.SslHandler;
-import io.netty.handler.ssl.SslProvider;
-import java.lang.reflect.Constructor;
-import java.util.Arrays;
-import java.util.Set;
+import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import lombok.Getter;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
-import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
 import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,13 +44,11 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final AuthorizationService authorizationService;
     @Getter
     private final KafkaServiceConfiguration kafkaConfig;
-
     @Getter
     private final boolean enableTls;
     @Getter
     private final EndPoint advertisedEndPoint;
-    private final NettyServerSslContextBuilder serverSslCtxRefresher;
-    private final boolean tlsEnabledWithKeyStore;
+    private final SSLUtils.ServerSideTLSSupport tlsSupport;
     private final RequestStats requestStats;
     private final Function<String, String> brokerAddressMapper;
     private final ConcurrentHashMap<String, Node> topicsLeaders;
@@ -84,100 +74,20 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         this.kafkaConfig = serviceConfig;
         this.enableTls = enableTLS;
         this.advertisedEndPoint = advertisedEndPoint;
-        this.tlsEnabledWithKeyStore = serviceConfig.isTlsEnabledWithKeyStore();
 
         // we are using Pulsar Proxy TLS configuration, not KOP
         // this way we can use the same configuration of conf/proxy.conf
         if (enableTls) {
-            if (tlsEnabledWithKeyStore) {
-                serverSSLContextAutoRefreshBuilder = new NettySSLContextAutoRefreshBuilder(
-                        serviceConfig.getTlsProvider(),
-                        serviceConfig.getTlsKeyStoreType(),
-                        serviceConfig.getTlsKeyStore(),
-                        serviceConfig.getTlsKeyStorePassword(),
-                        serviceConfig.isTlsAllowInsecureConnection(),
-                        serviceConfig.getTlsTrustStoreType(),
-                        serviceConfig.getTlsTrustStore(),
-                        serviceConfig.getTlsTrustStorePassword(),
-                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
-                        serviceConfig.getTlsCiphers(),
-                        serviceConfig.getTlsProtocols(),
-                        serviceConfig.getTlsCertRefreshCheckDurationSec());
-                serverSslCtxRefresher = null;
-            } else {
-                serverSSLContextAutoRefreshBuilder = null;
-                serverSslCtxRefresher = buildNettyServerSslContextBuilder(serviceConfig);
-            }
+            tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
         } else {
-            this.serverSslCtxRefresher = null;
-        }
-    }
-
-    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(
-            KafkaServiceConfiguration serviceConfig) {
-        try {
-            try {
-                Constructor<NettyServerSslContextBuilder> constructor283 =
-                        NettyServerSslContextBuilder.class.getConstructor(
-                                SslProvider.class,
-                                Boolean.TYPE,
-                                String.class,
-                                String.class,
-                                String.class,
-                                Set.class,
-                                Set.class,
-                                Boolean.TYPE,
-                                Long.TYPE);
-                SslProvider sslProvider = null;
-                if (serviceConfig.getTlsProvider() != null) {
-                    sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
-                }
-                return constructor283.newInstance(
-                        sslProvider,
-                        serviceConfig.isTlsAllowInsecureConnection(),
-                        serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
-                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
-                        serviceConfig.getTlsProtocols(),
-                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
-                        serviceConfig.getTlsCertRefreshCheckDurationSec());
-            } catch (NoSuchMethodException fallbackTo2880) {
-                Constructor<NettyServerSslContextBuilder> constructor280 =
-                        NettyServerSslContextBuilder.class.getConstructor(
-                                Boolean.TYPE,
-                                String.class,
-                                String.class,
-                                String.class,
-                                Set.class,
-                                Set.class,
-                                Boolean.TYPE,
-                                Long.TYPE);
-                return constructor280.newInstance(serviceConfig.isTlsAllowInsecureConnection(),
-                        serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
-                        serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
-                        serviceConfig.getTlsProtocols(),
-                        serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
-                        serviceConfig.getTlsCertRefreshCheckDurationSec());
-            }
-        } catch (Throwable t) {
-            Arrays.asList(NettyServerSslContextBuilder.class.getConstructors()).forEach(c -> {
-                log.info("Available constructor: {}", c);
-            });
-            throw new RuntimeException(t);
+            tlsSupport = null;
         }
     }
 
     @Override
     protected void initChannel(SocketChannel ch) throws Exception {
-        if (this.enableTls) {
-            if (serverSslCtxRefresher != null) {
-                SslContext sslContext = serverSslCtxRefresher.get();
-                if (sslContext != null) {
-                    ch.pipeline().addLast(TLS_HANDLER, sslContext.newHandler(ch.alloc()));
-                }
-            } else if (this.tlsEnabledWithKeyStore && serverSSLContextAutoRefreshBuilder != null) {
-                ch.pipeline().addLast(TLS_HANDLER,
-                        new SslHandler(serverSSLContextAutoRefreshBuilder.get().createSSLEngine()));
-            }
+        if (tlsSupport != null) {
+            tlsSupport.addTlsHandler(ch);
         }
         String id = ch.remoteAddress() + "";
         ch.pipeline().addLast(new LengthFieldPrepender(4));
