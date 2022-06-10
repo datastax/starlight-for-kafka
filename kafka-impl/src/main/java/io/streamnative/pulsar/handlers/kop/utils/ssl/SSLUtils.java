@@ -19,6 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDL
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
 import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslProvider;
@@ -190,6 +191,8 @@ public class SSLUtils {
         if (!StringUtils.isEmpty(sslTruststorePassword)) {
             ssl.setTrustStorePassword(sslTruststorePassword);
         }
+        log.info("CLIENT sslTruststoreLocation {}", sslTruststoreLocation);
+        log.info("CLIENT sslTruststorePassword {}", sslTruststorePassword);
     }
 
     /**
@@ -208,12 +211,16 @@ public class SSLUtils {
         if (sslProvider != null) {
             ssl.setProvider(sslProvider);
         }
+        log.info("sslProvider: {}", sslProvider);
 
         ssl.setProtocol(
             (String) getOrDefault(sslConfigValues, SslConfigs.SSL_PROTOCOL_CONFIG, SslConfigs.DEFAULT_SSL_PROTOCOL));
 
+        log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
+        log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
+
         Set<String> sslCipherSuites = (Set<String>) sslConfigValues.get(SslConfigs.SSL_CIPHER_SUITES_CONFIG);
-        if (sslCipherSuites != null) {
+        if (sslCipherSuites != null && !sslCipherSuites.isEmpty()) {
             ssl.setIncludeCipherSuites(sslCipherSuites.toArray(new String[sslCipherSuites.size()]));
         }
 
@@ -358,6 +365,11 @@ public class SSLUtils {
             if (serviceConfig.getTlsProvider() != null) {
                 sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
             }
+            log.info("sslProvider: {}", sslProvider);
+            log.info("Available Ciphers 1: {}", OpenSsl.availableOpenSslCipherSuites());
+            log.info("Available Ciphers 2: {}", OpenSsl.availableJavaCipherSuites());
+            log.info("getTlsCiphers: {}", serviceConfig.getTlsCiphers());
+
             return new NettyServerSslContextBuilder(
                     sslProvider,
                     serviceConfig.isTlsAllowInsecureConnection(),

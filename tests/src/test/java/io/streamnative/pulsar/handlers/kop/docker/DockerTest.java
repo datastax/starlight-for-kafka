@@ -36,19 +36,9 @@ public class DockerTest {
         test("pulsar:9092", false, IMAGE_PULSAR210);
     }
 
-    @Test(enabled = false)
-    public void testTls() throws Exception {
-        test("pulsar:9093", false, IMAGE_PULSAR210, true);
-    }
-
     @Test
     public void testProxy() throws Exception {
         test("pulsarproxy:9092", true, IMAGE_PULSAR210);
-    }
-
-    @Test(enabled = false)
-    public void testProxyTls() throws Exception {
-        test("pulsarproxy:9093", true, IMAGE_PULSAR210);
     }
 
     @Test
@@ -67,13 +57,18 @@ public class DockerTest {
     }
 
     @Test
+    public void testLunaStreamingTls() throws Exception {
+        test("pulsar:9093", false, IMAGE_LUNASTREAMING210, true);
+    }
+
+    @Test
     public void testProxyLunaStreaming() throws Exception {
         test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING210);
     }
 
     @Test
     public void testProxyLunaStreamingTls() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING210, true);
+        test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING210, true);
     }
 
     @Test
