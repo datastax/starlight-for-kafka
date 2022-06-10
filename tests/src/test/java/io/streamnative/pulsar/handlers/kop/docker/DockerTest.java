@@ -86,6 +86,11 @@ public class DockerTest {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210);
     }
 
+    @Test
+    public void testAvroProxyLunaStreamingTls() throws Exception {
+        testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210, true);
+    }
+
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
         test(kafkaAddress, proxy, image, false);
     }
