@@ -77,10 +77,14 @@ public class DockerTest {
     }
 
     @Test
+    public void testAvroLunaStreamingTls() throws Exception {
+        testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING210, true);
+    }
+
+    @Test
     public void testAvroProxyLunaStreaming() throws Exception {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210);
     }
-
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
         test(kafkaAddress, proxy, image, false);
@@ -159,17 +163,29 @@ public class DockerTest {
     }
 
     private void testAvro(String kafkaAddress, String registryAddress, boolean proxy, String image) throws Exception {
+        testAvro(kafkaAddress, registryAddress, proxy, image, false);
+    }
+
+    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy, String image, boolean tls) throws Exception {
+        String consumerConfigurationTls = "";
+        String producerConfigurationTls = "";
+        if (tls) {
+            consumerConfigurationTls = "--consumer.config /home/appuser/client.properties";
+            producerConfigurationTls = "--producer.config /home/appuser/client.properties";
+        }
+
         // create a docker network
         try (Network network = Network.newNetwork();) {
             // start Pulsar and wait for it to be ready to accept requests
-            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image, false);) {
+            try (PulsarContainer pulsarContainer = new PulsarContainer(network, proxy, image, tls);) {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);
                 try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
                         .withNetwork(network)
                         .withCommand("bash", "-c", "kafka-avro-console-consumer --bootstrap-server " + kafkaAddress
-                                + " --topic test --from-beginning --property schema.registry.url=" + registryAddress)
+                                + " --topic test --from-beginning --property schema.registry.url=" + registryAddress
+                                + " " + consumerConfigurationTls)
                         .withLogConsumer(new Consumer<OutputFrame>() {
                             @Override
                             public void accept(OutputFrame outputFrame) {
@@ -179,6 +195,18 @@ public class DockerTest {
                                 }
                             }
                         })) {
+                    if (tls) {
+                        clientContainer.withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/docker/kafka_client_config_tls.properties"),
+                                "/home/appuser/client.properties");
+                        clientContainer.withCopyFileToContainer(
+                                MountableFile.forClasspathResource("ssl/docker/ca.jks"),
+                                "/home/appuser/ca.jks");
+                        clientContainer.withEnv("SCHEMA_REGISTRY_OPTS",
+                                "-Djavax.net.ssl.trustStore=/home/appuser/ca.jks "
+                                + "-Djavax.net.ssl.trustStorePassword=pulsar"
+                        );
+                    }
                     clientContainer.start();
 
                     // sample taken from https://kafka-tutorials.confluent.io/kafka-console-consumer-producer/kafka.html
@@ -225,7 +253,8 @@ public class DockerTest {
                                             + "}' > order_detail.avsc && "
                                             + " kafka-avro-console-producer --bootstrap-server " + kafkaAddress
                                             + " --topic test --property schema.registry.url=" + registryAddress
-                                            + " --property value.schema=\"$(< order_detail.avsc)\" < file.txt && "
+                                            + " --property value.schema=\"$(< order_detail.avsc)\" < file.txt "
+                                            + " " + producerConfigurationTls + " && "
                                             + "echo FINISHEDPRODUCER")
                             .withLogConsumer(new Consumer<OutputFrame>() {
                                 @Override
@@ -236,6 +265,18 @@ public class DockerTest {
                                     }
                                 }
                             })) {
+                        if (tls) {
+                            producerContainer.withCopyFileToContainer(
+                                    MountableFile.forClasspathResource("ssl/docker/kafka_client_config_tls.properties"),
+                                    "/home/appuser/client.properties");
+                            producerContainer.withCopyFileToContainer(
+                                    MountableFile.forClasspathResource("ssl/docker/ca.jks"),
+                                    "/home/appuser/ca.jks");
+                            producerContainer.withEnv("SCHEMA_REGISTRY_OPTS",
+                                    "-Djavax.net.ssl.trustStore=/home/appuser/ca.jks "
+                                            + "-Djavax.net.ssl.trustStorePassword=pulsar"
+                            );
+                        }
                         producerContainer.start();
                         assertTrue(sent.await(60, TimeUnit.SECONDS));
                     }
