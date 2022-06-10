@@ -171,7 +171,8 @@ public class DockerTest {
         testAvro(kafkaAddress, registryAddress, proxy, image, false);
     }
 
-    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy, String image, boolean tls) throws Exception {
+    private void testAvro(String kafkaAddress, String registryAddress, boolean proxy,
+                          String image, boolean tls) throws Exception {
         String consumerConfigurationTls = "";
         String producerConfigurationTls = "";
         if (tls) {
