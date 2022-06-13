@@ -16,6 +16,6 @@ openssl req -config openssl.cnf -key private/ca.key.pem \
 # You must enter the same password in the previous openssl command
 chmod 444 certs/ca.cert.pem
 
-keytool -importcert -trustcacerts -file certs/ca.cert.pem -keystore certs/ca.jks
+keytool -importcert -trustcacerts -file certs/ca.cert.pem -keystore certs/ca.jks -storepass pulsar  -noprompt 
 
 
