@@ -29,7 +29,7 @@ import org.testng.annotations.Test;
 public class DockerTest {
 
     private static final String IMAGE_LS280 = "datastax/lunastreaming:2.8.0_1.1.40";
-    private static final String IMAGE_LS283 = "datastax/lunastreaming:2.8.3_1.0.7";
+    private static final String IMAGE_LS283 = "datastax/lunastreaming:2.8.3_1.0.12";
     private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
 
     @Test
