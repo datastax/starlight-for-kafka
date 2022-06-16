@@ -311,10 +311,8 @@ public class KafkaProtocolProxyMain {
 
         @Override
         public String get() {
-            String rawServiceUrl = proxyConfiguration.getBrokerWebServiceURLTLS();
-            if (StringUtils.isEmpty(rawServiceUrl)) {
-                rawServiceUrl = proxyConfiguration.getBrokerWebServiceURL();
-            }
+            String rawServiceUrl = proxyConfiguration.isTlsEnabledWithBroker()
+                    ? proxyConfiguration.getBrokerWebServiceURLTLS() : proxyConfiguration.getBrokerWebServiceURL();
 
             int colon = rawServiceUrl.lastIndexOf(':');
             String res;
@@ -409,10 +407,10 @@ public class KafkaProtocolProxyMain {
             }
             try {
                 return cache.computeIfAbsent(originalPrincipal, principal -> {
-                    String brokerWebServiceURL = proxyConfiguration.getBrokerWebServiceURLTLS();
-                    if (StringUtils.isEmpty(brokerWebServiceURL)) {
-                        brokerWebServiceURL = proxyConfiguration.getBrokerWebServiceURL();
-                    }
+                    String brokerWebServiceURL =
+                            proxyConfiguration.isTlsEnabledWithBroker()
+                                    ? proxyConfiguration.getBrokerWebServiceURLTLS()
+                                    : proxyConfiguration.getBrokerWebServiceURL();
                     try {
                                 String auth = proxyConfiguration.getBrokerClientAuthenticationPlugin();
                                 String authParams = proxyConfiguration.getBrokerClientAuthenticationParameters();
