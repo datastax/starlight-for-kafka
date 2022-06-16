@@ -30,8 +30,10 @@ import java.util.regex.Matcher;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.pulsar.broker.ServiceConfiguration;
+import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
 
@@ -40,6 +42,7 @@ import org.apache.pulsar.common.configuration.FieldContext;
  */
 @Getter
 @Setter
+@Slf4j
 public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     public static final String TENANT_PLACEHOLDER = "${tenant}";
@@ -547,7 +550,8 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
                     throw new IllegalStateException("hostname is empty and localhost is unknown: " + e.getMessage());
                 }
             } else if (hostname.equalsIgnoreCase("advertisedAddress")) {
-                hostname = getAdvertisedAddress();
+                hostname = ServiceConfigurationUtils.getDefaultOrConfiguredAddress(getAdvertisedAddress());
+                log.info("Resolved placeholder 'advertisedAddress' as {} ", hostname);
                 listenersReBuilder.append(matcher.group(1))
                         .append("://")
                         .append(hostname)
