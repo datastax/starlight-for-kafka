@@ -452,7 +452,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
             Consumer<ChannelPipeline> tlsConfigurator = null;
-            if (kafkaConfig.isKopSchemaRegistryProxyEnableTls()) {
+            if (kafkaConfig.isKopSchemaRegistryEnableTls()) {
                 SSLUtils.ServerSideTLSSupport tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
                 tlsConfigurator = (ChannelPipeline pipeline) ->{
                     tlsSupport.addTlsHandler((SocketChannel) pipeline.channel());
