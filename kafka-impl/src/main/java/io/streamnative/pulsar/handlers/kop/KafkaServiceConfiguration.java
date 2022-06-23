@@ -530,6 +530,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Enable TLS on the KOP Schema Registry on the broker."
+    )
+    private boolean kopSchemaRegistryEnableTls = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Enable TLS on the KOP Proxy Schema Registry."
     )
     private boolean kopSchemaRegistryProxyEnableTls = false;

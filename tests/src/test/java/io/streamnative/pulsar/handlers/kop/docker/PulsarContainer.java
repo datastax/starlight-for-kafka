@@ -126,7 +126,7 @@ public class PulsarContainer implements AutoCloseable {
     pulsarContainer.withEnv("PULSAR_PREFIX_configurationStoreServers", "pulsar:2181");
 
     if (enableTls) {
-        pulsarContainer.withEnv("PULSAR_PREFIX_kopSchemaRegistryProxyEnableTls", "true");
+        pulsarContainer.withEnv("PULSAR_PREFIX_kopSchemaRegistryEnableTls", "true");
         pulsarContainer.withEnv("PULSAR_PREFIX_kafkaListeners", "PLAINTEXT://pulsar:9092,SSL://pulsar:9093");
         pulsarContainer.withEnv("PULSAR_PREFIX_kafkaAdvertisedListeners", "PLAINTEXT://pulsar:9092,SSL://pulsar:9093");
         pulsarContainer.withEnv("PULSAR_PREFIX_tlsCertificateFilePath", "/pulsar/conf/broker.cert.pem");
