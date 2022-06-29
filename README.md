@@ -15,15 +15,17 @@ Starlight for Kafka, implemented as a Pulsar https://github.com/apache/pulsar/bl
 
 Starlight for Kafka implements the Kafka wire protocol on Pulsar by leveraging the existing components (such as topic discovery, the distributed log library - ManagedLedger, cursors and so on) that Pulsar already has.
 
-Starlight for Kafka also adds additional features to make nativa Kafka protocol support even easier. 
+## Features
 
-* A schema registry compatible with both the https://docs.confluent.io/platform/current/schema-registry/index.html[Confluent Schema Registry®] and the https://www.apicur.io/registry[Apicurio Schema Registry]. +
+Starlight for Kafka adds additional features to make native Kafka protocol support even easier. 
+
+* Integrated support for the Pulsar Schema registry
 
 * A proxy extension allowing the Kafka client to access your Pulsar cluster the same way as Pulsar clients do. 
 
 * An AVRO schema deserializer
 
-For documentation, see the https://docs.datastax.com/en/starlight-kafka/docs/index.html[Starlight for Kafka documentation].
+For documentation, see the https://docs.datastax.com/en/starlight-kafka/docs/1.0/index.html[Starlight for Kafka documentation].
 
 
 
