@@ -116,7 +116,7 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
         }
 
         public void onError(Throwable error) {
-            log.info("[TransactionMarkerChannelHandler] onError {}", error);
+            log.info("[TransactionMarkerChannelHandler] onError", error);
             final List<WriteTxnMarkersRequest.TxnMarkerEntry> markers = request.markers();
             Map<Long, Map<TopicPartition, Errors>> errors = new HashMap<>(markers.size());
             for (WriteTxnMarkersRequest.TxnMarkerEntry entry : markers) {
@@ -136,9 +136,6 @@ public class TransactionMarkerChannelHandler extends ChannelInboundHandlerAdapte
 
     @Override
     public void channelActive(ChannelHandlerContext channelHandlerContext) throws Exception {
-        if (log.isDebugEnabled()) {
-            log.debug("channelActive");
-        }
         log.info("[TransactionMarkerChannelHandler] channelActive to {}", channelHandlerContext.channel());
         handleAuthentication(channelHandlerContext);
         super.channelActive(channelHandlerContext);
