@@ -1111,7 +1111,7 @@ public class GroupCoordinator {
 
     private void maybePrepareRebalance(GroupMetadata group) {
         group.inLock(() -> {
-            if (group.canReblance()) {
+            if (group.canRebalance()) {
                 prepareRebalance(group);
             }
             return null;
