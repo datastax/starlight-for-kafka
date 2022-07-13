@@ -112,7 +112,6 @@ public class GroupMetadataManager {
     private final Set<Integer> ownedPartitions = new HashSet<>();
     /* shutting down flag */
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    private final int groupMetadataTopicPartitionCount;
 
     // Map of <PartitionId, Producer>
     private final ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> offsetsProducers =
@@ -241,7 +240,6 @@ public class GroupMetadataManager {
         this.offsetConfig = offsetConfig;
         this.compressionType = offsetConfig.offsetsTopicCompressionType();
         this.groupMetadataCache = new ConcurrentHashMap<>();
-        this.groupMetadataTopicPartitionCount = offsetConfig.offsetsTopicNumPartitions();
         this.metadataTopicProducerBuilder = metadataTopicProducerBuilder;
         this.metadataTopicReaderBuilder = metadataTopicConsumerBuilder;
         this.scheduler = scheduler;
@@ -339,10 +337,6 @@ public class GroupMetadataManager {
         return offsetsTopicName + PARTITIONED_TOPIC_SUFFIX + partitionId;
     }
 
-    public int getGroupMetadataTopicPartitionCount() {
-        return groupMetadataTopicPartitionCount;
-    }
-
     public boolean isGroupLocal(String groupId) {
         return isPartitionOwned(partitionFor(groupId));
     }
@@ -371,13 +365,6 @@ public class GroupMetadataManager {
                 .map(group -> group.inLock(() -> group.is(GroupState.Dead)))
                 .orElse(true)
         );
-    }
-
-    boolean isGroupOpenForProducer(long producerId,
-                                   String groupId) {
-        return openGroupsForProducer.getOrDefault(
-            producerId, Collections.emptySet()
-        ).contains(groupId);
     }
 
     public Optional<GroupMetadata> getGroup(String groupId) {
@@ -476,8 +463,8 @@ public class GroupMetadataManager {
             offsetMetadata.entrySet().stream()
                 .filter(entry -> validateOffsetMetadataLength(entry.getValue().metadata()))
                 .collect(Collectors.toMap(
-                    e -> e.getKey(),
-                    e -> e.getValue()
+                        Map.Entry::getKey,
+                        Map.Entry::getValue
                 ));
 
         group.inLock(() -> {
@@ -497,7 +484,7 @@ public class GroupMetadataManager {
             Map<TopicPartition, Errors> commitStatus = offsetMetadata.entrySet()
                 .stream()
                 .collect(Collectors.toMap(
-                    e -> e.getKey(),
+                        Map.Entry::getKey,
                     e -> Errors.OFFSET_METADATA_TOO_LARGE
                 ));
             return CompletableFuture.completedFuture(commitStatus);
@@ -597,7 +584,7 @@ public class GroupMetadataManager {
             .thenApplyAsync(errors -> offsetMetadata.entrySet()
                 .stream()
                 .collect(Collectors.toMap(
-                    e -> e.getKey(),
+                        Map.Entry::getKey,
                     e -> {
                         if (validateOffsetMetadataLength(e.getValue().metadata())) {
                             return errors;
@@ -658,7 +645,7 @@ public class GroupMetadataManager {
                 group.allOffsets().entrySet()
                     .stream()
                     .collect(Collectors.toMap(
-                        e -> e.getKey(),
+                            Map.Entry::getKey,
                         e -> {
                             OffsetAndMetadata oam = e.getValue();
                             return KafkaResponseUtils.newOffsetFetchPartition(
@@ -972,7 +959,7 @@ public class GroupMetadataManager {
             );
         };
 
-        metadataConsumer.thenComposeAsync(r -> r.readNextAsync()).whenCompleteAsync((message, cause) -> {
+        metadataConsumer.thenComposeAsync(Reader::readNextAsync).whenCompleteAsync((message, cause) -> {
             try {
                 readNextComplete.accept(message, cause);
             } catch (Throwable completeCause) {
@@ -1001,11 +988,11 @@ public class GroupMetadataManager {
                         e -> e.getKey().group(),
                         Collectors.toMap(
                             f -> f.getKey().topicPartition(),
-                            f -> f.getValue()
+                                Map.Entry::getValue
                         ))
                     );
             Map<Boolean, Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>>> partitionedLoadedOffsets =
-                CoreUtils.partition(groupLoadedOffsets, group -> loadedGroups.containsKey(group));
+                CoreUtils.partition(groupLoadedOffsets, loadedGroups::containsKey);
             Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>> groupOffsets =
                 partitionedLoadedOffsets.get(true);
             Map<String, Map<TopicPartition, CommitRecordMetadataAndOffset>> emptyGroupOffsets =
@@ -1024,7 +1011,7 @@ public class GroupMetadataManager {
                         e -> e.getKey().group,
                         Collectors.toMap(
                             f -> f.getKey().topicPartition(),
-                            f -> f.getValue()
+                                Map.Entry::getValue
                         )
                     ))
                     .forEach((group, offsets) -> {
@@ -1041,9 +1028,9 @@ public class GroupMetadataManager {
             });
 
             Map<Boolean, Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>>>
-                partitionedPendingOffsetsByGroup = CoreUtils.partition(
-                pendingOffsetsByGroup,
-                group -> loadedGroups.containsKey(group)
+                    partitionedPendingOffsetsByGroup = CoreUtils.partition(
+                    pendingOffsetsByGroup,
+                    loadedGroups::containsKey
             );
             Map<String, Map<Long, Map<TopicPartition, CommitRecordMetadataAndOffset>>> pendingGroupOffsets =
                 partitionedPendingOffsetsByGroup.get(true);
@@ -1178,7 +1165,7 @@ public class GroupMetadataManager {
                 CompletableFuture<Producer<ByteBuffer>> producer = offsetsProducers.remove(offsetsPartition);
                 CompletableFuture<Reader<ByteBuffer>> reader = offsetsReaders.remove(offsetsPartition);
                 if (producer != null) {
-                    producer.thenApplyAsync(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    producer.thenApplyAsync(Producer::closeAsync).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close producer when remove partition {}.",
                                 producer.join().getTopic());
@@ -1186,7 +1173,7 @@ public class GroupMetadataManager {
                     }, scheduler);
                 }
                 if (reader != null) {
-                    reader.thenApplyAsync(p -> p.closeAsync()).whenCompleteAsync((ignore, t) -> {
+                    reader.thenApplyAsync(Reader::closeAsync).whenCompleteAsync((ignore, t) -> {
                         if (t != null) {
                             log.error("Failed to close reader when remove partition {}.",
                                 reader.join().getTopic());
@@ -1260,7 +1247,7 @@ public class GroupMetadataManager {
                 MemoryRecords records = MemoryRecords.withRecords(
                     magicValue, 0L, compressionType,
                     timestampType,
-                    tombstones.toArray(new SimpleRecord[tombstones.size()])
+                    tombstones.toArray(new SimpleRecord[0])
                 );
                 byte[] groupKey = groupMetadataKey(
                     group.groupId()
@@ -1311,16 +1298,14 @@ public class GroupMetadataManager {
         pendingGroups.forEach(groupId -> {
             CompletableFuture<Void> groupFuture = new CompletableFuture<>();
             groupFutureList.add(groupFuture);
-            getGroup(groupId).map(group -> {
-                return group.inLock(() -> {
-                    if (!group.is(GroupState.Dead)) {
-                        group.completePendingTxnOffsetCommit(producerId, isCommit);
-                        removeProducerGroup(producerId, groupId);
-                    }
-                    groupFuture.complete(null);
-                    return null;
-                });
-            }).orElseGet(() -> {
+            getGroup(groupId).map(group -> group.inLock(() -> {
+                if (!group.is(GroupState.Dead)) {
+                    group.completePendingTxnOffsetCommit(producerId, isCommit);
+                    removeProducerGroup(producerId, groupId);
+                }
+                groupFuture.complete(null);
+                return null;
+            })).orElseGet(() -> {
                 log.info("Group {} has moved away from this coordinator after transaction marker was written"
                         + " but before the cache was updated. The cache on the new group owner will be updated"
                         + " instead.",
