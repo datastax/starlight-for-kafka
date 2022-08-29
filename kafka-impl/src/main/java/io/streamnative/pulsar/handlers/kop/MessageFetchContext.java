@@ -448,28 +448,40 @@ public final class MessageFetchContext {
         } else {
             magic = RecordBatch.CURRENT_MAGIC_VALUE;
         }
+        final CompletableFuture<String> groupNameFuture;
+        if (requestHandler.getKafkaConfig().isKopEnableGroupLevelConsumerMetrics()) {
+            groupNameFuture = requestHandler
+                    .getCurrentConnectedGroup()
+                    .computeIfAbsent(clientHost, clientHost -> {
+                        CompletableFuture<String> future = new CompletableFuture<>();
+                        String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, header.clientId());
+                        requestHandler.getMetadataStore()
+                                .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
+                                .thenAccept(getResultOpt -> {
+                                    String groupName;
+                                    if (getResultOpt.isPresent()) {
+                                        GetResult getResult = getResultOpt.get();
+                                        groupName = new String(getResult.getValue() == null
+                                                ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8);
 
-        CompletableFuture<String> groupNameFuture = requestHandler
-                .getCurrentConnectedGroup()
-                .computeIfAbsent(clientHost, clientHost -> {
-                    CompletableFuture<String> future = new CompletableFuture<>();
-                    String groupIdPath = GroupIdUtils.groupIdPathFormat(clientHost, header.clientId());
-                    requestHandler.getMetadataStore()
-                            .get(requestHandler.getGroupIdStoredPath() + groupIdPath)
-                            .thenAccept(getResultOpt -> {
-                                if (getResultOpt.isPresent()) {
-                                    GetResult getResult = getResultOpt.get();
-                                    future.complete(new String(getResult.getValue() == null
-                                            ? new byte[0] : getResult.getValue(), StandardCharsets.UTF_8));
-                                } else {
-                                    future.complete("");
-                                }
-                            }).exceptionally(ex -> {
-                                future.completeExceptionally(ex);
-                                return null;
-                            });
-                    return future;
-                });
+                                    } else {
+                                        groupName = "";
+                                    }
+                                    if (log.isDebugEnabled()) {
+                                        log.debug("Request {}: Path {} get current group ID is {}",
+                                                header, groupIdPath, groupName);
+                                    }
+                                    future.complete(groupName);
+                                }).exceptionally(ex -> {
+                                    future.completeExceptionally(ex);
+                                    return null;
+                                });
+                        return future;
+                    });
+        } else {
+            groupNameFuture = CompletableFuture.completedFuture(null);
+        }
+
 
         // this part is heavyweight, and we should not execute in the ManagedLedger Ordered executor thread
         groupNameFuture.whenCompleteAsync((_groupName, ex) -> {
