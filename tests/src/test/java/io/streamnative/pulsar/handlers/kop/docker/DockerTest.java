@@ -28,8 +28,8 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_0.5";
-    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.0";
+    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_1.5";
+    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.1";
 
     @Test
     public void test() throws Exception {
