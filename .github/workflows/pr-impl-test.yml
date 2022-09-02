@@ -21,6 +21,10 @@ jobs:
     - name: License check
       run: mvn -ntp -B license:check
 
+    - name: Start and init the oauth server
+      run: ./ci/init_hydra_oauth_server.sh
+      timeout-minutes: 5
+
     - name: Build with Maven skipTests
       run: mvn clean install -ntp -B -DskipTests
 

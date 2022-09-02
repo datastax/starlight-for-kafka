@@ -159,12 +159,12 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         return "file://" + file.getAbsolutePath();
     }
 
-    @Test(timeOut = 15000, enabled = false)
+    @Test(timeOut = 15000)
     public void testSimpleProduceConsume() throws Exception {
         super.testSimpleProduceConsume();
     }
 
-    @Test(timeOut = 15000, enabled = false)
+    @Test(timeOut = 15000)
     public void testGrantAndRevokePermission() throws Exception {
         OauthMockAuthorizationProvider.NULL_ROLE_STACKS.clear();
         final String namespace = conf.getKafkaTenant() + "/" + conf.getKafkaNamespace();
@@ -201,7 +201,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         Assert.assertEquals(OauthMockAuthorizationProvider.NULL_ROLE_STACKS.size(), 0);
     }
 
-    @Test(timeOut = 15000, enabled = false)
+    @Test(timeOut = 15000)
     public void testWrongSecret() throws IOException {
         final Properties producerProps = newKafkaProducerProperties();
         internalConfigureOauth2(producerProps,
@@ -214,7 +214,7 @@ public class SaslOauthKopHandlersTest extends SaslOauthBearerTestBase {
         }
     }
 
-    @Test(timeOut = 15000, enabled = false)
+    @Test(timeOut = 15000)
     public void testProduceWithoutAuth() throws Exception {
         super.testProduceWithoutAuth();
     }
