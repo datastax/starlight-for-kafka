@@ -526,7 +526,11 @@ public final class MessageFetchContext {
                 log.error("Internal error while decoding entries in topic {}", fullTopicName, err);
                 return null;
             });
-        }, requestHandler.getDecodeExecutor());
+        }, requestHandler.getDecodeExecutor()).exceptionally(ex -> {
+            log.error("Request {}: Partition {} read entry exceptionally. ", header, topicPartition, ex);
+            addErrorPartitionResponse(topicPartition, Errors.KAFKA_STORAGE_ERROR);
+            return null;
+        });
     }
 
     private List<Entry> getCommittedEntries(List<Entry> entries, long lso) {
