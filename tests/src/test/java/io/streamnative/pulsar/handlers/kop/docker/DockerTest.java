@@ -30,6 +30,8 @@ public class DockerTest {
 
     private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_1.5";
     private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.1";
+    private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
+    private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
 
     @Test
     public void test() throws Exception {
@@ -109,7 +111,7 @@ public class DockerTest {
                     producerConfigurationTls = "--producer.config /home/appuser/client.properties";
                 }
                 CountDownLatch received = new CountDownLatch(1);
-                try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-kafka:latest")
+                try (GenericContainer clientContainer = new GenericContainer(CONFLUENT_CLIENT)
                         .withNetwork(network)
                         .withCommand("bash", "-c", "kafka-console-consumer --bootstrap-server " + kafkaAddress
                                 + " --topic test --from-beginning " + consumerConfigurationTls)
@@ -133,7 +135,7 @@ public class DockerTest {
                     clientContainer.start();
 
                     CountDownLatch sent = new CountDownLatch(1);
-                    try (GenericContainer producerContainer = new GenericContainer("confluentinc/cp-kafka:latest")
+                    try (GenericContainer producerContainer = new GenericContainer(CONFLUENT_CLIENT)
                             .withNetwork(network)
                             .withCommand("bash", "-c",
                                     "echo This-is-my-message > file.txt && "
@@ -187,7 +189,7 @@ public class DockerTest {
                 pulsarContainer.start();
 
                 CountDownLatch received = new CountDownLatch(1);
-                try (GenericContainer clientContainer = new GenericContainer("confluentinc/cp-schema-registry:latest")
+                try (GenericContainer clientContainer = new GenericContainer(CONFLUENT_SCHEMAREGISTRY_CLIENT)
                         .withNetwork(network)
                         .withCommand("bash", "-c", "kafka-avro-console-consumer --bootstrap-server " + kafkaAddress
                                 + " --topic test --from-beginning --property schema.registry.url=" + registryAddress
@@ -218,7 +220,7 @@ public class DockerTest {
                     // sample taken from https://kafka-tutorials.confluent.io/kafka-console-consumer-producer/kafka.html
                     CountDownLatch sent = new CountDownLatch(1);
                     try (GenericContainer producerContainer = new GenericContainer(
-                            "confluentinc/cp-schema-registry:latest")
+                            CONFLUENT_SCHEMAREGISTRY_CLIENT)
                             .withNetwork(network)
                             .withCommand("bash", "-c",
                                     "echo '{\"number\": 2343439, \"date\": 1596501510, "

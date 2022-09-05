@@ -104,7 +104,7 @@ public class PulsarContainer implements AutoCloseable {
             "{\"token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.Zjo9EQa8HdY1qFTgHxMVD4II7FKc1Q-dwNg_UOuGOvU\"");
     pulsarContainer.withEnv("PULSAR_PREFIX_brokerServiceURL", "pulsar://pulsar:6650");
     pulsarContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURL", "http://pulsar:8080");
-
+    pulsarContainer.withEnv("PULSAR_PREFIX_kafkaTransactionCoordinatorEnabled", "true");
     pulsarContainer.withEnv("PULSAR_PREFIX_narExtractionDirectory", "data");
     pulsarContainer.withEnv("PULSAR_PREFIX_brokerEntryMetadataInterceptors",
             "org.apache.pulsar.common.intercept.AppendIndexMetadataInterceptor,"
