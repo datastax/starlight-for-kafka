@@ -137,6 +137,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         return transactionCoordinatorByTenant.computeIfAbsent(tenant, this::createAndBootTransactionCoordinator);
     }
 
+    @VisibleForTesting
+    public Map<String, TransactionCoordinator> getTransactionCoordinatorByTenant() {
+        return transactionCoordinatorByTenant;
+    }
+
     @Override
     public ReplicaManager getReplicaManager(String tenant) {
         return replicaManagerByTenant.computeIfAbsent(tenant, s -> {

@@ -16,6 +16,8 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
+import static org.testng.Assert.assertNotNull;
+import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -84,7 +86,7 @@ import org.apache.pulsar.proxy.server.ProxyService;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.MockZooKeeper;
 import org.apache.zookeeper.data.ACL;
-import org.testng.Assert;
+import org.awaitility.Awaitility;
 
 /**
  * Unit test to test KoP handler.
@@ -335,6 +337,23 @@ public abstract class KopProtocolHandlerTestBase {
             }
             // we don't want user topic to use compaction
             admin.namespaces().removeCompactionThreshold(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
+
+            if (conf.isKafkaManageSystemNamespaces()) {
+
+                Awaitility.await().untilAsserted(() -> {
+                    KafkaProtocolHandler protocolHandler =
+                            (KafkaProtocolHandler) pulsar.getProtocolHandlers().protocol("kafka");
+                    log.info("HANDLER {}", protocolHandler);
+                    assertNotNull(protocolHandler);
+                    log.info("COORDINATORS {}", protocolHandler.getGroupCoordinators().keySet());
+                    assertTrue(protocolHandler.getGroupCoordinators().containsKey(conf.getKafkaMetadataTenant()));
+                    if (conf.isKafkaTransactionCoordinatorEnabled()) {
+                        log.info("TXMANAGERS {}", protocolHandler.getTransactionCoordinatorByTenant().keySet());
+                        assertTrue(protocolHandler.getTransactionCoordinatorByTenant()
+                                .containsKey(conf.getKafkaMetadataTenant()));
+                    }
+                });
+            }
         }
 
     }
@@ -888,9 +907,9 @@ public abstract class KopProtocolHandlerTestBase {
     }
 
     public static <T> T getFirst(Set<T> set) {
-        Assert.assertNotNull(set);
+        assertNotNull(set);
         final Iterator<T> iterator = set.iterator();
-        Assert.assertTrue(iterator.hasNext());
+        assertTrue(iterator.hasNext());
         return iterator.next();
     }
 
