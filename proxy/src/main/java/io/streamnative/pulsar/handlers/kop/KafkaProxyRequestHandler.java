@@ -284,6 +284,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         return authenticator == null || authenticator.complete();
     }
 
+    @Override
     protected void handleApiVersionsRequest(KafkaHeaderAndRequest apiVersionRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
         if (!ApiKeys.API_VERSIONS.isVersionSupported(apiVersionRequest.getHeader().apiVersion())) {
@@ -297,29 +298,23 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     protected ApiVersionsResponse overloadDefaultApiVersionsResponse(boolean unsupportedApiVersion) {
-        List<ApiVersionsResponse.ApiVersion> versionList = new ArrayList<>();
-        if (unsupportedApiVersion) {
-            return new ApiVersionsResponse(0, Errors.UNSUPPORTED_VERSION, versionList);
+        if (unsupportedApiVersion){
+            return KafkaResponseUtils.newApiVersions(Errors.UNSUPPORTED_VERSION);
         } else {
+            List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
                 if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
-                        case FETCH:
-                            // V4 added MessageSets responses. We need to make sure RecordBatch format is not used
-                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 1, (short) 4,
-                                    apiKey.latestVersion()));
-                            break;
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
-                            versionList.add(new ApiVersionsResponse.ApiVersion((short) 2, (short) 0,
-                                    apiKey.latestVersion()));
+                            versionList.add(new ApiVersion((short) 2, (short) 0, apiKey.latestVersion()));
                             break;
                         default:
-                            versionList.add(new ApiVersionsResponse.ApiVersion(apiKey));
+                            versionList.add(new ApiVersion(apiKey));
                     }
                 }
             }
-            return new ApiVersionsResponse(0, Errors.NONE, versionList);
+            return KafkaResponseUtils.newApiVersions(versionList);
         }
     }
 
