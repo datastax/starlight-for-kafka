@@ -63,7 +63,7 @@
     <commons-compress.version>1.21</commons-compress.version>
     <grpc.version>1.45.1</grpc.version>
     <junit.version>4.13.1</junit.version>
-    <fusionauth-jwt.version>5.2.0</fusionauth-jwt.version>
+    <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <snakeyaml.version>1.31</snakeyaml.version>
 
     <!-- plugin dependencies -->
