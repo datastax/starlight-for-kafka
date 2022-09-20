@@ -34,6 +34,9 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!Docker*Test' -pl tests
       timeout-minutes: 120
 
+    - name: Upload to Codecov
+      uses: codecov/codecov-action@v3
+
     - name: package surefire artifacts
       if: failure()
       run: |
