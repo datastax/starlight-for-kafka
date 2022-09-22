@@ -131,23 +131,16 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
-        otherGroupId = "otherGroupId";
-        offsetConfig.offsetsTopicNumPartitions(4);
+        otherGroupId = "otherGroup";
+        offsetConfig.offsetsTopicNumPartitions(2);
         groupMetadataManager = spy(new GroupMetadataManager(
-            conf.getKafkaMetadataTenant(),
-            offsetConfig,
-            producerBuilder,
-            readerBuilder,
-            scheduler,
-            timer.time(),
-            id -> {
-                if (groupId.equals(id) || id.isEmpty()) {
-                    return groupPartitionId;
-                } else {
-                    return otherGroupPartitionId;
-                }
-            },
-            "public/default"
+                tenant,
+                offsetConfig,
+                producerBuilder,
+                readerBuilder,
+                scheduler,
+                timer.time(),
+                "public/default"
         ));
 
         assertNotEquals(groupPartitionId, otherGroupPartitionId);
@@ -200,12 +193,12 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testRequestHandlingWhileLoadingInProgress() throws Exception {
-        groupMetadataManager.addLoadingPartition(groupPartitionId);
+        groupMetadataManager.addLoadingPartition(otherGroupPartitionId);
         assertTrue(groupMetadataManager.isGroupLocal(groupId));
 
         // JoinGroup
         JoinGroupResult joinGroupResponse = groupCoordinator.handleJoinGroup(
-            groupId, memberId, "clientId", "clientHost", 60000, 10000, "consumer",
+            otherGroupId, memberId, "clientId", "clientHost", 60000, 10000, "consumer",
             protocols
         ).get();
         assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, joinGroupResponse.getError());
@@ -213,7 +206,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // SyncGroup
         CompletableFuture<Errors> syncGroupResponse = new CompletableFuture<>();
         groupCoordinator.handleSyncGroup(
-            groupId, 1, memberId, protocols,
+            otherGroupId, 1, memberId, protocols,
             (ignored, error) -> {
                 syncGroupResponse.complete(error);
             });
@@ -222,7 +215,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         // OffsetCommit
         TopicPartition topicPartition = new TopicPartition("foo", 0);
         Map<TopicPartition, Errors> offsetCommitErrors = groupCoordinator.handleCommitOffsets(
-            groupId, memberId, 1,
+            otherGroupId, memberId, 1,
             ImmutableMap.<TopicPartition, OffsetAndMetadata>builder()
                 .put(topicPartition, OffsetAndMetadata.apply(15L))
                 .build()
@@ -231,13 +224,13 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
         // Heartbeat
         Errors heartbeatError = groupCoordinator.handleHeartbeat(
-            groupId, memberId, 1
+            otherGroupId, memberId, 1
         ).get();
         assertEquals(Errors.NONE, heartbeatError);
 
         // DescribeGroups
         KeyValue<Errors, GroupSummary> describeGroupResult = groupCoordinator.handleDescribeGroup(
-            groupId
+            otherGroupId
         );
         assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, describeGroupResult.getKey());
 
@@ -247,13 +240,13 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
 
         // DeleteGroups
         Map<String, Errors> deleteGroupsErrors = groupCoordinator.handleDeleteGroups(
-            Sets.newHashSet(groupId));
-        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, deleteGroupsErrors.get(groupId));
+            Sets.newHashSet(otherGroupId));
+        assertEquals(Errors.COORDINATOR_LOAD_IN_PROGRESS, deleteGroupsErrors.get(otherGroupId));
 
         // After loading, we should be able to access the group
-        groupMetadataManager.removeLoadingPartition(groupPartitionId);
-        groupMetadataManager.scheduleLoadGroupAndOffsets(groupPartitionId, group -> {}).get();
-        assertEquals(Errors.NONE, groupCoordinator.handleDescribeGroup(groupId).getKey());
+        groupMetadataManager.removeGroupsAndOffsets(otherGroupPartitionId, __ -> {});
+        groupMetadataManager.scheduleLoadGroupAndOffsets(otherGroupPartitionId, group -> {}).get();
+        assertEquals(Errors.NONE, groupCoordinator.handleDescribeGroup(otherGroupId).getKey());
     }
 
     @Test
