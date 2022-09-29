@@ -88,7 +88,7 @@ public class KafkaServiceConfigurationTest {
     }
 
     @Test
-    public void testKafkaListenersWithAdvertisedListener() throws UnknownHostException {
+    public void testKafkaListenersWithAdvertisedListener() {
         KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
         configuration.setAdvertisedAddress("advertise-me");
         configuration.setKafkaListeners("PLAINTEXT://0.0.0.0:9092");
@@ -152,8 +152,8 @@ public class KafkaServiceConfigurationTest {
             ConfigurationUtils.create(stream, KafkaServiceConfiguration.class);
 
         assertNotNull(kafkaServiceConfig);
-        assertEquals(kafkaServiceConfig.getMetadataStoreUrl(), zkServer);
-        assertEquals(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled(), true);
+        assertEquals(kafkaServiceConfig.getMetadataStoreUrl(), "zk:" + zkServer);
+        assertTrue(kafkaServiceConfig.isBrokerDeleteInactiveTopicsEnabled());
         assertEquals(kafkaServiceConfig.getBacklogQuotaDefaultLimitGB(), 18.0);
         assertEquals(kafkaServiceConfig.getClusterName(), "usc");
         assertEquals(kafkaServiceConfig.getBrokerClientAuthenticationParameters(), "role:my-role");
@@ -259,5 +259,15 @@ public class KafkaServiceConfigurationTest {
                         "logged", pulsarService).get(),
                 Arrays.asList("logged/one", "logged/two"));
 
+    }
+
+    @Test
+    public void testKopMigrationServiceConfiguration() {
+        int port = 8005;
+        KafkaServiceConfiguration configuration = new KafkaServiceConfiguration();
+        configuration.setKopMigrationEnable(true);
+        configuration.setKopMigrationServicePort(port);
+        assertTrue(configuration.isKopMigrationEnable());
+        assertEquals(port, configuration.getKopMigrationServicePort());
     }
 }

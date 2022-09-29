@@ -30,6 +30,8 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import io.streamnative.pulsar.handlers.kop.format.EntryFormatterFactory;
 import io.streamnative.pulsar.handlers.kop.format.PulsarAdminSchemaManager;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
+import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
+import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -118,6 +120,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         schemaManagerCache.computeIfAbsent(tenant, t -> new PulsarAdminSchemaManager(tenant,
                 pulsarAdmin, schemaRegistryManager.getSchemaStorage()));
 
+    private MigrationManager migrationManager;
+
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
     private final Map<String, ReplicaManager> replicaManagerByTenant = new ConcurrentHashMap<>();
@@ -167,7 +171,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public boolean accept(String protocol) {
-        return PROTOCOL_NAME.equals(protocol.toLowerCase());
+        return PROTOCOL_NAME.equalsIgnoreCase(protocol);
     }
 
     @Override
@@ -305,6 +309,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         brokerService.pulsar().addPrometheusRawMetricsProvider(statsProvider);
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
+        migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
     }
 
     private TransactionCoordinator createAndBootTransactionCoordinator(String tenant) {
@@ -440,11 +445,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         checkState(kafkaConfig != null);
         checkState(brokerService != null);
 
-        producePurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        producePurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("produce")
                 .timeoutTimer(SystemTimer.builder().executorName("produce").build())
                 .build();
-        fetchPurgatory = DelayedOperationPurgatory.<DelayedOperation>builder()
+        fetchPurgatory = DelayedOperationPurgatory.builder()
                 .purgatoryName("fetch")
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
@@ -457,6 +462,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     forEach((listener, endPoint) ->
                             builder.put(endPoint.getInetAddress(), newKafkaChannelInitializer(endPoint))
                     );
+
             Consumer<ChannelPipeline> tlsConfigurator = null;
             if (kafkaConfig.isKopSchemaRegistryEnableTls()) {
                 SSLUtils.ServerSideTLSSupport tlsSupport = new SSLUtils.ServerSideTLSSupport(kafkaConfig);
@@ -464,11 +470,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     tlsSupport.addTlsHandler((SocketChannel) pipeline.channel());
                 };
             }
+
+            Optional<HttpChannelInitializer> migrationChannelInitializer = migrationManager.build();
+            migrationChannelInitializer.ifPresent(
+                    initializer -> builder.put(migrationManager.getAddress(),
+                            initializer));
+
             Optional<SchemaRegistryChannelInitializer> schemaRegistryChannelInitializer =
                     schemaRegistryManager.build(tlsConfigurator);
             if (schemaRegistryChannelInitializer.isPresent()) {
                 builder.put(schemaRegistryManager.getAddress(), schemaRegistryChannelInitializer.get());
             }
+
             channelInitializerMap = builder.build();
             return builder.build();
         } catch (Exception e){

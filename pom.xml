@@ -32,7 +32,7 @@
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
   <properties>
-    <javac.target>1.8</javac.target>
+    <javac.target>11</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
     <!-- required for running tests on JDK11+ -->
     <test.additional.args>

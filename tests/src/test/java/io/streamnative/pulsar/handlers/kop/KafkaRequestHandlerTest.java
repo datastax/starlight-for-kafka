@@ -38,6 +38,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManage
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.utils.TopicNameUtils;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -86,6 +87,8 @@ import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.protocol.types.Struct;
+import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.ApiVersionsResponse;
@@ -107,6 +110,8 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
+import org.apache.pulsar.common.policies.data.Policies;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.testng.Assert;
@@ -192,7 +197,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
 
     @Test
-    public void testResponseToByteBuf() throws Exception {
+    public void testResponseToByteBuf() {
         int correlationId = 7777;
         String clientId = "KopClientId";
 
@@ -214,7 +219,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             kopRequest, apiVersionsResponse);
 
         // 1. serialize response into ByteBuf
-        ByteBuf serializedResponse = handler.responseToByteBuf(kopResponse.getResponse(), kopRequest);
+        ByteBuf serializedResponse = KafkaCommandDecoder.responseToByteBuf(kopResponse.getResponse(), kopRequest);
 
         // 2. verify responseToByteBuf works well.
         ByteBuffer byteBuffer = serializedResponse.nioBuffer();
@@ -346,7 +351,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testCreateTopics-0", 1);
             put("testCreateTopics-1", 3);
             put("my-tenant/my-ns/testCreateTopics-2", 1);
@@ -367,7 +372,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testDeleteRecords-0", 1);
             put("testDeleteRecords-1", 3);
             put("my-tenant/my-ns/testDeleteRecords-2", 1);
@@ -494,7 +499,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             assertTrue(e.getCause() instanceof UnknownTopicOrPartitionException);
         }
 
-        final Map<String, Integer> expectedTopicPartitions = new HashMap<String, Integer>() {{
+        final Map<String, Integer> expectedTopicPartitions = new HashMap<>() {{
             put("testDescribeTopics-topic-1", 1);
             put("testDescribeTopics-topic-2", 3);
         }};
@@ -611,7 +616,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
-    public void testConvertOffsetCommitRetentionMsIfSetDefaultValue() throws Exception {
+    public void testConvertOffsetCommitRetentionMsIfSetDefaultValue() {
 
         String memberId = "test_member_id";
         int generationId = 0;
@@ -645,7 +650,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10000)
-    public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() throws Exception {
+    public void testConvertOffsetCommitRetentionMsIfRetentionMsSet() {
 
         long currentTime = 100;
         int offsetsConfigRetentionMs = 1000;
@@ -768,7 +773,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(props);
-        Map<String, Integer> topicToNumPartitions = new HashMap<String, Integer>(){{
+        Map<String, Integer> topicToNumPartitions = new HashMap<>() {{
             put("testCreateTopics-0", 1);
             put("testCreateTopics-1", 3);
             put("my-tenant/my-ns/testCreateTopics-2", 1);
@@ -818,9 +823,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> {
-            assertEquals(tp0, topicPartition);
-        }));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
 
     @Test
@@ -848,9 +851,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> {
-            assertEquals(tp0, topicPartition);
-        }));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
 
     @Test(timeOut = 20000)
@@ -892,20 +893,15 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, groupDescription.members().size());
 
         // member assignment topic name must be short topic name
-        groupDescription.members().forEach(memberDescription -> {
-            memberDescription.assignment().topicPartitions().forEach(topicPartition -> {
-                assertEquals(topic, topicPartition.topic());
-            });
-        });
+        groupDescription.members().forEach(memberDescription -> memberDescription.assignment().topicPartitions()
+                .forEach(topicPartition -> assertEquals(topic, topicPartition.topic())));
 
         Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
                 kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
         assertEquals(1, offsetAndMetadataMap.size());
 
         //  topic name from offset fetch response must be short topic name
-        offsetAndMetadataMap.keySet().forEach(topicPartition -> {
-            assertEquals(topic, topicPartition.topic());
-        });
+        offsetAndMetadataMap.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
 
         consumer.close();
         kafkaAdmin.close();
@@ -1110,6 +1106,90 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertTrue(bytesOut > 0);
     }
 
+    @DataProvider(name = "allowAutoTopicCreation")
+    public static Object[][] allowAutoTopicCreation() {
+        return new Object[][]{
+                { true, true, true },
+                { true, true, false },
+                { true, false, true },
+                { true, false, false },
+                { true, null, true },
+                { true, null, false },
+                { false, true, true },
+                { false, true, false },
+                { false, false, true },
+                { false, false, false },
+                { false, null, true },
+                { false, null, false }
+        };
+    }
+
+    // verify Metadata request handling.
+    @Test(timeOut = 20000, dataProvider = "allowAutoTopicCreation")
+    public void testBrokerHandleTopicMetadataRequestAllowAutoTopicCreation(boolean brokerAllowAutoTopicCreation,
+                                                                           Boolean overrideNameSpaceAutoTopicCreation,
+                                                                           boolean allowAutoTopicCreationInRequest)
+            throws Exception {
+        boolean original = conf.isAllowAutoTopicCreation();
+        try {
+            conf.setAllowAutoTopicCreation(brokerAllowAutoTopicCreation);
+            boolean expectedAllowTopicCreation = overrideNameSpaceAutoTopicCreation != null
+                    ? overrideNameSpaceAutoTopicCreation : conf.isAllowAutoTopicCreation();
+            if (overrideNameSpaceAutoTopicCreation != null) {
+                // override per-namespace
+                admin.namespaces().setAutoTopicCreation("public/default", AutoTopicCreationOverride
+                        .builder()
+                        .allowAutoTopicCreation(overrideNameSpaceAutoTopicCreation)
+                        .defaultNumPartitions(conf.getDefaultNumPartitions())
+                        .topicType("partitioned")
+                        .build());
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertEquals(policies.autoTopicCreationOverride.isAllowAutoTopicCreation(),
+                        overrideNameSpaceAutoTopicCreation.booleanValue());
+            } else {
+                admin.namespaces().removeAutoTopicCreation("public/default");
+                Policies policies = admin.namespaces().getPolicies("public/default");
+                assertNull(policies.autoTopicCreationOverride);
+            }
+
+            String topicName = "kopBrokerHandleTopicMetadataRequest-" + brokerAllowAutoTopicCreation + "-"
+                    + overrideNameSpaceAutoTopicCreation + "-"
+                    + allowAutoTopicCreationInRequest;
+            List<String> kafkaTopics = Collections.singletonList(topicName);
+            KafkaHeaderAndRequest metadataRequest =
+                    createTopicMetadataRequest(kafkaTopics, allowAutoTopicCreationInRequest);
+            CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
+            handler.handleTopicMetadataRequest(metadataRequest, responseFuture);
+            MetadataResponse metadataResponse = (MetadataResponse) responseFuture.get();
+
+            final Errors expectedError;
+            if (expectedAllowTopicCreation) {
+                if (allowAutoTopicCreationInRequest) {
+                    // topic will be created
+                    expectedError = null;
+                    assertEquals(1, metadataResponse.topicMetadata().size());
+                    assertEquals(topicName, metadataResponse.topicMetadata().iterator().next().topic());
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            } else {
+                if (allowAutoTopicCreationInRequest) {
+                    // topic does not exist and it cannot be created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                } else {
+                    // topic does not exist and it is not created
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
+                }
+            }
+            log.info("errors {}", metadataResponse.errors());
+            assertEquals(expectedError, metadataResponse.errors().get(topicName));
+        } finally {
+            conf.setAllowAutoTopicCreation(original);
+            admin.namespaces().removeAutoTopicCreation("public/default");
+        }
+    }
+
     @Test(timeOut = 30000)
     public void testCommitOffsetRetryWhenProducerClosed()
             throws ExecutionException, InterruptedException, PulsarAdminException {
@@ -1157,5 +1237,34 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
         assertEquals(fetchMessages, numMessages);
     }
+    
+    private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {
+            AbstractRequest.Builder builder = new MetadataRequest.Builder(topics, allowAutoTopicCreation);
+            return buildRequest(builder);
+        }
+    
+        private KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
+            SocketAddress serviceAddress = InetSocketAddress.createUnresolved("localhost", 1111);
+            return buildRequest(builder, serviceAddress);
+        }
+
+        public static KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder,
+                                                         SocketAddress serviceAddress) {
+            AbstractRequest request = builder.build();
+            builder.apiKey();
+    
+                    ByteBuffer serializedRequest = request
+                            .serialize(new RequestHeader(builder.apiKey(), request.version(), "fake_client_id", 0));
+    
+                    ByteBuf byteBuf = Unpooled.copiedBuffer(serializedRequest);
+    
+                    RequestHeader header = RequestHeader.parse(serializedRequest);
+    
+                    ApiKeys apiKey = header.apiKey();
+            short apiVersion = header.apiVersion();
+            Struct struct = apiKey.parseRequest(apiVersion, serializedRequest);
+            AbstractRequest body = AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+            return new KafkaHeaderAndRequest(header, body, byteBuf, serviceAddress);
+        }
 
 }
