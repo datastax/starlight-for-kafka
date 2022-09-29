@@ -91,8 +91,8 @@ public class GroupCoordinator {
             client.newProducerBuilder(),
             client.newReaderBuilder(),
             coordinatorExecutor,
-            namespacePrefixForMetadata,
-            time
+            time,
+            namespacePrefixForMetadata
         );
 
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()

@@ -849,8 +849,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             producer,
             consumer,
             scheduler,
-            NAMESPACE_PREFIX,
-            new MockTime()
+            new MockTime(),
+            NAMESPACE_PREFIX
         );
         // group is not owned
         assertFalse(groupMetadataManager.groupNotExists(groupId));
@@ -1196,8 +1196,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
             producer,
             consumer,
             scheduler,
-            NAMESPACE_PREFIX,
-            new MockTime()
+            new MockTime(),
+            NAMESPACE_PREFIX
         );
         GroupMetadata group = new GroupMetadata("foo", Empty);
         assertEquals(group, groupMetadataManager.addGroup(group));

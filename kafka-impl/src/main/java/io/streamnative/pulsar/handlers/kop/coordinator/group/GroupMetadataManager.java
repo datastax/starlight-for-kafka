@@ -304,8 +304,12 @@ public class GroupMetadataManager {
         return offsetConfig.offsetsTopicName();
     }
 
+    public static String getTopicPartitionName(String topicName, int partitionId) {
+        return topicName + PARTITIONED_TOPIC_SUFFIX + partitionId;
+    }
+
     public String getTopicPartitionName(int partitionId) {
-        return offsetConfig.offsetsTopicName() + PARTITIONED_TOPIC_SUFFIX + partitionId;
+        return getTopicPartitionName(offsetConfig.offsetsTopicName(), partitionId);
     }
 
     public boolean isGroupLocal(String groupId) {

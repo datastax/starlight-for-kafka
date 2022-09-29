@@ -122,7 +122,6 @@ public class ByteBufUtils {
                     new EndTransactionMarker(controlRecordType == ControlRecordType.UNKNOWN
                             ? ControlRecordType.ABORT : controlRecordType, 0)
             ));
-            ));
         } else {
             return null;
         }
