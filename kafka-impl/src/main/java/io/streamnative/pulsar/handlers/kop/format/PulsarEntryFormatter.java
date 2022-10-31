@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
@@ -26,6 +27,7 @@ import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.Record;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.client.impl.MessageImpl;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.api.proto.MarkerType;
@@ -43,8 +45,9 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
-    public PulsarEntryFormatter(boolean applyAvroSchemaOnDecode) {
-        super(applyAvroSchemaOnDecode);
+    public PulsarEntryFormatter(boolean applyAvroSchemaOnDecode,
+                                ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+        super(applyAvroSchemaOnDecode, entryfilters);
     }
 
     @Override

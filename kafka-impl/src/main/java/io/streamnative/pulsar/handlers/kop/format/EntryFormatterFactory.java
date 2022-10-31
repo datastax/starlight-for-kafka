@@ -13,7 +13,10 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
  * Factory of EntryFormatter.
@@ -28,18 +31,23 @@ public class EntryFormatterFactory {
         MIXED_KAFKA
     }
 
-    public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig) {
+    public static EntryFormatter create(final KafkaServiceConfiguration kafkaConfig,
+                                        final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap) {
         final String format = kafkaConfig.getEntryFormat();
         final boolean applyAvroSchemaOnDecode = kafkaConfig.isKafkaApplyAvroSchemaOnDecode();
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
+
+            ImmutableList<EntryFilterWithClassLoader> entryfilters =
+                    entryfilterMap == null ? ImmutableList.of() : entryfilterMap.values().asList();
+
             switch (entryFormat) {
                 case PULSAR:
-                    return new PulsarEntryFormatter(applyAvroSchemaOnDecode);
+                    return new PulsarEntryFormatter(applyAvroSchemaOnDecode, entryfilters);
                 case KAFKA:
-                    return new KafkaV1EntryFormatter(applyAvroSchemaOnDecode);
+                    return new KafkaV1EntryFormatter(applyAvroSchemaOnDecode, entryfilters);
                 case MIXED_KAFKA:
-                    return new KafkaMixedEntryFormatter(applyAvroSchemaOnDecode);
+                    return new KafkaMixedEntryFormatter(applyAvroSchemaOnDecode, entryfilters);
                 default:
                     throw new Exception("No EntryFormatter for " + entryFormat);
             }
