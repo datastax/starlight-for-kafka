@@ -31,7 +31,7 @@
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
     <testcontainers.version>1.15.1</testcontainers.version>
-    <hydra.version>1.11.7</hydra.version>
+    <hydra.version>1.11.8</hydra.version>
   </properties>
 
   <!-- include the dependencies -->
