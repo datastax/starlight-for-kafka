@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
 import io.streamnative.pulsar.handlers.kop.format.DirectBufferOutputStream;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
@@ -37,6 +38,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.utils.ByteBufferOutputStream;
 import org.apache.pulsar.common.api.proto.KeyValue;
 import org.apache.pulsar.common.api.proto.MarkerType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -180,8 +182,9 @@ public class ByteBufUtils {
         final CompressionCodec codec = CompressionCodecProvider.getCompressionCodec(metadata.getCompression());
         final ByteBuf uncompressedPayload = codec.decode(payload, uncompressedSize);
 
-        final DirectBufferOutputStream directBufferOutputStream =
-                new DirectBufferOutputStream(DEFAULT_BUFFER_SIZE);
+        // use Heap Buffer, to make CRC32C more efficient given the current Kafka implementation
+        final ByteBufferOutputStream directBufferOutputStream =
+                new ByteBufferOutputStream(uncompressedSize, false);
         final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(directBufferOutputStream,
                 magic,
                 CompressionType.NONE,
@@ -268,7 +271,7 @@ public class ByteBufUtils {
         final MemoryRecords records = builder.build();
         uncompressedPayload.release();
         return DecodeResult.get(records,
-                directBufferOutputStream.getByteBuf(),
+                Unpooled.wrappedBuffer(directBufferOutputStream.buffer().flip()),
                 conversionCount,
                 MathUtils.elapsedNanos(startConversionNanos));
     }
