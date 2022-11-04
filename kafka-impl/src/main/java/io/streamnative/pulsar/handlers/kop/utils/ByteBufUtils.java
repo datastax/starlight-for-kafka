@@ -18,7 +18,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.streamnative.pulsar.handlers.kop.format.DecodeResult;
-import io.streamnative.pulsar.handlers.kop.format.DirectBufferOutputStream;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import java.io.IOException;
 import java.nio.ByteBuffer;
