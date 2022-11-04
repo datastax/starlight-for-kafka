@@ -89,10 +89,10 @@ public class HttpRequestProcessorTest {
         FullHttpResponse response = processor.buildJsonErrorResponse(error);
         assertEquals(response.headers().get(HttpHeaderNames.CONTENT_TYPE), "error");
         assertEquals(response.content().toString(StandardCharsets.UTF_8),
-                "{\n" +
-                  "\"message\" : \"error\",\n" +
-                  "\"error_code\" : 404\n" +
-                "}");
+                "{\n"
+                  + "\"message\" : \"error\",\n"
+                  + "\"error_code\" : 404\n"
+                  + "}");
     }
 
     @Test
@@ -111,9 +111,9 @@ public class HttpRequestProcessorTest {
         String contentType = "application/json";
         FullHttpResponse response = HttpRequestProcessor.buildJsonResponse(pair, contentType);
         assertEquals(response.content().toString(StandardCharsets.UTF_8),
-                        "{\n" +
-                          "\"1\" : \"a\"\n" +
-                        "}");
+                        "{\n"
+                          + "\"1\" : \"a\"\n"
+                          + "}");
         assertEquals(response.headers().get(HttpHeaderNames.CONTENT_TYPE), contentType);
     }
 }
