@@ -90,8 +90,8 @@ public class HttpRequestProcessorTest {
         assertEquals(response.headers().get(HttpHeaderNames.CONTENT_TYPE), "error");
         assertEquals(response.content().toString(StandardCharsets.UTF_8),
                 "{\n"
-                  + "\"message\" : \"error\",\n"
-                  + "\"error_code\" : 404\n"
+                  + "  \"message\" : \"error\",\n"
+                  + "  \"error_code\" : 404\n"
                   + "}");
     }
 
@@ -112,7 +112,7 @@ public class HttpRequestProcessorTest {
         FullHttpResponse response = HttpRequestProcessor.buildJsonResponse(pair, contentType);
         assertEquals(response.content().toString(StandardCharsets.UTF_8),
                         "{\n"
-                          + "\"1\" : \"a\"\n"
+                          + "  \"1\" : \"a\"\n"
                           + "}");
         assertEquals(response.headers().get(HttpHeaderNames.CONTENT_TYPE), contentType);
     }
