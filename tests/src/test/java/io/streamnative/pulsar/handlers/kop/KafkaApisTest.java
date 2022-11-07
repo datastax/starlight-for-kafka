@@ -887,10 +887,10 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                     expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
                 }
             }
-            log.info("expectedAllowTopicCreation {} " +
-                    " allowAutoTopicCreationInRequest {}" +
-                    " expectedError {}" +
-                    " errors {}", expectedAllowTopicCreation,
+            log.info("expectedAllowTopicCreation {} "
+                    + " allowAutoTopicCreationInRequest {}"
+                    + " expectedError {}"
+                    + " errors {}", expectedAllowTopicCreation,
                     allowAutoTopicCreationInRequest, expectedError, metadataResponse.errors());
             assertEquals(expectedError, metadataResponse.errors().get(topicName));
         } finally {
