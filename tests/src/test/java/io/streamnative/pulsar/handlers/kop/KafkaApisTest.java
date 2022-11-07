@@ -881,13 +881,17 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
                 }
             } else {
                 if (allowAutoTopicCreationInRequest) {
-                    expectedError = Errors.TOPIC_AUTHORIZATION_FAILED;
+                    expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
                 } else {
                     // topic does not exist and it is not created
                     expectedError = Errors.UNKNOWN_TOPIC_OR_PARTITION;
                 }
             }
-            log.info("errors {}", metadataResponse.errors());
+            log.info("expectedAllowTopicCreation {} " +
+                    " allowAutoTopicCreationInRequest {}" +
+                    " expectedError {}" +
+                    " errors {}", expectedAllowTopicCreation,
+                    allowAutoTopicCreationInRequest, expectedError, metadataResponse.errors());
             assertEquals(expectedError, metadataResponse.errors().get(topicName));
         } finally {
             conf.setAllowAutoTopicCreation(original);
