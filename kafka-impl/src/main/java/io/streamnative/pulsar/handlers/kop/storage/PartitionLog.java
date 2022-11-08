@@ -578,7 +578,8 @@ public class PartitionLog {
                             topicPartition, MathUtils.nowInNano() - startDecodingEntriesNanos);
                 }
 
-                future.complete(ReadRecordsResult.get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
+                future.complete(ReadRecordsResult.get(decodeResult,
+                        abortedTransactions, highWatermark, lso, lastPosition));
             }, context.getDecodeExecutor());
         }, context.getDecodeExecutor()).exceptionally(ex -> {
             log.error("Partition {} read entry exceptionally. ", topicPartition, ex);

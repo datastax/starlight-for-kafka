@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
 import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
 
 import com.google.common.annotations.VisibleForTesting;
