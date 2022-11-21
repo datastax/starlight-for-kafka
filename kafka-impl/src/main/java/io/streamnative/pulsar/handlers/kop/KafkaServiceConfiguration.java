@@ -419,6 +419,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
     private boolean kafkaApplyAvroSchemaOnDecode = false;
 
     @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Register the AVRO schema into the Pulsar Schema Registry while encoding Kafka messages encoded with KafkaAvroSerializer"
+    )
+    private boolean kafkaRegisterAvroSchemaOnEncode = false;
+
+    @FieldContext(
         category = CATEGORY_KOP,
         doc = "The broker id, default is 1"
     )

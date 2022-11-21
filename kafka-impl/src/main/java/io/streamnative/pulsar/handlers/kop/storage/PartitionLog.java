@@ -353,7 +353,8 @@ public class PartitionLog {
                         time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
 
                 long beforeEncodingStarts = time.nanoseconds();
-                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest,
+                        fullPartitionName, appendRecordsContext.getSchemaManager());
                 encodeRequest.recycle();
 
                 requestStats.getProduceEncodeStats().registerSuccessfulEvent(

@@ -30,6 +30,17 @@ public interface EntryFormatter {
      * @param encodeRequest contains messages with Kafka's format
      * @return the EncodeResult contains the ByteBuf of an entry that is to be written to Bookie
      */
+    default EncodeResult encode(EncodeRequest encodeRequest,
+                        String pulsarTopicName, SchemaManager schemaManager) {
+        return encode(encodeRequest);
+    }
+
+    /**
+     * Encode Kafka records to a ByteBuf.
+     *
+     * @param encodeRequest contains messages with Kafka's format
+     * @return the EncodeResult contains the ByteBuf of an entry that is to be written to Bookie
+     */
     EncodeResult encode(EncodeRequest encodeRequest);
 
     /**
