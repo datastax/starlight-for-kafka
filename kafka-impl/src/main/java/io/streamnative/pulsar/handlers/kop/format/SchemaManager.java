@@ -30,4 +30,6 @@ public interface SchemaManager {
      * @return
      */
     CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion);
+
+    CompletableFuture<BytesSchemaVersion> getSchema(String topic, int id);
 }

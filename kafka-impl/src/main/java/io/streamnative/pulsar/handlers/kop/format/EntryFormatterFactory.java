@@ -35,6 +35,7 @@ public class EntryFormatterFactory {
                                         final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap) {
         final String format = kafkaConfig.getEntryFormat();
         final boolean applyAvroSchemaOnDecode = kafkaConfig.isKafkaApplyAvroSchemaOnDecode();
+        final boolean registerAvroSchemaOnEncode = kafkaConfig.isKafkaRegisterAvroSchemaOnEncode();
         try {
             EntryFormat entryFormat = Enum.valueOf(EntryFormat.class, format.toUpperCase());
 
@@ -43,7 +44,7 @@ public class EntryFormatterFactory {
 
             switch (entryFormat) {
                 case PULSAR:
-                    return new PulsarEntryFormatter(applyAvroSchemaOnDecode, entryfilters);
+                    return new PulsarEntryFormatter(applyAvroSchemaOnDecode, registerAvroSchemaOnEncode, entryfilters);
                 case KAFKA:
                     return new KafkaV1EntryFormatter(applyAvroSchemaOnDecode, entryfilters);
                 case MIXED_KAFKA:

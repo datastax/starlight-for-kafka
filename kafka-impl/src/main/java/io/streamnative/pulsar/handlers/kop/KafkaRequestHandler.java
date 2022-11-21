@@ -850,6 +850,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         int timeoutMs = produceRequest.timeout();
         String namespacePrefix = currentNamespacePrefix();
         final AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
+        SchemaManager schemaManager = schemaManagerForTenant.apply(getCurrentTenant());
         Runnable completeOne = () -> {
             // When complete one authorization or failed, will do the action first.
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
@@ -859,6 +860,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
                 AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
                         topicManager,
+                        schemaManager,
                         this::startSendOperationForThrottling,
                         this::completeSendOperationForThrottling,
                         pendingTopicFuturesMap);
@@ -2255,12 +2257,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
           }
         };
 
+        SchemaManager schemaManager = schemaManagerForTenant.apply(getCurrentTenant());
         for (WriteTxnMarkersRequest.TxnMarkerEntry marker : markers) {
             long producerId = marker.producerId();
             TransactionResult transactionResult = marker.transactionResult();
             Map<TopicPartition, MemoryRecords> controlRecords = generateTxnMarkerRecords(marker);
             AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
                     topicManager,
+                    schemaManager,
                     this::startSendOperationForThrottling,
                     this::completeSendOperationForThrottling,
                     this.pendingTopicFuturesMap);

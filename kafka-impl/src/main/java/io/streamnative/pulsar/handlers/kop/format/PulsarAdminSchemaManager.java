@@ -13,10 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
+import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.Schema;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorage;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.model.SchemaStorageAccessor;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.AllArgsConstructor;
@@ -26,6 +28,7 @@ import org.apache.pulsar.client.impl.schema.KeyValueSchemaInfo;
 import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.schema.KeyValueEncodingType;
+import org.apache.pulsar.common.schema.LongSchemaVersion;
 import org.apache.pulsar.common.schema.SchemaInfo;
 import org.apache.pulsar.common.schema.SchemaType;
 
@@ -39,6 +42,31 @@ public class PulsarAdminSchemaManager implements SchemaManager{
     private final PulsarAdmin pulsarAdmin;
     private final SchemaStorageAccessor kafkaSchemaRegistry;
     private final ConcurrentHashMap<String, KeyValueSchemaIds> cache = new ConcurrentHashMap<>();
+
+    @Override
+    public CompletableFuture<BytesSchemaVersion> getSchema(String topic, int id) {
+        SchemaStorage schemaStorageForTenant = kafkaSchemaRegistry.getSchemaStorageForTenant(tenant);
+        CompletableFuture<Schema> schemaById = schemaStorageForTenant.findSchemaById(id);
+        return schemaById.thenCompose(schema -> {
+            log.info("Kafka Schema {}", schema);
+            SchemaInfo schemaInfo = SchemaInfo
+                    .builder()
+                            .schema(schema.getSchemaDefinition().getBytes(StandardCharsets.UTF_8))
+                                    .name("kafka-schema")
+                                    .type(SchemaType.AVRO)
+                                    .properties(ImmutableMap.of())
+                                            .build();
+            return pulsarAdmin.schemas().createSchemaAsync(topic, schemaInfo)
+                    .thenCompose(v -> {
+                        return pulsarAdmin.schemas()
+                                .getVersionBySchemaAsync(topic, schemaInfo)
+                                .thenApply(schemaId -> {
+                                    return BytesSchemaVersion.of(new LongSchemaVersion(schemaId).bytes());
+                                });
+                    });
+        });
+
+    }
 
     @Override
     public CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion) {

@@ -19,8 +19,12 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
+
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.stream.StreamSupport;
+
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.header.Header;
@@ -34,6 +38,7 @@ import org.apache.pulsar.common.api.proto.MarkerType;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 import org.apache.pulsar.common.protocol.Commands.ChecksumType;
+import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 
 
 /**
@@ -45,13 +50,26 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     private static final int INITIAL_BATCH_BUFFER_SIZE = 1024;
     private static final int MAX_MESSAGE_BATCH_SIZE_BYTES = 128 * 1024;
 
+    private static final byte[] EMPTY_ARRAY = new byte[0];
+
+    private static final byte MAGIC_ZERO = 0;
+
+    private final boolean registerAvroSchemaOnEncode;
+
     public PulsarEntryFormatter(boolean applyAvroSchemaOnDecode,
+                                boolean registerAvroSchemaOnEncode,
                                 ImmutableList<EntryFilterWithClassLoader> entryfilters) {
         super(applyAvroSchemaOnDecode, entryfilters);
+        this.registerAvroSchemaOnEncode = registerAvroSchemaOnEncode;
     }
 
     @Override
     public EncodeResult encode(final EncodeRequest encodeRequest) {
+        return encode(encodeRequest, null, null);
+    }
+
+    @Override
+    public EncodeResult encode(final EncodeRequest encodeRequest, String pulsarTopicName, SchemaManager schemaManager) {
         final MemoryRecords records = encodeRequest.getRecords();
         final int numMessages = encodeRequest.getAppendInfo().numMessages();
         long currentBatchSizeBytes = 0;
@@ -68,7 +86,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         records.batches().forEach(recordBatch -> {
             boolean controlBatch = recordBatch.isControlBatch();
             StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
-                MessageImpl<byte[]> message = recordToEntry(record);
+                MessageImpl<byte[]> message = recordToEntry(record, pulsarTopicName, schemaManager);
                 messages.add(message);
                 if (recordBatch.isTransactional()) {
                     msgMetadata.setTxnidMostBits(recordBatch.producerId());
@@ -122,7 +140,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     // convert kafka Record to Pulsar Message.
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
-    private static MessageImpl<byte[]> recordToEntry(Record record) {
+    private MessageImpl<byte[]> recordToEntry(Record record, String pulsarTopicName, SchemaManager schemaManager) {
 
         PulsarMessageBuilder builder = PulsarMessageBuilder.newBuilder();
 
@@ -137,9 +155,39 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         // value
         if (record.hasValue()) {
-            byte[] value = new byte[record.valueSize()];
-            record.value().get(value);
-            builder.value(value);
+            ByteBuffer recordValue = record.value();
+            int size = recordValue.remaining();
+            if (size == 0) {
+                builder.value(EMPTY_ARRAY);
+            } else {
+                if (registerAvroSchemaOnEncode
+                        && size >= 5 // MAGIC + 4 bytes schema id
+                        && recordValue.get(0) == MAGIC_ZERO) {
+                    int schemaId = recordValue.getInt(1);
+                    log.info("Schema ID: {}", schemaId);
+
+                    BytesSchemaVersion schemaVersion;
+                    try {
+                        schemaVersion = schemaManager.getSchema(pulsarTopicName, schemaId)
+                                .get();
+                    } catch (Exception err) {
+                        throw new RuntimeException(err);
+                    }
+                    log.info("Schema version {}", schemaVersion);
+                    if (schemaVersion != null) {
+                        builder.getMetadataBuilder().setSchemaVersion(schemaVersion.get());
+                    }
+                    byte[] value = new byte[record.valueSize() - 5];
+                    // skip magic + schema id
+                    recordValue.position(recordValue.position() + 5);
+                    recordValue.get(value);
+                    builder.value(value);
+                } else {
+                    byte[] value = new byte[record.valueSize()];
+                    recordValue.get(value);
+                    builder.value(value);
+                }
+            }
         } else {
             builder.value(null);
         }

@@ -18,6 +18,8 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import java.util.Map;
 import java.util.function.Consumer;
+
+import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import lombok.Getter;
 import org.apache.kafka.common.TopicPartition;
 
@@ -34,6 +36,8 @@ public class AppendRecordsContext {
 
     private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
     private KafkaTopicManager topicManager;
+
+    private SchemaManager schemaManager;
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
@@ -44,10 +48,12 @@ public class AppendRecordsContext {
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
+                                           final SchemaManager schemaManager,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
                                            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
         AppendRecordsContext context = RECYCLER.get();
+        context.schemaManager = schemaManager;
         context.topicManager = topicManager;
         context.startSendOperationForThrottling = startSendOperationForThrottling;
         context.completeSendOperationForThrottling = completeSendOperationForThrottling;
@@ -58,6 +64,7 @@ public class AppendRecordsContext {
 
     public void recycle() {
         topicManager = null;
+        schemaManager = null;
         startSendOperationForThrottling = null;
         completeSendOperationForThrottling = null;
         pendingTopicFuturesMap = null;

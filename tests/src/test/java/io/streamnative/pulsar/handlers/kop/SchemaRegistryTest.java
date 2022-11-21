@@ -44,6 +44,7 @@ import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.pulsar.client.api.Producer;
+import org.apache.pulsar.common.policies.data.SchemaCompatibilityStrategy;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.schema.KeyValueEncodingType;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -62,19 +63,23 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
     protected String bootstrapServers;
     protected boolean applyAvroSchemaOnDecode;
 
+    protected boolean kafkaRegisterAvroSchemaOnEncode;
+
     @Factory
     public static Object[] instances() {
         return new Object[] {
-                new SchemaRegistryTest("pulsar", false),
-                new SchemaRegistryTest("pulsar", true),
-                new SchemaRegistryTest("kafka", false),
-                new SchemaRegistryTest("kafka", true)
+                new SchemaRegistryTest("pulsar", true, true),
+                //new SchemaRegistryTest("pulsar", false, false),
+                //new SchemaRegistryTest("pulsar", true, false),
+                //new SchemaRegistryTest("kafka", false, false),
+                //new SchemaRegistryTest("kafka", true, false)
         };
     }
 
-    public SchemaRegistryTest(String entryFormat, boolean applyAvroSchemaOnDecode) {
+    public SchemaRegistryTest(String entryFormat, boolean applyAvroSchemaOnDecode, boolean kafkaRegisterAvroSchemaOnEncode) {
         super(entryFormat);
         this.applyAvroSchemaOnDecode = applyAvroSchemaOnDecode;
+        this.kafkaRegisterAvroSchemaOnEncode = kafkaRegisterAvroSchemaOnEncode;
     }
 
     @BeforeClass
@@ -82,6 +87,7 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
     protected void setup() throws Exception {
         super.enableSchemaRegistry = true;
         this.conf.setKafkaApplyAvroSchemaOnDecode(applyAvroSchemaOnDecode);
+        this.conf.setKafkaRegisterAvroSchemaOnEncode(kafkaRegisterAvroSchemaOnEncode);
         this.internalSetup();
         bootstrapServers = "localhost:" + getKafkaBrokerPort();
     }
@@ -131,6 +137,9 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
         String topic = "SchemaRegistryTest-testAvroProduceAndConsume_" + entryFormat + "_" + applyAvroSchemaOnDecode;
         IndexedRecord avroRecord = createAvroRecord();
         Object[] objects = new Object[]{avroRecord, true, 130, 345L, 1.23f, 2.34d, "abc", "def".getBytes()};
+        if (kafkaRegisterAvroSchemaOnEncode) {
+            objects = new Object[]{avroRecord};
+        }
         @Cleanup
         KafkaProducer<Integer, Object> producer = createAvroProducer();
         for (int i = 0; i < objects.length; i++) {

@@ -35,7 +35,7 @@ public class SchemaRegistryProxyTest extends SchemaRegistryTest {
     }
 
     public SchemaRegistryProxyTest(String entryFormat, boolean applyAvroSchemaOnDecode) {
-        super(entryFormat, applyAvroSchemaOnDecode);
+        super(entryFormat, applyAvroSchemaOnDecode, false);
     }
 
     @BeforeMethod
