@@ -30,7 +30,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.ServiceConfigurationUtils;
 import org.apache.pulsar.common.configuration.Category;
 import org.apache.pulsar.common.configuration.FieldContext;
 
