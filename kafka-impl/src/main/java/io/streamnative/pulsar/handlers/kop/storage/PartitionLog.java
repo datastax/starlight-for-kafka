@@ -65,12 +65,12 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
-import org.apache.kafka.common.record.InvalidRecordException;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
@@ -394,21 +394,21 @@ public class PartitionLog {
                 return appendFuture;
             }
             if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+                appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
                 return appendFuture;
             }
 
             CompletableFuture<EntryFormatter> entryFormatterHandle = getEntryFormatter(topicFuture);
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
                 if (!persistentTopicOpt.isPresent()) {
-                    appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+                    appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
                     return;
                 }
 
                 final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
                 entryFormatterHandle.whenComplete((entryFormatter, ee) ->{
                     if (ee != null) {
-                        appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+                        appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
                         return;
                     }
                     if (entryFormatter instanceof KafkaMixedEntryFormatter) {
@@ -487,7 +487,7 @@ public class PartitionLog {
                     log.debug("Fetch for {}: no tcm for topic {} return NOT_LEADER_FOR_PARTITION.",
                             topicPartition, fullPartitionName);
                 }
-                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
+                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
                 return;
             }
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
@@ -515,7 +515,7 @@ public class PartitionLog {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
                                     + "Fetch for topic return error.", offset, topicPartition);
                     registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
+                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
                     return;
                 }
                 final ManagedCursor cursor = cursorLongPair.getLeft();
@@ -531,7 +531,7 @@ public class PartitionLog {
                                         "cursor.readEntry fail. deleteCursor");
                                 if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
                                         || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
-                                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
+                                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
                                     return;
                                 }
                                 log.error("Read entry error on {}", partitionData, throwable);
@@ -548,7 +548,7 @@ public class PartitionLog {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 context.getSharedState()
                         .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
-                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_FOR_PARTITION));
+                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
                 return null;
             });
         });
@@ -805,7 +805,7 @@ public class PartitionLog {
         if (!persistentTopicOpt.isPresent()) {
             encodeResult.recycle();
             // It will trigger a retry send of Kafka client
-            appendFuture.completeExceptionally(Errors.NOT_LEADER_FOR_PARTITION.exception());
+            appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
             return;
         }
         PersistentTopic persistentTopic = persistentTopicOpt.get();
