@@ -38,9 +38,10 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.message.ApiMessageType;
+import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -53,7 +54,6 @@ import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
 import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerSaslServer;
 import org.apache.kafka.common.security.oauthbearer.internals.unsecured.OAuthBearerUnsecuredValidatorCallbackHandler;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
@@ -69,7 +69,7 @@ public class SaslAuthenticator {
     public static final String USER_NAME_PROP = "username";
     public static final String AUTH_DATA_SOURCE_PROP = "authDataSource";
 
-    private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
+    private static final byte[] EMPTY_BUFFER = new byte[0];
 
     @Getter
     private static volatile AuthenticationService authenticationService = null;
@@ -288,12 +288,12 @@ public class SaslAuthenticator {
 
     private AbstractRequest parseRequest(RequestHeader header, ByteBuffer nioBuffer) {
         if (isUnsupportedApiVersionsRequest(header)) {
-            return new ApiVersionsRequest((short) 0, header.apiVersion());
+            ApiVersionsRequestData data = new ApiVersionsRequestData();
+            return new ApiVersionsRequest(data, header.apiVersion());
         } else {
             ApiKeys apiKey = header.apiKey();
             short apiVersion = header.apiVersion();
-            Struct struct = apiKey.parseRequest(apiVersion, nioBuffer);
-            return AbstractRequest.parseRequest(apiKey, apiVersion, struct);
+            return AbstractRequest.parseRequest(apiKey, apiVersion, nioBuffer).request;
         }
 
     }
@@ -453,8 +453,7 @@ public class SaslAuthenticator {
             RequestHeader header = RequestHeader.parse(nioBuffer);
             ApiKeys apiKey = header.apiKey();
             short version = header.apiVersion();
-            Struct struct = apiKey.parseRequest(version, nioBuffer);
-            AbstractRequest request = AbstractRequest.parseRequest(apiKey, version, struct);
+            AbstractRequest request = AbstractRequest.parseRequest(apiKey, version, nioBuffer).request;
             registerRequestParseLatency.accept(timeBeforeParse, null);
 
             final long startProcessTime = MathUtils.nowInNano();
@@ -473,14 +472,32 @@ public class SaslAuthenticator {
 
             try {
                 byte[] responseToken =
-                        saslServer.evaluateResponse(Utils.toArray(saslAuthenticateRequest.saslAuthBytes()));
-                ByteBuffer responseBuf = (responseToken == null) ? EMPTY_BUFFER : ByteBuffer.wrap(responseToken);
-                String pulsarRole = saslServer.getAuthorizationID();
-                this.session = new Session(
-                        new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
-                                (String) saslServer.getNegotiatedProperty(USER_NAME_PROP),
-                                (AuthenticationDataSource) saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP)),
-                        header.clientId());
+
+                        saslServer.evaluateResponse(saslAuthenticateRequest.data().authBytes());
+                byte[] responseBuf = (responseToken == null) ? EMPTY_BUFFER : responseToken;
+                if (saslServer.isComplete()) {
+                    String pulsarRole = saslServer.getAuthorizationID();
+                    this.session = new Session(
+                            new KafkaPrincipal(KafkaPrincipal.USER_TYPE, pulsarRole,
+                                    safeGetProperty(saslServer, USER_NAME_PROP),
+                                    safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
+                            header.clientId());
+                    if (log.isDebugEnabled()) {
+                        log.debug("Authenticate successfully for client, header {}, request {}, session {} username {},"
+                                        + " authDataSource {}",
+                                header, saslAuthenticateRequest, session,
+                                saslServer.getNegotiatedProperty(USER_NAME_PROP),
+                                saslServer.getNegotiatedProperty(AUTH_DATA_SOURCE_PROP));
+                    }
+                    if (!tenantAccessValidationFunction.apply(session)) {
+                        AuthenticationException e =
+                                new AuthenticationException("User is not allowed to access this tenant");
+                        registerRequestLatency.accept(apiKey, startProcessTime);
+                        buildResponseOnAuthenticateFailure(header, request, null, e);
+                        throw e;
+                    }
+                }
+
                 registerRequestLatency.accept(apiKey, startProcessTime);
                 if (!tenantAccessValidationFunction.apply(session)) {
                     AuthenticationException e =
@@ -530,7 +547,8 @@ public class SaslAuthenticator {
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
-            ApiVersionsResponse versionsResponse = ApiVersionsResponse.defaultApiVersionsResponse();
+            ApiVersionsResponse versionsResponse =
+                    ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,
@@ -549,7 +567,7 @@ public class SaslAuthenticator {
                                                    BiConsumer<ApiKeys, Long> registerRequestLatency)
             throws AuthenticationException {
 
-        final String mechanism = request.mechanism();
+        final String mechanism = request.data().mechanism();
         if (mechanism == null) {
             AuthenticationException e = new AuthenticationException("client's mechanism is null");
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
@@ -585,6 +603,29 @@ public class SaslAuthenticator {
                     KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM, allowedMechanisms),
                     null);
             throw new UnsupportedSaslMechanismException(mechanism);
+        }
+    }
+
+    /**
+     * The exception to indicate that the SaslServer doesn't have the expected property.
+     */
+    public static class NoExpectedPropertyException extends AuthenticationException {
+
+        public NoExpectedPropertyException(String propertyName, String msg) {
+            super("No expected property for " + propertyName + ": " + msg);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T safeGetProperty(final SaslServer saslServer, final String propertyName) {
+        try {
+            final Object property = saslServer.getNegotiatedProperty(propertyName);
+            if (property == null) {
+                throw new NoExpectedPropertyException(propertyName, "property not found");
+            }
+            return (T) property;
+        } catch (ClassCastException e) {
+            throw new NoExpectedPropertyException(propertyName, e.getMessage());
         }
     }
 }

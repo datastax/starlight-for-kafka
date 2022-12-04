@@ -45,12 +45,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.message.SaslAuthenticateRequestData;
+import org.apache.kafka.common.message.SaslHandshakeRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.protocol.types.Struct;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.RequestHeader;
-import org.apache.kafka.common.requests.ResponseHeader;
 import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
@@ -177,9 +178,10 @@ class ConnectionToBroker {
                 dummyCorrelationId
         );
         SaslHandshakeRequest request = new SaslHandshakeRequest
-                .Builder("PLAIN")
+                .Builder(new SaslHandshakeRequestData()
+                .setMechanism("PLAIN"))
                 .build();
-        ByteBuffer buffer = request.serialize(header);
+        ByteBuffer buffer = KopResponseUtils.serializeRequest(header, request);
         KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
@@ -232,10 +234,11 @@ class ConnectionToBroker {
                 + "\u0000" + password;
         byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
         SaslAuthenticateRequest request = new SaslAuthenticateRequest
-                .Builder(ByteBuffer.wrap(saslAuthBytes))
+                .Builder(new SaslAuthenticateRequestData()
+                .setAuthBytes(saslAuthBytes))
                 .build();
 
-        ByteBuffer buffer = request.serialize(header);
+        ByteBuffer buffer = KopResponseUtils.serializeRequest(header, request);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
@@ -307,7 +310,7 @@ class ConnectionToBroker {
                     correlationId, request.getHeader().apiVersion(), request);
         }
         PendingAction existing = pendingRequests.put(correlationId, new PendingAction(result,
-                request.getHeader().apiKey(), request.getHeader().apiVersion()));
+                request.getHeader()));
         if (existing != null) {
             result.completeExceptionally(new IOException("correlationId " + correlationId + " already inflight"));
             return;
@@ -345,8 +348,7 @@ class ConnectionToBroker {
     @AllArgsConstructor
     private static final class PendingAction {
         CompletableFuture<AbstractResponse> response;
-        ApiKeys apiKeys;
-        short apiVersion;
+        RequestHeader requestHeader;
     }
 
     public class ResponseFromBrokerHandler extends ChannelInboundHandlerAdapter {
@@ -363,17 +365,17 @@ class ConnectionToBroker {
             }
 
             ByteBuffer asBuffer = ByteBuffer.wrap(buffer);
-            ResponseHeader header = ResponseHeader.parse(asBuffer);
+            int correlationId = asBuffer.getInt(0);
             // Always expect the response version id to be the same as the request version id
-            PendingAction result = pendingRequests.remove(header.correlationId());
+            PendingAction result = pendingRequests.remove(correlationId);
             if (result != null) {
-                Struct responseBody = result.apiKeys.parseResponse(result.apiVersion, asBuffer);
-                AbstractResponse response = AbstractResponse.parseResponse(result.apiKeys, responseBody);
+                AbstractResponse response = AbstractResponse.parseResponse(
+                        asBuffer, result.requestHeader);
                 // TODO, this probably should not happen in Netty Eventloop
                 result.response.complete(response);
             } else {
-                log.error("correlationId {} is unknown", header.correlationId());
-                ctx.fireExceptionCaught(new Exception("Correlation ID " + header.correlationId() + " is unknown"));
+                log.error("correlationId {} is unknown", correlationId);
+                ctx.fireExceptionCaught(new Exception("Correlation ID " + correlationId + " is unknown"));
             }
         }
 
