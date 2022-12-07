@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop.security;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
-import com.google.common.annotations.VisibleForTesting;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -43,10 +42,10 @@ import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.kafka.common.errors.AuthenticationException;
-import org.apache.kafka.common.message.ApiMessageType;
-import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
+import org.apache.kafka.common.message.ApiMessageType;
+import org.apache.kafka.common.message.ApiVersionsRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -59,7 +58,6 @@ import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
-import org.apache.kafka.common.utils.Utils;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
@@ -343,7 +341,7 @@ public class SaslAuthenticator {
         // Raise an error prior to parsing if the api cannot be handled at this layer. This avoids
         // unnecessary exposure to some of the more complex schema types.
         if (apiKey != ApiKeys.API_VERSIONS && apiKey != ApiKeys.SASL_HANDSHAKE) {
-            throw new AuthenticationException(
+            throw new IllegalSaslStateException(
                     "Unexpected Kafka request of type " + apiKey + " during SASL handshake.");
         }
 
@@ -419,19 +417,6 @@ public class SaslAuthenticator {
         );
     }
 
-    @VisibleForTesting
-    public static ByteBuf sizePrefixed(ByteBuffer buffer) {
-        ByteBuffer sizeBuffer = ByteBuffer.allocate(4);
-        sizeBuffer.putInt(0, buffer.remaining());
-        ByteBuf byteBuf = Unpooled.buffer(sizeBuffer.capacity() + buffer.remaining());
-        // why we reset writer index? see https://github.com/streamnative/kop/issues/696
-        byteBuf.markWriterIndex();
-        byteBuf.writeBytes(sizeBuffer);
-        byteBuf.writeBytes(buffer);
-        byteBuf.resetWriterIndex();
-        return byteBuf;
-    }
-
     private void handleSaslToken(ChannelHandlerContext ctx,
                                  ByteBuf requestBuf,
                                  BiConsumer<Long, Throwable> registerRequestParseLatency,
@@ -449,13 +434,18 @@ public class SaslAuthenticator {
                 byte[] response = saslServer.evaluateResponse(clientToken);
                 if (response != null) {
                     ByteBuf byteBuf = Unpooled.wrappedBuffer(response);
-                    final Session newSession = new Session(
-                            new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
-                                    safeGetProperty(saslServer, USER_NAME_PROP),
-                                    safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
-                            "old-clientId");
-                    if (!tenantAccessValidationFunction.apply(newSession)) {
-                        throw new AuthenticationException("User is not allowed to access this tenant");
+                    final Session newSession;
+                    if (saslServer.isComplete()) {
+                        newSession = new Session(
+                                new KafkaPrincipal(KafkaPrincipal.USER_TYPE, saslServer.getAuthorizationID(),
+                                        safeGetProperty(saslServer, USER_NAME_PROP),
+                                        safeGetProperty(saslServer, AUTH_DATA_SOURCE_PROP)),
+                                "old-clientId");
+                        if (!tenantAccessValidationFunction.apply(newSession)) {
+                            throw new AuthenticationException("User is not allowed to access this tenant");
+                        }
+                    } else {
+                        newSession = null;
                     }
                     ctx.channel().writeAndFlush(byteBuf).addListener(future -> {
                         if (!future.isSuccess()) {
@@ -524,14 +514,6 @@ public class SaslAuthenticator {
                         buildResponseOnAuthenticateFailure(header, request, null, e);
                         throw e;
                     }
-                }
-                registerRequestLatency.accept(apiKey, startProcessTime);
-                if (!tenantAccessValidationFunction.apply(session)) {
-                    AuthenticationException e =
-                            new AuthenticationException("User is not allowed to access this tenant");
-                    registerRequestLatency.accept(apiKey, startProcessTime);
-                    buildResponseOnAuthenticateFailure(header, request, null, e);
-                    throw e;
                 }
                 registerRequestLatency.accept(apiKey, startProcessTime);
                 sendKafkaResponse(ctx,
@@ -630,5 +612,4 @@ public class SaslAuthenticator {
             throw new UnsupportedSaslMechanismException(mechanism);
         }
     }
-
 }

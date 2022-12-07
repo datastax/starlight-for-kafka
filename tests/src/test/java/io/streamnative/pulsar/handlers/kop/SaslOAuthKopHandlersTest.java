@@ -40,6 +40,7 @@ import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.LoginException;
 import lombok.Cleanup;
 import lombok.SneakyThrows;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -74,6 +75,7 @@ import org.testng.annotations.Test;
  * @see OauthLoginCallbackHandler
  * @see OauthValidatorCallbackHandler
  */
+@Slf4j
 public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
 
     private static final String ADMIN_USER = "simple_client_id";
@@ -297,6 +299,8 @@ public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
             Callback callback = callbacks[0];
             if (callback instanceof OAuthBearerTokenCallback) {
                 super.handle(callbacks);
+                OAuthBearerToken token = ((OAuthBearerTokenCallback) callback).token();
+                log.info("Token {}", token);
                 tokens.add(((OAuthBearerTokenCallback) callback).token());
             }
         }
