@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import java.util.Map;
@@ -33,16 +34,19 @@ public class AppendRecordsContext {
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
+    private ChannelHandlerContext ctx;
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
-                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
+                                           final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap,
+                                           final ChannelHandlerContext ctx) {
         return new AppendRecordsContext(topicManager,
                     startSendOperationForThrottling,
                 completeSendOperationForThrottling,
-                pendingTopicFuturesMap);
+                pendingTopicFuturesMap,
+                ctx);
     }
 
 }

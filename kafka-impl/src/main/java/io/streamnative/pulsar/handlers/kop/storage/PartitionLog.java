@@ -917,7 +917,7 @@ public class PartitionLog {
     }
 
     private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
-                                            AppendRecordsContext appendRecordsContext) {
+                                              AppendRecordsContext appendRecordsContext) {
         final boolean isPublishRateExceeded;
         if (preciseTopicPublishRateLimitingEnable) {
             boolean isPreciseTopicPublishRateExceeded =
