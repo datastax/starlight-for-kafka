@@ -20,6 +20,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
+import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.MessageFetchContext;
 import io.streamnative.pulsar.handlers.kop.MessagePublishContext;
@@ -49,6 +50,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Getter;
 import lombok.ToString;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
@@ -68,7 +70,11 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
+import org.apache.kafka.common.errors.KafkaStorageException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
+import org.apache.kafka.common.errors.OffsetOutOfRangeException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
+import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -80,6 +86,8 @@ import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Analyze result.
@@ -109,7 +117,10 @@ public class PartitionLog {
     private final TopicPartition topicPartition;
     private final String fullPartitionName;
     private final AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
+    @Getter
     private final ProducerStateManager producerStateManager;
+
+    private final KafkaTopicLookupService kafkaTopicLookupService;
 
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
 
@@ -119,14 +130,27 @@ public class PartitionLog {
                         TopicPartition topicPartition,
                         String fullPartitionName,
                         ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
-                        ProducerStateManager producerStateManager) {
+                        KafkaTopicLookupService kafkaTopicLookupService,
+                        ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.kafkaConfig = kafkaConfig;
         this.entryfilterMap = entryfilterMap;
         this.requestStats = requestStats;
         this.time = time;
         this.topicPartition = topicPartition;
         this.fullPartitionName = fullPartitionName;
-        this.producerStateManager = producerStateManager;
+        this.kafkaTopicLookupService = kafkaTopicLookupService;
+        this.producerStateManager = new ProducerStateManager(fullPartitionName, producerStateManagerSnapshotBuffer);
+    }
+
+    public CompletableFuture<PartitionLog> recoverTransactions() {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            return producerStateManager
+                    .recover(this)
+                    .thenApply(___ -> this);
+        } else {
+            return CompletableFuture
+                    .completedFuture(this);
+        }
     }
 
     private CompletableFuture<EntryFormatter> getEntryFormatter(
@@ -222,6 +246,8 @@ public class PartitionLog {
         private Position lastPosition;
         private Errors errors;
 
+        private PartitionLog partitionLog;
+
         private ReadRecordsResult(Recycler.Handle<ReadRecordsResult> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
@@ -234,14 +260,16 @@ public class PartitionLog {
                                             List<FetchResponse.AbortedTransaction> abortedTransactions,
                                             long highWatermark,
                                             long lastStableOffset,
-                                            Position lastPosition) {
+                                            Position lastPosition,
+                                            PartitionLog partitionLog) {
             return ReadRecordsResult.get(
                     decodeResult,
                     abortedTransactions,
                     highWatermark,
                     lastStableOffset,
                     lastPosition,
-                    null);
+                    null,
+                    partitionLog);
         }
 
         public static ReadRecordsResult get(DecodeResult decodeResult,
@@ -249,7 +277,8 @@ public class PartitionLog {
                                             long highWatermark,
                                             long lastStableOffset,
                                             Position lastPosition,
-                                            Errors errors) {
+                                            Errors errors,
+                                            PartitionLog partitionLog) {
             ReadRecordsResult readRecordsResult = RECYCLER.get();
             readRecordsResult.decodeResult = decodeResult;
             readRecordsResult.abortedTransactions = abortedTransactions;
@@ -257,20 +286,22 @@ public class PartitionLog {
             readRecordsResult.lastStableOffset = lastStableOffset;
             readRecordsResult.lastPosition = lastPosition;
             readRecordsResult.errors = errors;
+            readRecordsResult.partitionLog = partitionLog;
             return readRecordsResult;
         }
 
-        public static ReadRecordsResult error(Errors errors) {
-            return ReadRecordsResult.error(PositionImpl.EARLIEST, errors);
+        public static ReadRecordsResult error(Errors errors, PartitionLog partitionLog) {
+            return ReadRecordsResult.error(PositionImpl.EARLIEST, errors, partitionLog);
         }
 
-        public static ReadRecordsResult error(Position position, Errors errors) {
+        public static ReadRecordsResult error(Position position, Errors errors, PartitionLog partitionLog) {
             return ReadRecordsResult.get(null,
                     null,
                     -1,
                     -1,
                     position,
-                    errors);
+                    errors,
+                    partitionLog);
         }
 
         public FetchResponse.PartitionData<Records> toPartitionData() {
@@ -307,6 +338,7 @@ public class PartitionLog {
             this.lastStableOffset = -1;
             this.highWatermark = -1;
             this.abortedTransactions = null;
+            this.partitionLog = null;
             if (this.decodeResult != null) {
                 this.decodeResult.recycle();
                 this.decodeResult = null;
@@ -487,11 +519,11 @@ public class PartitionLog {
                     log.debug("Fetch for {}: no tcm for topic {} return NOT_LEADER_FOR_PARTITION.",
                             topicPartition, fullPartitionName);
                 }
-                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
+                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER, this));
                 return;
             }
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, startPrepareMetadataNanos)) {
-                future.complete(ReadRecordsResult.error(Errors.OFFSET_OUT_OF_RANGE));
+                future.complete(ReadRecordsResult.error(Errors.OFFSET_OUT_OF_RANGE, this));
                 return;
             }
 
@@ -506,7 +538,7 @@ public class PartitionLog {
                 log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 context.getSharedState().getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
-                future.complete(ReadRecordsResult.error(Errors.NONE));
+                future.complete(ReadRecordsResult.error(Errors.NONE, this));
                 return;
             }
             cursorFuture.thenAccept((cursorLongPair) -> {
@@ -515,7 +547,7 @@ public class PartitionLog {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
                                     + "Fetch for topic return error.", offset, topicPartition);
                     registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
-                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
+                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER, this));
                     return;
                 }
                 final ManagedCursor cursor = cursorLongPair.getLeft();
@@ -524,18 +556,20 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.maxBytes, limitBytes.get());
-                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes, topicManager)
-                        .whenComplete((entries, throwable) -> {
+                readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
+                        fullPartitionName -> {
+                    topicManager.invalidateCacheForFencedManagerLedgerOnTopic(fullPartitionName);
+                }).whenComplete((entries, throwable) -> {
                             if (throwable != null) {
                                 tcm.deleteOneCursorAsync(cursorLongPair.getLeft(),
                                         "cursor.readEntry fail. deleteCursor");
                                 if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
                                         || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
-                                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
+                                    future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER, this));
                                     return;
                                 }
                                 log.error("Read entry error on {}", partitionData, throwable);
-                                future.complete(ReadRecordsResult.error(Errors.UNKNOWN_SERVER_ERROR));
+                                future.complete(ReadRecordsResult.error(Errors.UNKNOWN_SERVER_ERROR, this));
                                 return;
                             }
                             long readSize = entries.stream().mapToLong(Entry::getLength).sum();
@@ -548,7 +582,7 @@ public class PartitionLog {
                 registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
                 context.getSharedState()
                         .getKafkaTopicConsumerManagerCache().removeAndCloseByTopic(fullPartitionName);
-                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER));
+                future.complete(ReadRecordsResult.error(Errors.NOT_LEADER_OR_FOLLOWER, this));
                 return null;
             });
         });
@@ -574,7 +608,9 @@ public class PartitionLog {
             log.error("Received request for offset {} for partition {}, "
                             + "but we only have entries less than {}.",
                     offset, topicPartition, logEndOffset);
-            registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+            if (startPrepareMetadataNanos > 0) {
+                registerPrepareMetadataFailedEvent(startPrepareMetadataNanos);
+            }
             return true;
         }
         return false;
@@ -602,7 +638,8 @@ public class PartitionLog {
                     entries.size(), committedEntries.size());
         }
         if (committedEntries.isEmpty()) {
-            future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE));
+            future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE,
+                    this));
             return;
         }
 
@@ -618,7 +655,7 @@ public class PartitionLog {
 
         entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
         if (ee != null) {
-            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
+            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR, this));
             return;
         }
         groupNameFuture.whenCompleteAsync((_groupName, ex) -> {
@@ -650,11 +687,11 @@ public class PartitionLog {
                 }
 
                 future.complete(ReadRecordsResult
-                        .get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition));
+                        .get(decodeResult, abortedTransactions, highWatermark, lso, lastPosition, this));
             }, context.getDecodeExecutor());
         }, context.getDecodeExecutor()).exceptionally(ex -> {
             log.error("Partition {} read entry exceptionally. ", topicPartition, ex);
-            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR));
+            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR, this));
             return null;
         });
 
@@ -710,7 +747,7 @@ public class PartitionLog {
                                                        final AtomicLong cursorOffset,
                                                        final int maxReadEntriesNum,
                                                        final long adjustedMaxBytes,
-                                                       final KafkaTopicManager topicManager) {
+                                                       final Consumer<String> invalidateCacheOnTopic) {
         final OpStatsLogger messageReadStats = requestStats.getMessageReadStats();
         // read readeEntryNum size entry.
         final long startReadingMessagesNanos = MathUtils.nowInNano();
@@ -767,7 +804,7 @@ public class PartitionLog {
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
                 log.error("Error read entry for topic: {}", fullPartitionName);
                 if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
-                    topicManager.invalidateCacheForFencedManagerLedgerOnTopic(fullPartitionName);
+                    invalidateCacheOnTopic.accept(fullPartitionName);
                 }
                 messageReadStats.registerFailedEvent(
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
@@ -839,20 +876,7 @@ public class PartitionLog {
 
                 AnalyzeResult analyzeResult = analyzeAndValidateProducerState(
                         encodeResult.getRecords(), Optional.of(offset), AppendOrigin.Client);
-                analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
-                                pid, producerAppendInfo, lastOffset);
-                    }
-                    producerStateManager.update(producerAppendInfo);
-                });
-                analyzeResult.completedTxns().forEach(completedTxn -> {
-                    // update to real last offset
-                    completedTxn.lastOffset(lastOffset - 1);
-                    long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                    producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
-                    producerStateManager.completeTxn(completedTxn);
-                });
+                updateProducerStateManager(lastOffset, analyzeResult);
 
                 appendFuture.complete(offset);
             } else {
@@ -985,4 +1009,214 @@ public class PartitionLog {
             return MemoryRecords.readableRecords(validByteBuffer);
         }
     }
+
+    public CompletableFuture<Long> recoverTxEntries(
+                                             long offset,
+                                             ProducerStateManager producerStateManager) {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            // no need to scan the topic, because transactions are disabled
+            return CompletableFuture.completedFuture(Long.valueOf(0));
+        }
+        SchemaManager schemaManager = new SchemaManager() {
+            @Override
+            public CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion) {
+                return FutureUtil.failedFuture(new UnsupportedOperationException("not implemented yet"));
+            }
+        };
+        return kafkaTopicLookupService
+                .getTopic(fullPartitionName, this).thenCompose(topic -> {
+            if (!topic.isPresent()) {
+                log.info("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
+                return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+            }
+            final CompletableFuture<Long> future = new CompletableFuture<>();
+
+            // The future that is returned by getTopicConsumerManager is always completed normally
+            KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
+                    true, topic.get());
+            future.whenComplete((___, error) -> {
+                // release resources in any case
+                try {
+                    tcm.close();
+                } catch (Exception err) {
+                    log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
+                            fullPartitionName, err);
+                }
+            });
+
+            if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
+                future.completeExceptionally(new OffsetOutOfRangeException(""));
+                return future;
+            }
+
+            if (log.isDebugEnabled()) {
+                log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
+                        topicPartition, offset);
+            }
+
+            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offset);
+
+            if (cursorFuture == null) {
+                // tcm is closed, just return a NONE error because the channel may be still active
+                log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
+                future.completeExceptionally(new NotLeaderOrFollowerException());
+                return future;
+            }
+            cursorFuture.thenAccept((cursorLongPair) -> {
+
+                if (cursorLongPair == null) {
+                    log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
+                            + "Fetch for topic return error.", offset, topicPartition);
+                    future.completeExceptionally(new NotLeaderOrFollowerException());
+                    return;
+                }
+                final ManagedCursor cursor = cursorLongPair.getLeft();
+                final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
+
+                AtomicLong entryCounter = new AtomicLong();
+                readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), entryCounter, schemaManager, future);
+
+            }).exceptionally(ex -> {
+                future.completeExceptionally(new NotLeaderOrFollowerException());
+                return null;
+            });
+            return future;
+        });
+    }
+
+
+    private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
+                                            KafkaTopicConsumerManager tcm,
+                                            PersistentTopic topic,
+                                            AtomicLong entryCounter,
+                                            SchemaManager schemaManager,
+                                            CompletableFuture<Long> future) {
+        log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
+        int maxReadEntriesNum = 2;
+        long adjustedMaxBytes = Long.MAX_VALUE;
+        readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
+                (partitionName) -> {})
+                .whenComplete((entries, throwable) -> {
+                    if (throwable != null) {
+                        tcm.deleteOneCursorAsync(cursor,
+                                "cursor.readEntry fail. deleteCursor");
+                        if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
+                                || throwable instanceof ManagedLedgerException.ManagedLedgerFencedException) {
+                            future.completeExceptionally(new NotLeaderOrFollowerException());
+                            return;
+                        }
+                        log.error("Read entry error on {}", fullPartitionName, throwable);
+                        future.completeExceptionally(new UnknownServerException(throwable));
+                        return;
+                    }
+
+                    // Add new offset back to TCM after entries are read successfully
+                    tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
+
+                    if (entries.isEmpty()) {
+                        log.info("No more entries to recover for {}", fullPartitionName);
+                        future.complete(entryCounter.get());
+                        return;
+                    }
+
+                    CompletableFuture<DecodeResult> decodedEntries = new CompletableFuture<>();
+                    decodeEntriesForRecovery(decodedEntries, entries, topic, schemaManager);
+
+                    decodedEntries.thenAccept((decodeResult) -> {
+                        try {
+
+                            MemoryRecords records = decodeResult.getRecords();
+                            Optional<Long> firstOffset = Optional
+                                    .ofNullable(records.firstBatch())
+                                    .map(batch -> batch.baseOffset());
+
+                            long[] lastOffSetHolder = {-1L};
+                            records.batches().forEach(batch -> {
+                                batch.forEach(record -> {
+                                    if (lastOffSetHolder[0] < record.offset()) {
+                                        lastOffSetHolder[0] = record.offset();
+                                    }
+                                    entryCounter.incrementAndGet();
+                                });
+                            });
+                            long lastOffset = lastOffSetHolder[0];
+
+                            if (log.isDebugEnabled()) {
+                                log.debug("Read some entries while recovering {} firstOffSet {} lastOffset {}",
+                                        fullPartitionName,
+                                        firstOffset.orElse(null), lastOffset);
+                            }
+
+                            AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
+                                    firstOffset, AppendOrigin.Log);
+
+                            updateProducerStateManager(lastOffset, analyzeResult);
+                            if (log.isDebugEnabled()) {
+                                log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
+                            }
+
+                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter,
+                                    schemaManager, future);
+
+                        } finally {
+                            decodeResult.recycle();
+                        }
+                    }).exceptionally(error -> {
+                        log.error("Bad error while recovering {}", fullPartitionName, error);
+                        future.completeExceptionally(error);
+                        return null;
+                    });
+                });
+    }
+
+    private void updateProducerStateManager(long lastOffset, AnalyzeResult analyzeResult) {
+        analyzeResult.updatedProducers().forEach((pid, producerAppendInfo) -> {
+            if (log.isDebugEnabled()) {
+                log.debug("Append pid: [{}], appendInfo: [{}], lastOffset: [{}]",
+                        pid, producerAppendInfo, lastOffset);
+            }
+            producerStateManager.update(producerAppendInfo);
+        });
+        analyzeResult.completedTxns().forEach(completedTxn -> {
+            // update to real last offset
+            completedTxn.lastOffset(lastOffset - 1);
+            long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
+            producerStateManager.updateTxnIndex(completedTxn, lastStableOffset);
+            producerStateManager.completeTxn(completedTxn);
+        });
+        producerStateManager.updateMapEndOffset(lastOffset);
+    }
+
+    private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,
+                               final List<Entry> entries, PersistentTopic topic,
+                               SchemaManager schemaManager) {
+
+        if (log.isDebugEnabled()) {
+            log.debug("Read {} entries", entries.size());
+        }
+        final byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
+        final CompletableFuture<EntryFormatter> entryFormatterHandle =
+                getEntryFormatter(CompletableFuture.completedFuture(Optional.of(topic)));
+        entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
+            if (ee != null) {
+                future.completeExceptionally(new KafkaStorageException());
+                return;
+            }
+            final long startDecodingEntriesNanos = MathUtils.nowInNano();
+            entryFormatter.decode(entries, magic,
+                    fullPartitionName, schemaManager).whenComplete(
+                    (DecodeResult decodeResult, Throwable error) -> {
+                        if (error != null) {
+                            future.completeExceptionally(error);
+                            return;
+                        }
+                        requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                                MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+                        future.complete(decodeResult);
+                    }
+            );
+
+        });
+    }
+
 }
