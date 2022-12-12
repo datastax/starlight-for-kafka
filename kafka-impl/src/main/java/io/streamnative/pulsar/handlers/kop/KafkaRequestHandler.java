@@ -1664,15 +1664,21 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             partitions.put(tp, data.toPartitionData());
                         });
                         partitions.putAll(erroneous);
-                        resultFuture.complete(new ResponseCallbackWrapper(new FetchResponse<>(
-                                Errors.NONE,
-                                partitions,
-                                THROTTLE_TIME_MS,
-                                request.metadata().sessionId()), () ->
-                                resultMap.forEach((__, readRecordsResult) -> {
+                        boolean triggeredCompletion = resultFuture.complete(new ResponseCallbackWrapper(
+                                new FetchResponse<>(
+                                    Errors.NONE,
+                                    partitions,
+                                    THROTTLE_TIME_MS,
+                                    request.metadata().sessionId()),
+                                () -> resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
                                 })
                         ));
+                        if (!triggeredCompletion) {
+                            resultMap.forEach((__, readRecordsResult) -> {
+                                readRecordsResult.recycle();
+                            });
+                        }
                         context.recycle();
                     });
                 }
