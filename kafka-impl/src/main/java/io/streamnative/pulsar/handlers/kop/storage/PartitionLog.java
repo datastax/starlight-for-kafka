@@ -1124,7 +1124,6 @@ public class PartitionLog {
 
                     decodedEntries.thenAccept((decodeResult) -> {
                         try {
-
                             MemoryRecords records = decodeResult.getRecords();
                             Optional<Long> firstOffset = Optional
                                     .ofNullable(records.firstBatch())
@@ -1154,13 +1153,12 @@ public class PartitionLog {
                             if (log.isDebugEnabled()) {
                                 log.debug("Completed recovery of batch {} {}", analyzeResult, fullPartitionName);
                             }
-
-                            readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter,
-                                    schemaManager, future);
-
                         } finally {
                             decodeResult.recycle();
                         }
+                        readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter,
+                                schemaManager, future);
+
                     }).exceptionally(error -> {
                         log.error("Bad error while recovering {}", fullPartitionName, error);
                         future.completeExceptionally(error);
