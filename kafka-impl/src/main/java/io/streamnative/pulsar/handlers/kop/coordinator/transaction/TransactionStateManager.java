@@ -636,7 +636,8 @@ public class TransactionStateManager {
                 }, scheduler).thenAcceptAsync(__ ->
                         completeLoadedTransactions(topicPartition, startTimeMs, sendTxnMarkers), scheduler)
                 .exceptionally(ex -> {
-                    log.error("Error to load transactions exceptions : [{}]", ex.getMessage());
+                    log.error("Error to load transactions exceptions on {}: [{}]", topicPartition,
+                            ex.getMessage(), ex);
                     loadingPartitions.remove(partitionId);
                     return null;
                 });
