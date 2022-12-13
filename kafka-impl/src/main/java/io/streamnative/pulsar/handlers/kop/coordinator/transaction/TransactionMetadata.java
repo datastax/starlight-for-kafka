@@ -157,7 +157,7 @@ public class TransactionMetadata {
                     .lastProducerEpoch(newLastEpoch)
                     .txnTimeoutMs(newTxnTimeoutMs)
                     .txnState(newState)
-                    .topicPartitions(newTopicPartitions)
+                    .topicPartitions(Collections.unmodifiableSet(newTopicPartitions))
                     .txnStartTimestamp(newTxnStartTimestamp)
                     .txnLastUpdateTimestamp(updateTimestamp).build();
             if (log.isDebugEnabled()) {
@@ -236,7 +236,7 @@ public class TransactionMetadata {
                         throwStateTransitionFailure(transitMetadata);
                     } else {
                         txnStartTimestamp = transitMetadata.txnStartTimestamp;
-                        topicPartitions.addAll(transitMetadata.topicPartitions);
+                        addPartitions(transitMetadata.topicPartitions);
                     }
                     break;
                 case PREPARE_ABORT: // from endTxn
@@ -258,7 +258,7 @@ public class TransactionMetadata {
                         throwStateTransitionFailure(transitMetadata);
                     } else {
                         this.txnStartTimestamp = transitMetadata.txnStartTimestamp;
-                        this.topicPartitions.clear();
+                        this.topicPartitions = Collections.emptySet();
                     }
                     break;
                 case PREPARE_EPOCH_FENCE:
@@ -484,11 +484,27 @@ public class TransactionMetadata {
                                 + "trying to remove partitions whose txn marker has been sent, this is not expected",
                                 state, pendingState));
         }
-        topicPartitions.remove(topicPartition);
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.remove(topicPartition);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
+    }
+
+    public void removePartitions(Set<TopicPartition> topicPartitions) {
+        if (state != TransactionState.PREPARE_COMMIT && state != TransactionState.PREPARE_ABORT) {
+            throw new IllegalStateException(
+                    String.format("Transaction metadata's current state is %s, and its pending state is %s while "
+                                 + "trying to remove partitions whose txn marker has been sent, this is not expected",
+                            state, pendingState));
+        }
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.removeAll(topicPartitions);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
     }
 
     public void addPartitions(Set<TopicPartition> partitions) {
-        topicPartitions.addAll(partitions);
+        Set<TopicPartition> newTopicPartitions = new HashSet<>(topicPartitions);
+        newTopicPartitions.addAll(partitions);
+        this.topicPartitions = Collections.unmodifiableSet(newTopicPartitions);
     }
 
     public Boolean pendingTransitionInProgress() {
