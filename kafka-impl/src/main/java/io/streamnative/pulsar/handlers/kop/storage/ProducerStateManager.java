@@ -66,6 +66,7 @@ public class ProducerStateManager {
             this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
             this.producers.putAll(snapshot.getProducers());
             this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+            this.mapEndOffset = snapshot.getOffset();
             offSetPosition = snapshot.getOffset();
             log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
         } else {
