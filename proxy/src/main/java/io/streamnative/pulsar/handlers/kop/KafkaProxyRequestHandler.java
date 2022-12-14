@@ -34,7 +34,10 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
+
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -64,6 +67,8 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.errors.BrokerNotAvailableException;
+import org.apache.kafka.common.errors.CoordinatorNotAvailableException;
 import org.apache.kafka.common.errors.LeaderNotAvailableException;
 import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.AddOffsetsToTxnRequestData;
@@ -630,12 +635,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 ProduceRequest produceReq = new ProduceRequest.Builder(
                         produceRequest.version(), produceRequest.version(), requestForSinglePartition)
                         .buildUnsafe(produceRequest.version());
-                ByteBuffer buffer = KopResponseUtils.serializeRequest(header, produceReq);
+                ByteBuf buffer = KopResponseUtils.serializeRequest(header, produceReq);
 
                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                         header,
                         produceReq,
-                        Unpooled.wrappedBuffer(buffer),
+                        buffer,
                         null
                 );
 
@@ -885,11 +890,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                 ((FetchRequest) fetch.getRequest()).minBytes(),
                                                 requestsForBroker)
                                         .build();
-                                ByteBuffer buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
+                                ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
                                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                                         header,
                                         requestForSingleBroker,
-                                        Unpooled.wrappedBuffer(buffer),
+                                        buffer,
                                         null
                                 );
 
@@ -1325,11 +1330,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 DeleteRecordsRequest requestForBroker =
                                         new DeleteRecordsRequest.Builder(requestForSingleBroker)
                                         .build(request.version());
-                                ByteBuffer buffer = KopResponseUtils.serializeRequest(header, requestForBroker);
+                                ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForBroker);
                                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                                         header,
                                         requestForBroker,
-                                        Unpooled.wrappedBuffer(buffer),
+                                        buffer,
                                         null
                                 );
 
@@ -1612,12 +1617,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .forConsumer(false, request.isolationLevel())
                     .setOffsetData(tsData)
                     .build(request.version());
-            ByteBuffer buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
+            ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
 
             KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                     header,
                     requestForSinglePartition,
-                    Unpooled.wrappedBuffer(buffer),
+                    buffer,
                     null
             );
 
@@ -1739,12 +1744,12 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .forConsumer(false, request.isolationLevel())
                     .setTargetTimes(Collections.singletonList(tsData))
                     .build(request.version());
-            ByteBuffer buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
+            ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
 
             KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
                     header,
                     requestForSinglePartition,
-                    Unpooled.wrappedBuffer(buffer),
+                    buffer,
                     null
             );
 
@@ -1803,7 +1808,13 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     ) {
         BiFunction<K, Throwable, R> errorBuilder;
         if (customErrorBuilder == null) {
-            errorBuilder = (K request, Throwable t) -> (R) request.getErrorResponse(t);
+            errorBuilder = (K request, Throwable t) -> {
+                if (t instanceof IOException
+                    || t.getCause() instanceof IOException) {
+                    t = new CoordinatorNotAvailableException("Network error: " + t, t);
+                }
+                return (R) request.getErrorResponse(t);
+            };
         } else {
             errorBuilder = customErrorBuilder;
         }
@@ -1833,6 +1844,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         for (Errors error : serverResponse.errorCounts().keySet()) {
                                             if (error == Errors.NOT_COORDINATOR
                                                     || error == Errors.NOT_CONTROLLER
+                                                    || error == Errors.COORDINATOR_NOT_AVAILABLE
                                                     || error == Errors.NOT_LEADER_OR_FOLLOWER) {
                                                 forgetMetadataForFailedBroker(metadata.node.host(),
                                                         metadata.node.port());
@@ -1841,6 +1853,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     }
                                     resultFuture.complete(serverResponse);
                                 }).exceptionally(err -> {
+                                    log.error("Error sending {} coordinator for id {} request to {} :{}",
+                                            coordinatorType, transactionalId, metadata.node, err);
                                     resultFuture.complete(errorBuilder.apply(request, err));
                                     return null;
                                 });
@@ -1858,7 +1872,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private <R extends AbstractRequest> boolean isNoisyRequest(R request) {
         // Consumers send these packets very often
         return (request instanceof HeartbeatRequest)
-                || (request instanceof OffsetCommitRequest);
+                || (request instanceof OffsetCommitRequest
+                || (request instanceof EndTxnRequest));
     }
 
     @Override

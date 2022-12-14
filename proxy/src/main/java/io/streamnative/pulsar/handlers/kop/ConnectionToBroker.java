@@ -19,7 +19,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelFutureListener;
@@ -181,11 +180,11 @@ class ConnectionToBroker {
                 .Builder(new SaslHandshakeRequestData()
                 .setMechanism("PLAIN"))
                 .build();
-        ByteBuffer buffer = KopResponseUtils.serializeRequest(header, request);
+        ByteBuf buffer = KopResponseUtils.serializeRequest(header, request);
         KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
-                Unpooled.wrappedBuffer(buffer),
+                buffer,
                 null
         );
         return fullRequest;
@@ -238,12 +237,12 @@ class ConnectionToBroker {
                 .setAuthBytes(saslAuthBytes))
                 .build();
 
-        ByteBuffer buffer = KopResponseUtils.serializeRequest(header, request);
+        ByteBuf buffer = KopResponseUtils.serializeRequest(header, request);
 
         KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
                 header,
                 request,
-                Unpooled.wrappedBuffer(buffer),
+                buffer,
                 null
         );
         CompletableFuture<AbstractResponse> result = new CompletableFuture<>();
@@ -298,11 +297,12 @@ class ConnectionToBroker {
 
     private void sendRequestOnTheWire(Channel channel, KafkaCommandDecoder.KafkaHeaderAndRequest request,
                                       CompletableFuture<AbstractResponse> result) {
+        ByteBuf bytes = request.getBuffer();
         if (closed) {
+            request.close();
             result.completeExceptionally(new IOException("connection closed"));
             return;
         }
-        byte[] bytes = ByteBufUtil.getBytes(request.getBuffer());
         // the Kafka client sends unique values for this correlationId
         int correlationId = request.getHeader().correlationId();
         if (log.isDebugEnabled()) {
@@ -312,10 +312,12 @@ class ConnectionToBroker {
         PendingAction existing = pendingRequests.put(correlationId, new PendingAction(result,
                 request.getHeader()));
         if (existing != null) {
+            request.close();
             result.completeExceptionally(new IOException("correlationId " + correlationId + " already inflight"));
             return;
         }
-        channel.writeAndFlush(Unpooled.wrappedBuffer(bytes)).addListener(writeFuture -> {
+        channel.writeAndFlush(bytes).addListener(writeFuture -> {
+            request.bufferReleased();
             if (!writeFuture.isSuccess()) {
                 pendingRequests.remove(correlationId);
                 kafkaProxyRequestHandler.forgetMetadataForFailedBroker(brokerHost, brokerPort);
