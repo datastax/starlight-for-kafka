@@ -1098,6 +1098,7 @@ public class PartitionLog {
                                             SchemaManager schemaManager,
                                             CompletableFuture<Long> future, Executor executor) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
+        //int maxReadEntriesNum = 200;
         int maxReadEntriesNum = 2;
         long adjustedMaxBytes = Long.MAX_VALUE;
         readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
@@ -1154,6 +1155,9 @@ public class PartitionLog {
 
                             AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
                                     firstOffset, AppendOrigin.Log);
+
+                            //AnalyzeResult analyzeResult = analyzeAndValidateProducerState(records,
+                            //        Optional.empty(), AppendOrigin.Log);
 
                             updateProducerStateManager(lastOffset, analyzeResult);
                             if (log.isDebugEnabled()) {
