@@ -1873,7 +1873,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         // Consumers send these packets very often
         return (request instanceof HeartbeatRequest)
                 || (request instanceof OffsetCommitRequest
-                || (request instanceof EndTxnRequest));
+                || (request instanceof EndTxnRequest
+                || (request instanceof AddPartitionsToTxnRequest)));
     }
 
     @Override
