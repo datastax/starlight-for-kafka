@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,12 +50,15 @@ public class PartitionLogManager {
 
     private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
 
+    private final Executor recoveryExecutor;
+
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
-                           RequestStats requestStats,
-                           final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
-                           Time time,
-                           KafkaTopicLookupService kafkaTopicLookupService,
-                           Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer) {
+                               RequestStats requestStats,
+                               final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                               Time time,
+                               KafkaTopicLookupService kafkaTopicLookupService,
+                               Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
+                               Executor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();
@@ -62,6 +66,7 @@ public class PartitionLogManager {
         this.time = time;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+        this.recoveryExecutor = recoveryExecutor;
     }
 
     public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
@@ -73,7 +78,7 @@ public class PartitionLogManager {
                     time, topicPartition, kopTopic, entryfilterMap,
                     kafkaTopicLookupService,
                     prodPerTenant)
-                    .recoverTransactions();
+                    .recoverTransactions(recoveryExecutor);
 
             result.exceptionally(error -> {
                 // in case of failure we have to remove the CompletableFuture from the map

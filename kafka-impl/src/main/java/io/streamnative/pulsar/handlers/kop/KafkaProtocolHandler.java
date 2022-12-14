@@ -47,6 +47,7 @@ import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -130,6 +131,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
+
+    private Executor recoveryExecutor;
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -310,6 +313,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
 
+        recoveryExecutor = service.getPulsar().getExecutor();
 
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                 && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
@@ -491,7 +495,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 producePurgatory,
                 fetchPurgatory,
                 kafkaTopicLookupService,
-                getProducerStateManagerSnapshotBufferByTenant
+                getProducerStateManagerSnapshotBufferByTenant,
+                recoveryExecutor
                 );
 
         try {

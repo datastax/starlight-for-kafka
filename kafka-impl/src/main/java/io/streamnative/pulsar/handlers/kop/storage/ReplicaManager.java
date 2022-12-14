@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -67,9 +68,10 @@ public class ReplicaManager {
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                           KafkaTopicLookupService kafkaTopicLookupService,
-                          Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer) {
+                          Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
+                          Executor recoveryExecutor) {
         this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
-                time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer);
+                time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer, recoveryExecutor);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
