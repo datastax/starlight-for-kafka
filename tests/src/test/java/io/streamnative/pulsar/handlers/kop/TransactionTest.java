@@ -619,7 +619,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         String secondMessage = "aborted msg 2";
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
 
-        Thread.sleep(conf.getKafkaTransactionalIdExpirationMs() + 5000);
+        Thread.sleep(conf.getKafkaTransactionalIdExpirationMs() * 2 + 5000);
 
         // the transaction is automatically aborted, because of producer timeout
         expectThrows(ProducerFencedException.class, () -> {
