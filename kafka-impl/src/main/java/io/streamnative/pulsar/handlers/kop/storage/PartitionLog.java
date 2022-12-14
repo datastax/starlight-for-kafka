@@ -1098,7 +1098,7 @@ public class PartitionLog {
                                             SchemaManager schemaManager,
                                             CompletableFuture<Long> future, Executor executor) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
-        int maxReadEntriesNum = 200;
+        int maxReadEntriesNum = 2;
         long adjustedMaxBytes = Long.MAX_VALUE;
         readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
                 (partitionName) -> {})
