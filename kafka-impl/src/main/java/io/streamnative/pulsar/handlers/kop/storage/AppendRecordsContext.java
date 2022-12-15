@@ -18,7 +18,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import java.util.Map;
 import java.util.function.Consumer;
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 
