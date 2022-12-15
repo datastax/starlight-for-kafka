@@ -55,6 +55,7 @@ import java.util.function.Function;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.PropertiesConfiguration;
@@ -132,7 +133,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
 
-    private Executor recoveryExecutor;
+    private OrderedExecutor recoveryExecutor;
 
     @Override
     public GroupCoordinator getGroupCoordinator(String tenant) {
@@ -313,7 +314,11 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
 
-        recoveryExecutor = service.getPulsar().getExecutor();
+        recoveryExecutor = OrderedExecutor
+                .newBuilder()
+                .name("kafka-tx-recovery")
+                .numThreads(4)
+                .build();
 
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                 && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
@@ -570,6 +575,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
         sendResponseScheduler.shutdown();
         schemaManagerCache.clear();
+        recoveryExecutor.shutdown();
+
     }
 
     @VisibleForTesting
