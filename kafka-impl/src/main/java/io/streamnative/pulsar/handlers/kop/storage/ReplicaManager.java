@@ -170,6 +170,10 @@ public class ReplicaManager {
                                         new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                                 return null;
                             });
+                }).exceptionally(ex -> {
+                    addPartitionResponse.accept(topicPartition,
+                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                    return null;
                 });
             }
         });
