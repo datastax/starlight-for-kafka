@@ -547,15 +547,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         }
         Optional.ofNullable(LOOKUP_CLIENT_MAP.remove(brokerService.pulsar())).ifPresent(LookupClient::close);
 
-        if (offsetTopicClient != null) {
-            offsetTopicClient.close();
-        }
-        if (txnTopicClient != null) {
-            txnTopicClient.close();
-        }
-        if (adminManager != null) {
-            adminManager.shutdown();
-        }
         if (producePurgatory != null) {
             producePurgatory.shutdown();
         }
@@ -575,6 +566,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
         sendResponseScheduler.shutdown();
         schemaManagerCache.clear();
+
+        if (offsetTopicClient != null) {
+            offsetTopicClient.close();
+        }
+        if (txnTopicClient != null) {
+            txnTopicClient.close();
+        }
+        if (adminManager != null) {
+            adminManager.shutdown();
+        }
         recoveryExecutor.shutdown();
 
     }
