@@ -27,6 +27,7 @@ import java.util.concurrent.Executor;
 import java.util.function.Function;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
@@ -50,7 +51,7 @@ public class PartitionLogManager {
 
     private final Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer;
 
-    private final Executor recoveryExecutor;
+    private final OrderedExecutor recoveryExecutor;
 
     public PartitionLogManager(KafkaServiceConfiguration kafkaConfig,
                                RequestStats requestStats,
@@ -58,7 +59,7 @@ public class PartitionLogManager {
                                Time time,
                                KafkaTopicLookupService kafkaTopicLookupService,
                                Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
-                               Executor recoveryExecutor) {
+                               OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.requestStats = requestStats;
         this.logMap = Maps.newConcurrentMap();

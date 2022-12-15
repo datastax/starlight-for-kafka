@@ -56,6 +56,7 @@ import lombok.ToString;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.bookkeeper.mledger.ManagedCursor;
@@ -143,14 +144,13 @@ public class PartitionLog {
         this.producerStateManager = new ProducerStateManager(fullPartitionName, producerStateManagerSnapshotBuffer);
     }
 
-    public CompletableFuture<PartitionLog> recoverTransactions(Executor executor) {
+    public CompletableFuture<PartitionLog> recoverTransactions(OrderedExecutor executor) {
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             return producerStateManager
-                    .recover(this, executor)
+                    .recover(this, executor.chooseThread(fullPartitionName))
                     .thenApply(___ -> this);
         } else {
-            return new CompletableFuture<PartitionLog>()
-                    .completeAsync(() -> this, executor);
+            return CompletableFuture.completedFuture(this);
         }
     }
 
@@ -413,6 +413,12 @@ public class PartitionLog {
                                                  final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Long> appendFuture = new CompletableFuture<>();
         KafkaTopicManager topicManager = appendRecordsContext.getTopicManager();
+        if (topicManager == null) {
+            log.error("topicManager is null for {}???", fullPartitionName,
+                    new Exception("topicManager is null for " + fullPartitionName).fillInStackTrace());
+            return CompletableFuture
+                    .failedFuture(new KafkaStorageException("topicManager is null for " + fullPartitionName));
+        }
         final long beforeRecordsProcess = time.nanoseconds();
         try {
             final LogAppendInfo appendInfo = analyzeAndValidateRecords(records);

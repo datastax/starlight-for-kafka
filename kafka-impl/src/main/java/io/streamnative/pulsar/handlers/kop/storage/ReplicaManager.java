@@ -37,6 +37,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.commons.lang3.mutable.MutableBoolean;
 import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.kafka.common.IsolationLevel;
@@ -69,7 +70,7 @@ public class ReplicaManager {
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                           KafkaTopicLookupService kafkaTopicLookupService,
                           Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
-                          Executor recoveryExecutor) {
+                          OrderedExecutor recoveryExecutor) {
         this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
                 time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer, recoveryExecutor);
         this.producePurgatory = producePurgatory;

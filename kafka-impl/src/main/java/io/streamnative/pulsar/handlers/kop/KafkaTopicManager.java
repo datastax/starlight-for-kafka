@@ -143,18 +143,23 @@ public class KafkaTopicManager {
     }
 
     public CompletableFuture<Optional<PersistentTopic>> getTopic(String topicName) {
-        if (closed.get()) {
-            if (log.isDebugEnabled()) {
-                log.debug("[{}] Return null for getTopic({}) since channel is closing",
-                        requestHandler.ctx.channel(), topicName);
+        try {
+            if (closed.get()) {
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Return null for getTopic({}) since channel is closing",
+                            requestHandler.ctx.channel(), topicName);
+                }
+                return CompletableFuture.completedFuture(Optional.empty());
             }
+            CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
+                    kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
+            // cache for removing producer
+            requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
+            return topicCompletableFuture;
+        } catch (Throwable error) {
+            log.error("Unhandled error here for {}", topicName, error);
             return CompletableFuture.completedFuture(Optional.empty());
         }
-        CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
-                kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
-        // cache for removing producer
-        requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
-        return topicCompletableFuture;
     }
 
     public void invalidateCacheForFencedManagerLedgerOnTopic(String fullTopicName) {
