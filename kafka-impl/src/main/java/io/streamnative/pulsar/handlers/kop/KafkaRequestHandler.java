@@ -1753,7 +1753,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 joinGroupResult.getLeaderId(),
                 members
             );
-
             if (log.isTraceEnabled()) {
                 log.trace("Sending join group response {} for correlation id {} to client {}.",
                     response, joinGroup.getHeader().correlationId(), joinGroup.getHeader().clientId());
@@ -2124,6 +2123,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             .setErrorCode(resp.getError().code())
                             .setProducerId(resp.getProducerId())
                             .setProducerEpoch(resp.getProducerEpoch());
+                    if (resp.getError() == Errors.COORDINATOR_LOAD_IN_PROGRESS) {
+                        responseData.setThrottleTimeMs(1000);
+                    }
                     response.complete(new InitProducerIdResponse(responseData));
                 });
     }
