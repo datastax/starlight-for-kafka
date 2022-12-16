@@ -46,6 +46,9 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     private final String topic;
     private final SystemTopicClient pulsarClient;
     private CompletableFuture<Reader<ByteBuffer>> reader;
+
+    private CompletableFuture<Producer<ByteBuffer>> producer;
+
     private CompletableFuture<Void> currentReadHandle;
 
     private synchronized CompletableFuture<Reader<ByteBuffer>> ensureReaderHandle() {
@@ -57,6 +60,17 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                     .createAsync();
         }
         return reader;
+    }
+
+    private synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
+        if (producer == null) {
+            producer = pulsarClient.newProducerBuilder()
+                    .enableBatching(false)
+                    .topic(topic)
+                    .blockIfQueueFull(true)
+                    .createAsync();
+        }
+        return producer;
     }
 
     private CompletableFuture<Void> readNextMessageIfAvailable(Reader<ByteBuffer> reader) {
@@ -118,15 +132,10 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             // cannot serialise, skip
             return CompletableFuture.completedFuture(null);
         }
-        CompletableFuture<Producer<ByteBuffer>> producerHandle = pulsarClient.newProducerBuilder()
-                .enableBatching(false)
-                .topic(topic)
-                .blockIfQueueFull(true)
-                .createAsync();
-        return producerHandle.thenCompose(opProducer -> {
+        return ensureProducerHandle().thenCompose(opProducer -> {
             // nobody can write now to the topic
             // wait for local cache to be up-to-date
-            CompletableFuture<Void> dummy = ensureLatestData(true)
+            return ensureLatestData(true)
                     .thenCompose((___) -> {
                         ProducerStateManagerSnapshot latest = latestSnapshots.get(snapshot.getTopicPartition());
                         if (latest != null && latest.getOffset() > snapshot.getOffset()) {
@@ -149,14 +158,6 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                                     return null;
                                 });
                     });
-            // ensure that we release the exclusive producer in any case
-            return dummy.whenComplete((___, err) -> {
-                opProducer.closeAsync().whenComplete((____, errorClose) -> {
-                    if (errorClose != null) {
-                        log.error("Error closing producer for {}", topic, errorClose);
-                    }
-                });
-            });
         });
     }
 
@@ -321,6 +322,17 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                     r.closeAsync().whenComplete((___, err) -> {
                         if (err != null) {
                             log.error("Error closing reader for {}", topic, err);
+                        }
+                    });
+                }
+            });
+        }
+        if (producer != null) {
+            producer.whenComplete((r, e) -> {
+                if (r != null) {
+                    r.closeAsync().whenComplete((___, err) -> {
+                        if (err != null) {
+                            log.error("Error closing producer for {}", topic, err);
                         }
                     });
                 }
