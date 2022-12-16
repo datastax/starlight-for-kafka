@@ -286,10 +286,14 @@ public class ReplicaManager {
             log.debug("Request key {} unblocked {} fetch requests.", key.keyLabel(), completed);
         }
     }
-
-
     public CompletableFuture<Void> takeProducerStateSnapshots() {
         return logManager.takeProducerStateSnapshots();
     }
+
+    public CompletableFuture<Void> purgeAbortedTxns() {
+        return logManager.purgeAbortedTxns();
+    }
+
+
 
 }

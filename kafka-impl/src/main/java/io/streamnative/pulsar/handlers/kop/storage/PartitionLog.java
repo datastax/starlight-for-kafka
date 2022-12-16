@@ -1030,6 +1030,72 @@ public class PartitionLog {
         }
     }
 
+    /**
+     * Remove all the AbortedTxn that are no more referred by existing data on the topic.
+     * @return
+     */
+    public CompletableFuture<Void> purgeAbortedTxns() {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+            // no need to scan the topic, because transactions are disabled
+            return CompletableFuture.completedFuture(null);
+        }
+        if (!producerStateManager.hasSomeAbortedTransactions()) {
+            // nothing to do
+            return CompletableFuture.completedFuture(null);
+        }
+        return fetchOldestAvailableIndexFromTopic()
+                .thenAccept(offset -> {
+                    producerStateManager.purgeAbortedTxns(offset);
+                });
+    }
+    private CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
+        return kafkaTopicLookupService
+                .getTopic(fullPartitionName, this).thenCompose(topic -> {
+                    if (!topic.isPresent()) {
+                        log.debug("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
+                        return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+                    }
+                    final CompletableFuture<Long> future = new CompletableFuture<>();
+
+                    // The future that is returned by getTopicConsumerManager is always completed normally
+                    KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("purge-aborted-tx",
+                            true, topic.get());
+                    future.whenComplete((___, error) -> {
+                        // release resources in any case
+                        try {
+                            tcm.close();
+                        } catch (Exception err) {
+                            log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
+                                    fullPartitionName, err);
+                        }
+                    });
+
+                    ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+                    PositionImpl firstPosition = managedLedger.getFirstPosition();
+                    managedLedger.asyncReadEntry(firstPosition, new AsyncCallbacks.ReadEntryCallback() {
+                        @Override
+                        public void readEntryComplete(Entry entry, Object ctx) {
+                            try {
+                                long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+                                future.complete(startOffset);
+                            } catch (Exception err) {
+                                future.completeExceptionally(err);
+                            } finally {
+                                entry.release();
+                            }
+                        }
+
+                        @Override
+                        public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
+                            future.completeExceptionally(exception);
+                        }
+                    }, null);
+
+                    return future;
+                });
+    }
+
+
     public CompletableFuture<Long> recoverTxEntries(
                                              long offset,
                                              Executor executor) {

@@ -115,5 +115,19 @@ public class PartitionLogManager {
         });
         return FutureUtil.waitForAll(handles);
     }
+
+    public CompletableFuture<Void> purgeAbortedTxns() {
+        List<CompletableFuture<Void>> handles = new ArrayList<>();
+        logMap.values().forEach(log -> {
+            if (log.isDone() && !log.isCompletedExceptionally()) {
+                PartitionLog partitionLog = log.getNow(null);
+                if (partitionLog != null) {
+                    handles.add(partitionLog
+                            .purgeAbortedTxns());
+                }
+            }
+        });
+        return FutureUtil.waitForAll(handles);
+    }
 }
 

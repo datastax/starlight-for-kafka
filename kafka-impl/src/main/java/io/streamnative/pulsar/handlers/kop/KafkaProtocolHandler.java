@@ -125,6 +125,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private ReplicaManager replicaManager;
 
     private ScheduledFuture<?> txnProducerStateSnapshotsTimeHandle;
+    private ScheduledFuture<?> txmPurgeAbortedTxTimeHandle;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -325,6 +326,18 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                     kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
             TimeUnit.SECONDS);
         }
+
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                && kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds() > 0) {
+            txmPurgeAbortedTxTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
+                        getReplicaManager().purgeAbortedTxns();
+                    },
+                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
+                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
+                    TimeUnit.SECONDS);
+        }
+
+
     }
 
 
@@ -541,6 +554,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     public void close() {
         if (txnProducerStateSnapshotsTimeHandle != null) {
             txnProducerStateSnapshotsTimeHandle.cancel(false);
+        }
+        if (txmPurgeAbortedTxTimeHandle != null) {
+            txmPurgeAbortedTxTimeHandle.cancel(false);
         }
 
         if (producePurgatory != null) {

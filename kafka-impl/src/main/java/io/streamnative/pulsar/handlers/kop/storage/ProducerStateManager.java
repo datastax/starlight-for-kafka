@@ -60,19 +60,21 @@ public class ProducerStateManager {
     private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
                                                             PartitionLog partitionLog,
                                                             Executor executor) {
-        this.abortedIndexList.clear();
-        this.producers.clear();
-        this.ongoingTxns.clear();
         long offSetPosition = 0;
-        if (snapshot != null) {
-            this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
-            this.producers.putAll(snapshot.getProducers());
-            this.ongoingTxns.putAll(snapshot.getOngoingTxns());
-            this.mapEndOffset = snapshot.getOffset();
-            offSetPosition = snapshot.getOffset();
-            log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
-        } else {
-            log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
+        synchronized (abortedIndexList) {
+            this.abortedIndexList.clear();
+            this.producers.clear();
+            this.ongoingTxns.clear();
+            if (snapshot != null) {
+                this.abortedIndexList.addAll(snapshot.getAbortedIndexList());
+                this.producers.putAll(snapshot.getProducers());
+                this.ongoingTxns.putAll(snapshot.getOngoingTxns());
+                this.mapEndOffset = snapshot.getOffset();
+                offSetPosition = snapshot.getOffset();
+                log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
+            } else {
+                log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
+            }
         }
         long startRecovery = System.currentTimeMillis();
         // recover from log
@@ -98,11 +100,14 @@ public class ProducerStateManager {
 
     public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot() {
         log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
-        ProducerStateManagerSnapshot snapshot = new ProducerStateManagerSnapshot(topicPartition,
-                mapEndOffset,
-                new HashMap<>(producers),
-                new TreeMap<>(ongoingTxns),
-                new ArrayList<>(abortedIndexList));
+        ProducerStateManagerSnapshot snapshot;
+        synchronized (abortedIndexList) {
+            snapshot = new ProducerStateManagerSnapshot(topicPartition,
+                    mapEndOffset,
+                    new HashMap<>(producers),
+                    new TreeMap<>(ongoingTxns),
+                    new ArrayList<>(abortedIndexList));
+        }
         return producerStateManagerSnapshotBuffer
                 .write(snapshot)
                 .thenApply(___ -> {
@@ -182,8 +187,10 @@ public class ProducerStateManager {
 
     public void updateTxnIndex(CompletedTxn completedTxn, long lastStableOffset) {
         if (completedTxn.isAborted()) {
-            abortedIndexList.add(new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
-                    completedTxn.lastOffset(), lastStableOffset));
+            synchronized (abortedIndexList) {
+                abortedIndexList.add(new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
+                        completedTxn.lastOffset(), lastStableOffset));
+            }
         }
     }
 
@@ -196,15 +203,36 @@ public class ProducerStateManager {
         }
     }
 
-    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
-        List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
-        for (AbortedTxn abortedTxn : abortedIndexList) {
-            if (abortedTxn.lastOffset() >= fetchOffset) {
-                abortedTransactions.add(
-                        new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+    public boolean hasSomeAbortedTransactions() {
+        return !abortedIndexList.isEmpty();
+    }
+
+    public void purgeAbortedTxns(long offset) {
+        synchronized (abortedIndexList) {
+            abortedIndexList.removeIf(tx -> {
+                boolean toRemove = tx.lastOffset() < offset;
+                if (toRemove) {
+                    log.info("Transaction {} can be removed (lastOffset < {})", tx, tx.lastOffset(), offset);
+                }
+                return toRemove;
+            });
+            if (!abortedIndexList.isEmpty()) {
+                log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
         }
-        return abortedTransactions;
+    }
+
+    public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {
+        synchronized (abortedIndexList) {
+            List<FetchResponse.AbortedTransaction> abortedTransactions = new ArrayList<>();
+            for (AbortedTxn abortedTxn : abortedIndexList) {
+                if (abortedTxn.lastOffset() >= fetchOffset) {
+                    abortedTransactions.add(
+                            new FetchResponse.AbortedTransaction(abortedTxn.producerId(), abortedTxn.firstOffset()));
+                }
+            }
+            return abortedTransactions;
+        }
     }
 
 }
