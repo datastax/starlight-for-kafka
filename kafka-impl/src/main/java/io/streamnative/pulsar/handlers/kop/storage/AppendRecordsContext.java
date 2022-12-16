@@ -13,11 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
-import io.netty.util.Recycler;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicManager;
 import io.streamnative.pulsar.handlers.kop.PendingTopicFutures;
 import java.util.Map;
 import java.util.function.Consumer;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 
@@ -25,63 +26,23 @@ import org.apache.kafka.common.TopicPartition;
  * AppendRecordsContext is use for pass parameters to ReplicaManager, to avoid long parameter lists.
  */
 @Slf4j
+@AllArgsConstructor
+@Getter
 public class AppendRecordsContext {
-    private static final Recycler<AppendRecordsContext> RECYCLER = new Recycler<AppendRecordsContext>() {
-        protected AppendRecordsContext newObject(Handle<AppendRecordsContext> handle) {
-            return new AppendRecordsContext(handle);
-        }
-    };
-
-    private final Recycler.Handle<AppendRecordsContext> recyclerHandle;
     private KafkaTopicManager topicManager;
     private Consumer<Integer> startSendOperationForThrottling;
     private Consumer<Integer> completeSendOperationForThrottling;
     private Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap;
-
-    private AppendRecordsContext(Recycler.Handle<AppendRecordsContext> recyclerHandle) {
-        this.recyclerHandle = recyclerHandle;
-    }
 
     // recycler and get for this object
     public static AppendRecordsContext get(final KafkaTopicManager topicManager,
                                            final Consumer<Integer> startSendOperationForThrottling,
                                            final Consumer<Integer> completeSendOperationForThrottling,
                                            final Map<TopicPartition, PendingTopicFutures> pendingTopicFuturesMap) {
-        AppendRecordsContext context = RECYCLER.get();
-        synchronized (context) {
-            context.startSendOperationForThrottling = startSendOperationForThrottling;
-            context.completeSendOperationForThrottling = completeSendOperationForThrottling;
-            context.pendingTopicFuturesMap = pendingTopicFuturesMap;
-            context.topicManager = topicManager;
-        }
-        return context;
+        return new AppendRecordsContext(topicManager,
+                    startSendOperationForThrottling,
+                completeSendOperationForThrottling,
+                pendingTopicFuturesMap);
     }
 
-    public synchronized void recycle() {
-        startSendOperationForThrottling = null;
-        completeSendOperationForThrottling = null;
-        pendingTopicFuturesMap = null;
-        topicManager = null;
-        recyclerHandle.recycle(this);
-    }
-
-    public synchronized KafkaTopicManager getTopicManager() {
-        if (topicManager == null) {
-            log.error("topicManager is null here",
-                    new Exception("topicManager is null here").fillInStackTrace());
-        }
-        return topicManager;
-    }
-
-    public synchronized Consumer<Integer> getStartSendOperationForThrottling() {
-        return startSendOperationForThrottling;
-    }
-
-    public synchronized Consumer<Integer> getCompleteSendOperationForThrottling() {
-        return completeSendOperationForThrottling;
-    }
-
-    public synchronized Map<TopicPartition, PendingTopicFutures> getPendingTopicFuturesMap() {
-        return pendingTopicFuturesMap;
-    }
 }
