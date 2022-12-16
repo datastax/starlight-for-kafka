@@ -1071,12 +1071,18 @@ public class PartitionLog {
                     });
 
                     ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+                    // this is a DUMMY entry with -1
                     PositionImpl firstPosition = managedLedger.getFirstPosition();
-                    managedLedger.asyncReadEntry(firstPosition, new AsyncCallbacks.ReadEntryCallback() {
+                    // look for the first entry with data
+                    PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
+
+                    managedLedger.asyncReadEntry(nextValidPosition, new AsyncCallbacks.ReadEntryCallback() {
                         @Override
                         public void readEntryComplete(Entry entry, Object ctx) {
                             try {
                                 long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+                                log.info("First offset for topic {} is {} - position {}", fullPartitionName,
+                                        startOffset, entry.getPosition());
                                 future.complete(startOffset);
                             } catch (Exception err) {
                                 future.completeExceptionally(err);

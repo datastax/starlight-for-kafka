@@ -53,6 +53,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -209,6 +210,18 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                                    int totalMessageCount,
                                    String lastMessage,
                                    String isolation) throws InterruptedException {
+        consumeTxnMessage(topicName,
+                totalMessageCount,
+                lastMessage,
+                isolation,
+                "test_consumer");
+    }
+
+    private void consumeTxnMessage(String topicName,
+                                   int totalMessageCount,
+                                   String lastMessage,
+                                   String isolation,
+                                   String group) throws InterruptedException {
         @Cleanup
         KafkaConsumer<Integer, String> consumer = buildTransactionConsumer("test_consumer", isolation);
         consumer.subscribe(Collections.singleton(topicName));
@@ -221,11 +234,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             boolean readFinish = false;
             for (ConsumerRecord<Integer, String> record : consumerRecords) {
+                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
+                        record.offset(), record.key(), record.value());
                 if (isolation.equals("read_committed")) {
                     assertFalse(record.value().contains("abort"));
                 }
-                log.info("Fetch for receive record offset: {}, key: {}, value: {}",
-                        record.offset(), record.key(), record.value());
                 receiveCount.incrementAndGet();
                 if (lastMessage.equalsIgnoreCase(record.value())) {
                     log.info("receive the last message");
@@ -648,6 +661,79 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().namespaces().unload(namespace);
 
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
+    }
+
+
+    @Test(timeOut = 20000, enabled = false)
+    public void testPurgeAbortedTx() throws Exception {
+
+        String topicName = "testPurgeAbortedTx";
+        String transactionalId = "myProducer";
+        String isolation = "read_committed";
+
+        TopicName fullTopicName = TopicName.get(topicName);
+
+        pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
+
+        String namespace = fullTopicName.getNamespace();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+
+        producer.initTransactions();
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        producer.beginTransaction();
+        String firstMessage = "aborted msg 1";
+        producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
+        producer.flush();
+        producer.abortTransaction();
+
+        producer.beginTransaction();
+        String lastMessage = "committed mgs";
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.commitTransaction();
+
+        consumeTxnMessage(topicName, 2, lastMessage, isolation);
+
+        protocolHandler
+                .getReplicaManager()
+                .purgeAbortedTxns().get();
+
+        RetentionPolicies retention = pulsar
+                .getAdminClient()
+                .namespaces()
+                .getRetention(namespace);
+
+        try {
+            pulsar
+                    .getAdminClient()
+                    .namespaces().setRetention(namespace,
+                            new RetentionPolicies(0, 0));
+
+            trimConsumedLedgers(fullTopicName.getPartition(0).toString());
+
+            producer.beginTransaction();
+            String lastMessage2 = "committed mgs 2";
+            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
+            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
+            producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
+            producer.commitTransaction();
+
+            protocolHandler
+                    .getReplicaManager()
+                    .purgeAbortedTxns().get();
+
+            consumeTxnMessage(topicName, 3, lastMessage2, isolation, "second_group");
+        } finally {
+            pulsar
+                    .getAdminClient()
+                    .namespaces().setRetention(namespace, retention);
+        }
+
     }
 
     private List<String> prepareData(String sourceTopicName,
