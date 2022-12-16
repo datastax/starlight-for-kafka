@@ -41,6 +41,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -72,6 +74,7 @@ import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.auth.SameThreadOrderedSafeExecutor;
 import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
+import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
@@ -937,6 +940,20 @@ public abstract class KopProtocolHandlerTestBase {
                         return transactionCoordinator;
                     }
                 });
+    }
+
+
+    /**
+     * Execute the task that trims consumed ledgers.
+     * @throws Exception
+     */
+    public void trimConsumedLedgers(String topic) throws Exception {
+        log.info("trimConsumedLedgers {}", topic);
+        KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
+        PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
+        CompletableFuture<?> future = new CompletableFuture<>();
+        topicHandle.getManagedLedger().trimConsumedLedgersInBackground(future);
+        future.get(10, TimeUnit.SECONDS);
     }
 
 }

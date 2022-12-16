@@ -208,17 +208,25 @@ public class ProducerStateManager {
     }
 
     public void purgeAbortedTxns(long offset) {
+        boolean empty;
+        boolean somethingDone;
         synchronized (abortedIndexList) {
-            abortedIndexList.removeIf(tx -> {
+            somethingDone = abortedIndexList.removeIf(tx -> {
                 boolean toRemove = tx.lastOffset() < offset;
                 if (toRemove) {
                     log.info("Transaction {} can be removed (lastOffset < {})", tx, tx.lastOffset(), offset);
                 }
                 return toRemove;
             });
-            if (!abortedIndexList.isEmpty()) {
+            empty = abortedIndexList.isEmpty();
+            if (!empty) {
                 log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
+        }
+        if (empty && somethingDone) {
+            // take a snapshot, this way in case of recovery
+            // we don't need to read from storage anymore
+            takeSnapshot();
         }
     }
 
