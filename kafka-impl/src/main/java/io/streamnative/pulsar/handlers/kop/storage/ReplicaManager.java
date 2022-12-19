@@ -166,11 +166,13 @@ public class ReplicaManager {
                             .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
                             .exceptionally(ex -> {
+                                log.error("Internal error while handling append to {}", fullPartitionName, ex);
                                 addPartitionResponse.accept(topicPartition,
                                         new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                                 return null;
                             });
                 }).exceptionally(ex -> {
+                    log.error("System error while handling append for {}",fullPartitionName, ex);
                     addPartitionResponse.accept(topicPartition,
                             new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                     return null;

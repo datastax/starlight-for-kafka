@@ -488,7 +488,8 @@ public class PartitionLog {
                     .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
                     .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
         } catch (Exception exception) {
-            log.error("Failed to handle produce request for {}", topicPartition, exception);
+            log.error("Failed to handle write request for {} origin {}",
+                    topicPartition, origin, exception);
             appendFuture.completeExceptionally(exception);
         }
 
