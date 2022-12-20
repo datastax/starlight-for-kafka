@@ -275,11 +275,12 @@ public class ByteBufUtils {
 
     @NonNull
     private static Header[] getHeadersFromMetadata(final List<KeyValue> properties) {
-        return properties.stream()
-                .map(property -> new RecordHeader(
-                        property.getKey(),
-                        property.getValue().getBytes(UTF_8))
-                ).toArray(Header[]::new);
+        Header[] result = new Header[properties.size()];
+        for (int i = 0; i < properties.size(); i++) {
+            KeyValue property = properties.get(i);
+            result[i] = new RecordHeader(property.getKey(), property.getValue().getBytes(UTF_8));
+        }
+        return result;
     }
 
     private static ByteBuffer prependSchemaId(ByteBuffer original, int schemaId) {
