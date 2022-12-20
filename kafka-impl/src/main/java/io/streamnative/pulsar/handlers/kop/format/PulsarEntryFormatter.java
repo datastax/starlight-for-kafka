@@ -26,6 +26,7 @@ import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.Record;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 import org.apache.pulsar.client.impl.MessageImpl;
@@ -65,16 +66,15 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
         final MessageMetadata msgMetadata = new MessageMetadata();
 
-        records.batches().forEach(recordBatch -> {
-            boolean controlBatch = recordBatch.isControlBatch();
-            StreamSupport.stream(recordBatch.spliterator(), true).forEachOrdered(record -> {
+        for (MutableRecordBatch recordBatch : records.batches()) {
+            for (Record record : recordBatch) {
                 MessageImpl<byte[]> message = recordToEntry(record);
                 messages.add(message);
                 if (recordBatch.isTransactional()) {
                     msgMetadata.setTxnidMostBits(recordBatch.producerId());
                     msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
                 }
-                if (controlBatch) {
+                if (recordBatch.isControlBatch()) {
                     ControlRecordType controlRecordType = ControlRecordType.parse(record.key());
                     switch (controlRecordType) {
                         case ABORT:
@@ -88,8 +88,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                             break;
                     }
                 }
-            });
-        });
+            }
+        }
 
         for (MessageImpl<byte[]> message : messages) {
             if (++numMessagesInBatch == 1) {
