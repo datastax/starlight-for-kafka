@@ -463,13 +463,13 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Interval for taking snapshots of the status of pending transactions"
     )
-    private int kafkaTxnProducerStateTopicSnapshotIntervalSeconds = 60;
+    private int kafkaTxnProducerStateTopicSnapshotIntervalSeconds = 10;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
     )
-    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 60 * 60;
+    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 0;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
