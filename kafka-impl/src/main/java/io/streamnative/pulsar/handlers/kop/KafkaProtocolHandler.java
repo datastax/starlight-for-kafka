@@ -284,6 +284,12 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         });
         namespaceService.addNamespaceBundleOwnershipListener(bundleListener);
 
+        recoveryExecutor = OrderedExecutor
+                .newBuilder()
+                .name("kafka-tx-recovery")
+                .numThreads(kafkaConfig.getKafkaTransactionRecoveryNumThreads())
+                .build();
+
         if (kafkaConfig.isKafkaManageSystemNamespaces()) {
             // initialize default Group Coordinator
             getGroupCoordinator(kafkaConfig.getKafkaMetadataTenant());
@@ -310,12 +316,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         schemaRegistryManager = new SchemaRegistryManager(kafkaConfig, brokerService.getPulsar(),
                 brokerService.getAuthenticationService());
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
-
-        recoveryExecutor = OrderedExecutor
-                .newBuilder()
-                .name("kafka-tx-recovery")
-                .numThreads(4)
-                .build();
 
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                 && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
@@ -678,7 +678,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                         .name("transaction-log-manager-" + tenant)
                         .numThreads(1)
                         .build(),
-                Time.SYSTEM);
+                Time.SYSTEM,
+                recoveryExecutor);
 
         transactionCoordinator.startup(kafkaConfig.isKafkaTransactionalIdExpirationEnable()).get();
 

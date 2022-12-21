@@ -88,7 +88,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             required = true,
             doc = "The number of threads used to respond to the response."
     )
-    private int numSendKafkaResponseThreads = 4;
+    private int numSendKafkaResponseThreads = 8;
 
     @FieldContext(
         category = CATEGORY_KOP,
@@ -470,6 +470,12 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
     )
     private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 0;
+
+    @FieldContext(
+            category = CATEGORY_KOP_TRANSACTION,
+            doc = "Number of threads dedicated to transaction recovery"
+    )
+    private int kafkaTransactionRecoveryNumThreads = 8;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
