@@ -20,8 +20,8 @@ import org.apache.kafka.common.protocol.DataOutputStreamWritable;
 import org.apache.kafka.common.utils.Utils;
 
 /**
- * This class is necessary to bypass a bug in
- * <a href="https://github.com/apache/kafka/blob/927edfece3db8aab7d01850955f9a65e5c110da5/clients/src/main/java/org/apache/kafka/common/protocol/DataOutputStreamWritable.java#L102">KopDataOutputStreamWritable</a>.
+ * This class is necessary to bypass a bug that is fixed here https://github.com/apache/kafka/pull/13032. When
+ * that PR is available upstream, we can remove this class.
  */
 public class KopDataOutputStreamWritable extends DataOutputStreamWritable {
     public KopDataOutputStreamWritable(DataOutputStream out) {
@@ -31,7 +31,7 @@ public class KopDataOutputStreamWritable extends DataOutputStreamWritable {
     public void writeByteBuffer(ByteBuffer buf) {
         try {
             if (buf.hasArray()) {
-                out.write(buf.array(), buf.arrayOffset(), buf.limit());
+                out.write(buf.array(), buf.arrayOffset() + buf.position(), buf.remaining());
             } else {
                 byte[] bytes = Utils.toArray(buf);
                 out.write(bytes);
