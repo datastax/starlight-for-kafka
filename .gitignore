@@ -57,3 +57,8 @@ docker.debug-info
 **/website/i18n/*
 **/website/translated_docs*
 
+
+# docker test env
+docker/testImage/*.tar.gz
+docker/testImage/*.nar
+
