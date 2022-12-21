@@ -209,6 +209,12 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Getter
 public class KafkaRequestHandler extends KafkaCommandDecoder {
     private static final int THROTTLE_TIME_MS = 10;
+    /**
+     * Request timeout for writes of the TXMARKERS
+     * Writing the TXMARKERS require recovery of the
+     * transactions on the PartitionLog at it may take much time.
+     */
+    private static final int WRITE_TXN_MARKERS_TIMEOUT = 120000;
     private static final String POLICY_ROOT = "/admin/policies/";
 
     private final PulsarService pulsarService;
@@ -2391,7 +2397,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     this::completeSendOperationForThrottling,
                     this.pendingTopicFuturesMap);
             getReplicaManager().appendRecords(
-                    kafkaConfig.getRequestTimeoutMs(),
+                    WRITE_TXN_MARKERS_TIMEOUT,
                     true,
                     currentNamespacePrefix(),
                     controlRecords,
