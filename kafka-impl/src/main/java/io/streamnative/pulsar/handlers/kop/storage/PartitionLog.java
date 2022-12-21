@@ -145,7 +145,8 @@ public class PartitionLog {
     }
 
     public CompletableFuture<PartitionLog> recoverTransactions(OrderedExecutor executor) {
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
             return producerStateManager
                     .recover(this, executor.chooseThread(fullPartitionName))
                     .thenApply(___ -> this);
@@ -822,7 +823,7 @@ public class PartitionLog {
 
             @Override
             public void readEntriesFailed(ManagedLedgerException exception, Object ctx) {
-                log.error("Error read entry for topic: {}", fullPartitionName);
+                log.error("Error read entry for topic: {}", fullPartitionName, exception);
                 if (exception instanceof ManagedLedgerException.ManagedLedgerFencedException) {
                     invalidateCacheOnTopic.accept(fullPartitionName);
                 }
@@ -1192,6 +1193,7 @@ public class PartitionLog {
                 (partitionName) -> {})
                 .whenCompleteAsync((entries, throwable) -> {
                     if (throwable != null) {
+                        log.error("Read entry error on {}", fullPartitionName, throwable);
                         tcm.deleteOneCursorAsync(cursor,
                                 "cursor.readEntry fail. deleteCursor");
                         if (throwable instanceof ManagedLedgerException.CursorAlreadyClosedException
@@ -1199,7 +1201,6 @@ public class PartitionLog {
                             future.completeExceptionally(new NotLeaderOrFollowerException());
                             return;
                         }
-                        log.error("Read entry error on {}", fullPartitionName, throwable);
                         future.completeExceptionally(new UnknownServerException(throwable));
                         return;
                     }
