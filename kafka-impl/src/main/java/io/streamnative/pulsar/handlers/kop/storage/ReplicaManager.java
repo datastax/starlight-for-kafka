@@ -84,7 +84,12 @@ public class ReplicaManager {
     public void removePartitionLog(String topicName) {
         CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
-            log.debug("PartitionLog: {} has bean removed.", partitionLog);
+            if (partitionLog.isDone()) {
+                log.debug("PartitionLog: {} has bean removed.", partitionLog);
+            } else {
+                log.error("PartitionLog: {} has bean removed but recovery wasn't finished",
+                        partitionLog);
+            }
         }
     }
 
@@ -110,6 +115,7 @@ public class ReplicaManager {
             // add the topicPartition with timeout error if it's not existed in responseMap
             entriesPerPartition.keySet().forEach(topicPartition -> {
                 if (!responseMap.containsKey(topicPartition)) {
+                    log.error("Adding dummy REQUEST_TIMED_OUT to produce response for {}", topicPartition);
                     responseMap.put(topicPartition, new ProduceResponse.PartitionResponse(Errors.REQUEST_TIMED_OUT));
                 }
             });
@@ -135,61 +141,67 @@ public class ReplicaManager {
             final PartitionLog.AppendOrigin origin,
             final AppendRecordsContext appendRecordsContext) {
         CompletableFuture<Map<TopicPartition, ProduceResponse.PartitionResponse>> completableFuture =
-                new CompletableFuture<>();
-        final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
-        final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+                    new CompletableFuture<>();
+        try {
+            final AtomicInteger topicPartitionNum = new AtomicInteger(entriesPerPartition.size());
+            final Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
 
-        PendingProduceCallback complete =
-                new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
-        BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
-                (topicPartition, response) -> {
-            responseMap.put(topicPartition, response);
-            // reset topicPartitionNum
-            int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
-            if (restTopicPartitionNum < 0) {
-                return;
-            }
-            if (restTopicPartitionNum == 0) {
+            PendingProduceCallback complete =
+                    new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
+            BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
+                    (topicPartition, response) -> {
+                responseMap.put(topicPartition, response);
+                // reset topicPartitionNum
+                int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
+                if (restTopicPartitionNum < 0) {
+                    return;
+                }
+                if (restTopicPartitionNum == 0) {
+                    complete.run();
+                }
+            };
+            entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
+                String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
+                // reject appending to internal topics if it is not allowed
+                if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, metadataNamespace)) {
+                    addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
+                            Errors.forException(new InvalidTopicException(
+                                    String.format("Cannot append to internal topic %s", topicPartition.topic())))));
+                } else {
+                    getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
+                        partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+                                .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
+                                        new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
+                                .exceptionally(ex -> {
+                                    log.error("Internal error while handling append to {}", fullPartitionName, ex);
+                                    addPartitionResponse.accept(topicPartition,
+                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                                    return null;
+                                });
+                    }).exceptionally(ex -> {
+                        log.error("System error while handling append for {}", fullPartitionName, ex);
+                        addPartitionResponse.accept(topicPartition,
+                                new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                        return null;
+                    });
+                }
+            });
+            // delay produce
+            if (timeout <= 0) {
                 complete.run();
-            }
-        };
-        entriesPerPartition.forEach((topicPartition, memoryRecords) -> {
-            String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
-            // reject appending to internal topics if it is not allowed
-            if (!internalTopicsAllowed && KopTopic.isInternalTopic(fullPartitionName, metadataNamespace)) {
-                addPartitionResponse.accept(topicPartition, new ProduceResponse.PartitionResponse(
-                        Errors.forException(new InvalidTopicException(
-                                String.format("Cannot append to internal topic %s", topicPartition.topic())))));
             } else {
-                getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
-                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
-                            .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
-                                    new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
-                            .exceptionally(ex -> {
-                                log.error("Internal error while handling append to {}", fullPartitionName, ex);
-                                addPartitionResponse.accept(topicPartition,
-                                        new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                                return null;
-                            });
-                }).exceptionally(ex -> {
-                    log.error("System error while handling append for {}",fullPartitionName, ex);
-                    addPartitionResponse.accept(topicPartition,
-                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                    return null;
-                });
+                // producePurgatory will retain a reference to the callback for timeout ms,
+                // even if the operation succeeds
+                List<Object> delayedCreateKeys =
+                        entriesPerPartition.keySet().stream()
+                                .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
+                DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeout, topicPartitionNum,
+                        complete);
+                producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
             }
-        });
-        // delay produce
-        if (timeout <= 0) {
-            complete.run();
-        } else {
-            // producePurgatory will retain a reference to the callback for timeout ms,
-            // even if the operation succeeds
-            List<Object> delayedCreateKeys =
-                    entriesPerPartition.keySet().stream()
-                            .map(DelayedOperationKey.TopicPartitionOperationKey::new).collect(Collectors.toList());
-            DelayedProduceAndFetch delayedProduce = new DelayedProduceAndFetch(timeout, topicPartitionNum, complete);
-            producePurgatory.tryCompleteElseWatch(delayedProduce, delayedCreateKeys);
+        } catch (Throwable error) {
+            log.error("Internal error", error);
+            completableFuture.completeExceptionally(error);
         }
         return completableFuture;
     }
