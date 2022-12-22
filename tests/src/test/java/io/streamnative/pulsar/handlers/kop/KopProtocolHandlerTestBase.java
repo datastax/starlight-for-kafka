@@ -19,6 +19,8 @@ import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
 import io.netty.channel.EventLoopGroup;
@@ -80,6 +82,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.apache.pulsar.metadata.impl.ZKMetadataStore;
@@ -949,11 +952,42 @@ public abstract class KopProtocolHandlerTestBase {
      */
     public void trimConsumedLedgers(String topic) throws Exception {
         log.info("trimConsumedLedgers {}", topic);
-        KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
-        PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
-        CompletableFuture<?> future = new CompletableFuture<>();
-        topicHandle.getManagedLedger().trimConsumedLedgersInBackground(future);
-        future.get(10, TimeUnit.SECONDS);
+        TopicName topicName = TopicName.get(topic);
+        String namespace = topicName.getNamespace();
+
+        RetentionPolicies oldRetentionPolicies = admin.namespaces().getRetention(namespace);
+        Integer deduplicationSnapshotInterval = admin.namespaces().getDeduplicationSnapshotInterval(namespace);
+        try {
+            admin.namespaces().setRetention(namespace, new RetentionPolicies(0, 0));
+            admin.namespaces().setDeduplicationSnapshotInterval(namespace, 1);
+
+            // ensure that the snapshot interval elapsed
+            Thread.sleep(2000);
+
+            KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
+            PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
+
+            // in transaction tests we have deduplication, that is a subscription
+            // and it may prevent the topic to be trimmed
+            topicHandle.checkDeduplicationSnapshot();
+
+            ObjectMapper mapper = new ObjectMapper();
+            mapper.enable(SerializationFeature.INDENT_OUTPUT);
+            log.info("Stats {}",
+                    mapper.writeValueAsString(admin
+                            .topics()
+                            .getInternalStats(topic)));
+
+            CompletableFuture<?> future = new CompletableFuture<>();
+            topicHandle.getManagedLedger()
+                    .getConfig().setRetentionTime(1, TimeUnit.SECONDS);
+            Thread.sleep(2000);
+            topicHandle.getManagedLedger().trimConsumedLedgersInBackground(future);
+            future.get(10, TimeUnit.SECONDS);
+        } finally {
+            admin.namespaces().setRetention(namespace, oldRetentionPolicies);
+            admin.namespaces().setDeduplicationSnapshotInterval(namespace, deduplicationSnapshotInterval);
+        }
     }
 
 }

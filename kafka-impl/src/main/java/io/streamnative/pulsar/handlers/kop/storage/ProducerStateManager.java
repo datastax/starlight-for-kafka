@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.RecordBatch;
@@ -207,14 +208,16 @@ public class ProducerStateManager {
         return !abortedIndexList.isEmpty();
     }
 
-    public void purgeAbortedTxns(long offset) {
+    public long purgeAbortedTxns(long offset) {
         boolean empty;
+        AtomicLong count = new AtomicLong();
         boolean somethingDone;
         synchronized (abortedIndexList) {
             somethingDone = abortedIndexList.removeIf(tx -> {
                 boolean toRemove = tx.lastOffset() < offset;
                 if (toRemove) {
                     log.info("Transaction {} can be removed (lastOffset < {})", tx, tx.lastOffset(), offset);
+                    count.incrementAndGet();
                 }
                 return toRemove;
             });
@@ -228,6 +231,7 @@ public class ProducerStateManager {
             // we don't need to read from storage anymore
             takeSnapshot();
         }
+        return count.get();
     }
 
     public List<FetchResponse.AbortedTransaction> getAbortedIndexList(long fetchOffset) {

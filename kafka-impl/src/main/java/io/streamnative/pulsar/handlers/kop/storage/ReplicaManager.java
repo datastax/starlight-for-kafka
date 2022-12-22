@@ -304,7 +304,7 @@ public class ReplicaManager {
         return logManager.takeProducerStateSnapshots();
     }
 
-    public CompletableFuture<Void> purgeAbortedTxns() {
+    public CompletableFuture<?> purgeAbortedTxns() {
         return logManager.purgeAbortedTxns();
     }
 
