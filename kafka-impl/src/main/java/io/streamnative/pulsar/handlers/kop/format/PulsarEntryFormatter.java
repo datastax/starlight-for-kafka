@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
+import java.nio.ByteBuffer;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
@@ -62,12 +63,12 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
                 .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
-        List<MessageImpl<byte[]>> messages = Lists.newArrayListWithExpectedSize(numMessages);
+        List<MessageImpl<ByteBuffer>> messages = Lists.newArrayListWithExpectedSize(numMessages);
         final MessageMetadata msgMetadata = new MessageMetadata();
 
         for (MutableRecordBatch recordBatch : records.batches()) {
             for (Record record : recordBatch) {
-                MessageImpl<byte[]> message = recordToEntry(record);
+                MessageImpl<ByteBuffer> message = recordToEntry(record);
                 messages.add(message);
                 if (recordBatch.isTransactional()) {
                     msgMetadata.setTxnidMostBits(recordBatch.producerId());
@@ -90,7 +91,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
             }
         }
 
-        for (MessageImpl<byte[]> message : messages) {
+        for (MessageImpl<ByteBuffer> message : messages) {
             if (++numMessagesInBatch == 1) {
                 // msgMetadata will set publish time here
                 sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
@@ -121,7 +122,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     // convert kafka Record to Pulsar Message.
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
-    private static MessageImpl<byte[]> recordToEntry(Record record) {
+    private static MessageImpl<ByteBuffer> recordToEntry(Record record) {
 
         PulsarMessageBuilder builder = PulsarMessageBuilder.newBuilder();
 
@@ -136,8 +137,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         // value
         if (record.hasValue()) {
-            byte[] value = new byte[record.valueSize()];
-            record.value().get(value);
+            ByteBuffer value = record.value();
             builder.value(value);
         } else {
             builder.value(null);
@@ -166,7 +166,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                     new String(h.value(), UTF_8));
         }
 
-        return (MessageImpl<byte[]>) builder.getMessage();
+        return (MessageImpl<ByteBuffer>) builder.getMessage();
     }
 
 }
