@@ -13,8 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import static io.streamnative.pulsar.handlers.kop.KopServerStats.SERVER_SCOPE;
-
 import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.socket.SocketChannel;
@@ -22,8 +20,6 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
-import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
-import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -143,13 +139,11 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     @VisibleForTesting
     public KafkaRequestHandler newCnx(final TenantContextManager tenantContextManager) throws Exception {
-        PrometheusMetricsProvider statsProvider = new PrometheusMetricsProvider();
-        StatsLogger rootStatsLogger = statsProvider.getStatsLogger("");
         return new KafkaRequestHandler(pulsarService, kafkaConfig,
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
-                new RequestStats(rootStatsLogger.scope(SERVER_SCOPE)),
+                requestStats,
                 sendResponseScheduler,
                 kafkaTopicManagerSharedState, schemaManagerForTenant, kafkaTopicLookupService, lookupClient);
     }
