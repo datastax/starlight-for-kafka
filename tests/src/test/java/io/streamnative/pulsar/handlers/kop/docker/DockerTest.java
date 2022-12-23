@@ -28,7 +28,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_1.5";
+    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_2.9";
     private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.1";
     private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
     private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
@@ -160,10 +160,10 @@ public class DockerTest {
                                     "/home/appuser/ca.jks");
                         }
                         producerContainer.start();
-                        assertTrue(sent.await(60, TimeUnit.SECONDS));
+                        assertTrue(sent.await(5, TimeUnit.MINUTES));
                     }
 
-                    assertTrue(received.await(60, TimeUnit.SECONDS));
+                    assertTrue(received.await(5, TimeUnit.MINUTES));
                 }
             }
         }
@@ -286,10 +286,10 @@ public class DockerTest {
                             );
                         }
                         producerContainer.start();
-                        assertTrue(sent.await(60, TimeUnit.SECONDS));
+                        assertTrue(sent.await(5, TimeUnit.MINUTES));
                     }
 
-                    assertTrue(received.await(60, TimeUnit.SECONDS));
+                    assertTrue(received.await(5, TimeUnit.MINUTES));
                 }
             }
         }

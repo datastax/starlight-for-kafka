@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -71,6 +72,7 @@ public class PulsarContainer implements AutoCloseable {
     pulsarContainer =
         new GenericContainer<>(image)
             .withNetwork(network)
+            .withStartupTimeout(Duration.ofMinutes(1))
             .withNetworkAliases("pulsar")
                 .withExposedPorts(exposedPortsOnBroker.toArray(new Integer[0])) // ensure that the ports are listening
             .withCopyFileToContainer(
@@ -116,6 +118,9 @@ public class PulsarContainer implements AutoCloseable {
     pulsarContainer.withEnv("PULSAR_PREFIX_messagingProtocols", "kafka");
     pulsarContainer.withEnv("PULSAR_PREFIX_protocolHandlerDirectory", "./protocols");
     pulsarContainer.withEnv("PULSAR_PREFIX_allowAutoTopicCreationType", "partitioned");
+
+    pulsarContainer.withEnv("PULSAR_PREFIX_kafkaTxnProducerStateTopicNumPartitions", "1");
+    pulsarContainer.withEnv("PULSAR_PREFIX_kafkaTxnProducerStateTopicSnapshotIntervalSeconds", "600");
 
     pulsarContainer.withEnv("PULSAR_PREFIX_authenticationEnabled", "false");
     pulsarContainer.withEnv("PULSAR_PREFIX_authorizationEnabled", "false");
@@ -168,6 +173,7 @@ public class PulsarContainer implements AutoCloseable {
         proxyContainer =
                 new GenericContainer<>(image)
                         .withNetwork(network)
+                        .withStartupTimeout(Duration.ofMinutes(1))
                         .withNetworkAliases("pulsarproxy")
                         .withExposedPorts(exposedPortsOnProxy.toArray(new Integer[0]))
                         .withCopyFileToContainer(

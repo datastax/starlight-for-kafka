@@ -30,7 +30,8 @@
 
   <properties>
     <schema.registry.version>5.0.0</schema.registry.version>
-    <testcontainers.version>1.15.1</testcontainers.version>
+    <testcontainers.version>1.17.5</testcontainers.version>
+    <jna.version>5.7.0</jna.version>
     <hydra.version>1.11.8</hydra.version>
   </properties>
 
@@ -76,6 +77,13 @@
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers</artifactId>
       <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>net.java.dev.jna</groupId>
+      <artifactId>jna</artifactId>
+      <version>${jna.version}</version>
       <scope>test</scope>
     </dependency>
 
