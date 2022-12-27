@@ -873,7 +873,12 @@ public abstract class KopProtocolHandlerTestBase {
         config.put("defaultNumPartitions", conf.getDefaultNumPartitions() + "");
         config.put("kopAllowedNamespaces", conf.getKopAllowedNamespaces().stream().collect(Collectors.joining(",")));
 
+        // it is very important that these values are the same on the broker and on the proxy
+        // because these values drive the computation of the hash that binds a group/transactionalId to the
+        // partition that hosts the Coordinator
         config.put("offsetsTopicNumPartitions", conf.getOffsetsTopicNumPartitions() + "");
+        config.put("kafkaTxnLogTopicNumPartitions", conf.getKafkaTxnLogTopicNumPartitions() + "");
+
         prepareProxyConfiguration(config);
         log.info("Initial Proxy configuration {}", config);
         // copy system configuration
