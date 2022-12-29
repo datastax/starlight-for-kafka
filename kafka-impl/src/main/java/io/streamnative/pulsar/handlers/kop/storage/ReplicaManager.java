@@ -48,6 +48,7 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
+import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
 
 /**
@@ -179,9 +180,24 @@ public class ReplicaManager {
                                     return null;
                                 });
                     }).exceptionally(ex -> {
-                        log.error("System error while handling append for {}", fullPartitionName, ex);
-                        addPartitionResponse.accept(topicPartition,
-                                new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                        if (isCannotLoadTopicError(ex)) {
+                            log.error("Cannot load topic error while handling append for {}", fullPartitionName, ex);
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                        } else if (ex.getCause() instanceof BrokerServiceException.PersistenceException) {
+                            log.error("Persistence error while handling append for {}", fullPartitionName, ex);
+                            // BrokerServiceException$PersistenceException:
+                            // org.apache.bookkeeper.mledger.ManagedLedgerException:
+                            // org.apache.bookkeeper.mledger.ManagedLedgerException$BadVersionException:
+                            // org.apache.pulsar.metadata.api.MetadataStoreExcept
+
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                        } else {
+                            log.error("System error while handling append for {}", fullPartitionName, ex);
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
+                        }
                         return null;
                     });
                 }
@@ -204,6 +220,11 @@ public class ReplicaManager {
             completableFuture.completeExceptionally(error);
         }
         return completableFuture;
+    }
+
+    private static boolean isCannotLoadTopicError(Throwable error) {
+        String asString = error + "";
+        return asString.contains("Failed to load topic within timeout");
     }
 
 
