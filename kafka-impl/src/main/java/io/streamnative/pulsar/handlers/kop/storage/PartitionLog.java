@@ -74,7 +74,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.CorruptRecordException;
 import org.apache.kafka.common.errors.KafkaStorageException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
-import org.apache.kafka.common.errors.OffsetOutOfRangeException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.protocol.Errors;
@@ -1118,7 +1117,7 @@ public class PartitionLog {
             }
         };
         return kafkaTopicLookupService
-                .getTopic(fullPartitionName, this).thenCompose(topic -> {
+                .getTopic(fullPartitionName, this).thenComposeAsync(topic -> {
             if (!topic.isPresent()) {
                 log.info("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
                 return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
@@ -1139,7 +1138,9 @@ public class PartitionLog {
             });
 
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
-                future.completeExceptionally(new OffsetOutOfRangeException(""));
+                log.info("recoverTxEntries for {}: offset {} is out-of-range, maybe the topic has been trimmed.",
+                        topicPartition, offset);
+                future.completeAsync(() -> 0L, executor);
                 return future;
             }
 
@@ -1176,7 +1177,7 @@ public class PartitionLog {
                 return null;
             });
             return future;
-        });
+        }, executor);
     }
 
 
