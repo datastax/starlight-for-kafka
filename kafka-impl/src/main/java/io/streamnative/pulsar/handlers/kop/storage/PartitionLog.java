@@ -1139,8 +1139,7 @@ public class PartitionLog {
 
             final long offsetToStart;
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
-                ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
-                offsetToStart = MessageMetadataUtils.getLogEndOffset(managedLedger);
+                offsetToStart = 0;
                 log.info("recoverTxEntries for {}: offset {} is out-of-range, maybe the topic has been trimmed, "
                          + "starting from {}",
                         topicPartition, offset, offsetToStart);
