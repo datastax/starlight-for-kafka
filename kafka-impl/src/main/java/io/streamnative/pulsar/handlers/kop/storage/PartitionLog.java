@@ -1137,19 +1137,24 @@ public class PartitionLog {
                 }
             });
 
+            final long offsetToStart;
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
-                log.info("recoverTxEntries for {}: offset {} is out-of-range, maybe the topic has been trimmed.",
-                        topicPartition, offset);
-                future.completeAsync(() -> 0L, executor);
-                return future;
+                ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+                offsetToStart = MessageMetadataUtils.getLogEndOffset(managedLedger);
+                log.info("recoverTxEntries for {}: offset {} is out-of-range, maybe the topic has been trimmed, "
+                         + "starting from {}",
+                        topicPartition, offset, offsetToStart);
+            } else {
+                offsetToStart = offset;
             }
 
             if (log.isDebugEnabled()) {
                 log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
-                        topicPartition, offset);
+                        topicPartition, offsetToStart);
             }
 
-            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offset);
+
+            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
 
             if (cursorFuture == null) {
                 // tcm is closed, just return a NONE error because the channel may be still active
@@ -1157,11 +1162,12 @@ public class PartitionLog {
                 future.completeExceptionally(new NotLeaderOrFollowerException());
                 return future;
             }
+
             cursorFuture.thenAccept((cursorLongPair) -> {
 
                 if (cursorLongPair == null) {
                     log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
-                            + "Fetch for topic return error.", offset, topicPartition);
+                            + "Fetch for topic return error.", offsetToStart, topicPartition);
                     future.completeExceptionally(new NotLeaderOrFollowerException());
                     return;
                 }
