@@ -356,8 +356,7 @@ public class SimpleAclAuthorizer implements Authorizer {
 
     @Override
     public CompletableFuture<Boolean> canConsumeAsync(KafkaPrincipal principal, Resource resource) {
-        checkArgument(resource.getResourceType() == ResourceType.TOPIC,
-                String.format("Expected resource type is TOPIC, but have [%s]", resource.getResourceType()));
+        checkArgument(resource.getResourceType() == ResourceType.TOPIC);
         TopicName topicName = TopicName.get(resource.getName());
         return isSuperUserOrTenantAdmin(topicName.getNamespaceObject().getTenant(), principal.getName(), principal)
                 .thenCompose(tenantAdmin -> {
