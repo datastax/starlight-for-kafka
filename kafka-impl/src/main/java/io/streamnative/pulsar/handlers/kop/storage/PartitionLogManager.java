@@ -108,7 +108,7 @@ public class PartitionLogManager {
                 if (partitionLog != null) {
                     handles.add(partitionLog
                             .getProducerStateManager()
-                            .takeSnapshot()
+                            .takeSnapshot(recoveryExecutor)
                             .thenApply(___ -> null));
                 }
             }

@@ -25,6 +25,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.util.SafeRunnable;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 
@@ -93,28 +94,40 @@ public class ProducerStateManager {
         result.thenRun(() -> {
             // that a snapshot when the recovery is done
             // this will make the next recovery faster
-            takeSnapshot();
+            takeSnapshot(executor);
         });
 
         return result;
     }
 
-    public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot() {
-        log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
-        ProducerStateManagerSnapshot snapshot;
-        synchronized (abortedIndexList) {
-            snapshot = new ProducerStateManagerSnapshot(topicPartition,
-                    mapEndOffset,
-                    new HashMap<>(producers),
-                    new TreeMap<>(ongoingTxns),
-                    new ArrayList<>(abortedIndexList));
-        }
-        return producerStateManagerSnapshotBuffer
-                .write(snapshot)
-                .thenApply(___ -> {
-                    log.info("Snapshot for {} taken", topicPartition);
-                    return snapshot;
-                });
+    public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot(Executor executor) {
+        CompletableFuture<ProducerStateManagerSnapshot> result = new CompletableFuture<>();
+        executor.execute(new SafeRunnable() {
+            @Override
+            public void safeRun() {
+                log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
+                ProducerStateManagerSnapshot snapshot;
+                synchronized (abortedIndexList) {
+                    snapshot = new ProducerStateManagerSnapshot(topicPartition,
+                            mapEndOffset,
+                            new HashMap<>(producers),
+                            new TreeMap<>(ongoingTxns),
+                            new ArrayList<>(abortedIndexList));
+                }
+                producerStateManagerSnapshotBuffer
+                        .write(snapshot)
+                        .whenComplete((res, error) -> {
+                            if (error != null) {
+                                result.completeExceptionally(error);
+                            } else {
+                                log.info("Snapshot for {} taken at offset {}",
+                                        topicPartition, snapshot.getOffset());
+                                result.complete(snapshot);
+                            }
+                        });
+            }
+        });
+        return result;
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
@@ -225,11 +238,6 @@ public class ProducerStateManager {
             if (!empty) {
                 log.info("There are still {} aborted tx on {}", abortedIndexList.size(), topicPartition);
             }
-        }
-        if (empty && somethingDone) {
-            // take a snapshot, this way in case of recovery
-            // we don't need to read from storage anymore
-            takeSnapshot();
         }
         return count.get();
     }
