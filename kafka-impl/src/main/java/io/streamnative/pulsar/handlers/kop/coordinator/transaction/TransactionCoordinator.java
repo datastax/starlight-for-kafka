@@ -27,7 +27,7 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionMe
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager.CoordinatorEpochAndTxnMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
-import io.streamnative.pulsar.handlers.kop.storage.PulsarTopicProducerStateManagerSnapshotBuffer;
+import io.streamnative.pulsar.handlers.kop.storage.PulsarPartitionedTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
 import java.util.Collections;
@@ -158,8 +158,9 @@ public class TransactionCoordinator {
                 time,
                 namespacePrefixForMetadata,
                 namespacePrefixForUserTopics,
-                (config) -> new PulsarTopicProducerStateManagerSnapshotBuffer(
-                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, recoveryExecutor)
+                (config) -> new PulsarPartitionedTopicProducerStateManagerSnapshotBuffer(
+                        config.getTransactionProducerStateSnapshotTopicName(), txnTopicClient, recoveryExecutor,
+                        config.getProducerStateTopicNumPartitions())
                 );
     }
 

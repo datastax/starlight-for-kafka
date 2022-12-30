@@ -92,7 +92,7 @@ public class PartitionLogManager {
     }
 
     public CompletableFuture<PartitionLog> removeLog(String topicName) {
-        log.info("removePartionLog {}", topicName);
+        log.info("removePartitionLog {}", topicName);
         return logMap.remove(topicName);
     }
 

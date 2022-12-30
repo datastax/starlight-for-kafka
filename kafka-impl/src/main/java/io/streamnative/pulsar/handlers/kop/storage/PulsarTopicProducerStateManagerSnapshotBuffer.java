@@ -371,4 +371,9 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             });
         }
     }
+
+    @Override
+    public String toString() {
+        return "PulsarTopicProducerStateManagerSnapshotBuffer{" + topic + '}';
+    }
 }

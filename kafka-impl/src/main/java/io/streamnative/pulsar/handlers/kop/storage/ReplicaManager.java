@@ -86,10 +86,10 @@ public class ReplicaManager {
         CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
             if (partitionLog.isDone()) {
-                log.debug("PartitionLog: {} has bean removed.", partitionLog);
+                log.debug("PartitionLog: {} has bean removed.", topicName);
             } else {
                 log.error("PartitionLog: {} has bean removed but recovery wasn't finished",
-                        partitionLog);
+                        topicName);
             }
         }
     }
