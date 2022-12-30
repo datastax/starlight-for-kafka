@@ -77,6 +77,14 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         }
     }
 
+    private synchronized void discardReader(Reader<ByteBuffer> oldReader) {
+        if (reader.isDone()
+                && !reader.isCompletedExceptionally()
+                && reader.getNow(null) == oldReader) {
+            reader = null;
+        }
+    }
+
     private synchronized CompletableFuture<Producer<ByteBuffer>> ensureProducerHandle() {
         if (producer == null) {
             CompletableFuture<Producer<ByteBuffer>> newProducer = pulsarClient.newProducerBuilder()
@@ -103,7 +111,7 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     }
 
     private CompletableFuture<Void> readNextMessageIfAvailable(Reader<ByteBuffer> reader) {
-        return reader
+        CompletableFuture<Void> result = reader
                 .hasMessageAvailableAsync()
                 .thenCompose(hasMessageAvailable -> {
                     if (hasMessageAvailable == null
@@ -117,6 +125,14 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
                         }, executor);
                     }
                 });
+
+        result.whenComplete((r, error) -> {
+            if (error != null) {
+                discardReader(reader);
+            }
+        });
+
+        return result;
     }
 
 
