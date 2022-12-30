@@ -72,15 +72,20 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
     }
 
     private synchronized void discardReader(CompletableFuture<Reader<ByteBuffer>> oldReader) {
-        if (reader == oldReader) {
+        if (reader == oldReader || (reader != null && reader.isCompletedExceptionally())) {
             reader = null;
+            log.info("discard broken reader for {}", topic);
         }
     }
 
     private synchronized void discardReader(Reader<ByteBuffer> oldReader) {
-        if (reader.isDone()
+        if (reader == null) {
+            return;
+        }
+        if (reader.isCompletedExceptionally() || (reader.isDone()
                 && !reader.isCompletedExceptionally()
-                && reader.getNow(null) == oldReader) {
+                && reader.getNow(null) == oldReader)) {
+            log.info("discard broken reader for {}", topic);
             reader = null;
         }
     }
@@ -158,6 +163,12 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
         final CompletableFuture<Void> newReadHandle =
                 readerHandle.thenCompose(this::readNextMessageIfAvailable);
         currentReadHandle = newReadHandle;
+
+        newReadHandle.exceptionally(___ -> {
+            endReadLoop(newReadHandle);
+            return null;
+        });
+
         return newReadHandle.thenApply((__) -> {
             endReadLoop(newReadHandle);
             return null;
