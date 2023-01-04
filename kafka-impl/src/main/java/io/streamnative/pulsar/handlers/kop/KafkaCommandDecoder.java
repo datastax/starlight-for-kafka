@@ -185,7 +185,7 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
         }
     }
 
-    protected Boolean channelReady() {
+    protected boolean channelReady() {
         return hasAuthenticated();
     }
 
