@@ -338,11 +338,10 @@ public class TransactionCoordinator {
                     false,
                     errors -> {
                         if (errors != Errors.NONE) {
+                            log.error("Cannot initProducer {} due to {} error", transactionalId, errors);
                             responseCallback.accept(initTransactionError(errors));
                         } else {
-                            log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
-                                            + "completeInitProducer callback with Errors.NONE",
-                                    transactionalId, newMetadata.getProducerId(), newMetadata.getProducerEpoch());
+                            // reply to client and let it backoff and retry
                             responseCallback.accept(initTransactionError(Errors.CONCURRENT_TRANSACTIONS));
                         }
                     });
@@ -407,10 +406,6 @@ public class TransactionCoordinator {
             Optional<ProducerIdAndEpoch> expectedProducerIdAndEpoch) {
         CompletableFuture<Either<Errors, EpochAndTxnTransitMetadata>> resultFuture = new CompletableFuture<>();
         if (txnMetadata.pendingTransitionInProgress()) {
-            log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
-                            + "prepareInitProducerIdTransit failed. pendingState == {}",
-                    txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch(),
-                    txnMetadata.getPendingState());
             // return a retriable exception to let the client backoff and retry
             resultFuture.complete(Either.left(Errors.CONCURRENT_TRANSACTIONS));
             return resultFuture;
@@ -425,10 +420,6 @@ public class TransactionCoordinator {
             switch (txnMetadata.getState()) {
                 case PREPARE_ABORT:
                 case PREPARE_COMMIT:
-                    log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
-                                    + "prepareInitProducerIdTransit failed. state == PREPARE_COMMIT",
-                            txnMetadata.getTransactionalId(), txnMetadata.getProducerId(),
-                            txnMetadata.getProducerEpoch());
                     // reply to client and let it backoff and retry
                     resultFuture.complete(Either.left(Errors.CONCURRENT_TRANSACTIONS));
                     break;
@@ -517,17 +508,9 @@ public class TransactionCoordinator {
             } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
                 return Either.left(producerEpochFenceErrors());
             } else if (txnMetadata.getPendingState().isPresent()) {
-                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
-                                + "handleAddPartitionsToTransaction failed. pendingState == {}",
-                        txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch(),
-                        txnMetadata.getPendingState());
                 // return a retriable exception to let the client backoff and retry
                 return Either.left(Errors.CONCURRENT_TRANSACTIONS);
             } else if (txnMetadata.getState() == PREPARE_COMMIT || txnMetadata.getState() == PREPARE_ABORT) {
-                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {}"
-                                + "handleAddPartitionsToTransaction failed. state == {}",
-                        txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch(),
-                        txnMetadata.getState());
                 return Either.left(Errors.CONCURRENT_TRANSACTIONS);
             } else if (txnMetadata.getState() == ONGOING
                     && txnMetadata.getTopicPartitions().containsAll(partitionList)) {
@@ -608,6 +591,11 @@ public class TransactionCoordinator {
             return;
         }
 
+        if (!isFromClient) {
+            log.info("endTransaction - before endTxnPreAppend {} metadata {}",
+                    transactionalId, epochAndMetadata.get().getTransactionMetadata());
+        }
+
         Either<Errors, TxnTransitMetadata> preAppendResult = endTxnPreAppend(
                 epochAndMetadata.get(), transactionalId, producerId, isFromClient, producerEpoch,
                 txnMarkerResult, isEpochFence);
@@ -630,6 +618,13 @@ public class TransactionCoordinator {
 
                     @Override
                     public void fail(Errors errors) {
+
+                        if (!isFromClient) {
+                            log.info("endTransaction - AFTER failed appendTransactionToLog {} metadata {}"
+                                            +  "isEpochFence {}",
+                                    transactionalId, epochAndMetadata.get().getTransactionMetadata(), isEpochFence);
+                        }
+
                         log.info("Aborting sending of transaction markers and returning {} error to client for {}'s "
                                 + "EndTransaction request of {}, since appending {} to transaction log with "
                                 + "coordinator epoch {} failed", errors, transactionalId, txnMarkerResult,
@@ -647,6 +642,10 @@ public class TransactionCoordinator {
                             if (epochAndMetadata.getCoordinatorEpoch() == coordinatorEpoch) {
                                     // This was attempted epoch fence that failed, so mark this state on the metadata
                                 epochAndMetadata.getTransactionMetadata().setHasFailedEpochFence(true);
+
+                                // this line is not present in Kafka code base ?
+                                epochAndMetadata.getTransactionMetadata().setPendingState(Optional.empty());
+
                                     log.warn("The coordinator failed to write an epoch fence transition for producer "
                                             + "{} to the transaction log with error {}. The epoch was increased to {} "
                                             + "but not returned to the client", transactionalId, errors,
@@ -680,8 +679,6 @@ public class TransactionCoordinator {
             }
             if (txnMetadata.getPendingState().isPresent()
                     && txnMetadata.getPendingState().get() != PREPARE_EPOCH_FENCE) {
-                log.info("CONCURRENT_TRANSACTIONS: {} {} endTxnPreAppend failed. pendingState == {}",
-                        txnMetadata.getPendingState());
                 return Either.left(Errors.CONCURRENT_TRANSACTIONS);
             }
 
@@ -704,15 +701,9 @@ public class TransactionCoordinator {
                 return Either.left(getPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT, Errors.NONE,
                         transactionalId, txnMetadata));
             case PREPARE_COMMIT:
-                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} endTxnByStatus failed. "
-                                + "state == PREPARE_COMMIT",
-                        txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch());
                 return Either.left(getPreEndTxnErrors(txnMarkerResult, TransactionResult.COMMIT,
                         Errors.CONCURRENT_TRANSACTIONS, transactionalId, txnMetadata));
             case PREPARE_ABORT:
-                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} endTxnByStatus failed. "
-                                + "state == PREPARE_ABORT",
-                        txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch());
                 return Either.left(getPreEndTxnErrors(txnMarkerResult, TransactionResult.ABORT,
                         Errors.CONCURRENT_TRANSACTIONS, transactionalId, txnMetadata));
             case EMPTY:
@@ -791,10 +782,6 @@ public class TransactionCoordinator {
                 } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
                     return Either.left(producerEpochFenceErrors());
                 } else if (txnMetadata.getPendingState().isPresent()) {
-                    log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} completeEndTxn "
-                                    + "failed. pendingState == {}",
-                            txnMetadata.getTransactionalId(), txnMetadata.getProducerId(),
-                            txnMetadata.getProducerEpoch(), txnMetadata.getPendingState());
                     return Either.left(Errors.CONCURRENT_TRANSACTIONS);
                 } else {
                     switch (txnMetadata.getState()) {
@@ -890,10 +877,6 @@ public class TransactionCoordinator {
                                                     + "is a pending state transition",
                                             txnIdAndPidEpoch.getTransactionalId());
                                 }
-                                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
-                                                + "abortTimedOutTransactions failed. pendingState == {}",
-                                        txnMetadata.getTransactionalId(), txnMetadata.getProducerId(),
-                                        txnMetadata.getProducerEpoch(), txnMetadata.getPendingState());
                                 return Either.left(Errors.CONCURRENT_TRANSACTIONS);
                             } else {
                                 return Either.right(txnMetadata.prepareFenceProducerEpoch());

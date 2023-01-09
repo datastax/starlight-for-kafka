@@ -582,6 +582,8 @@ public class TransactionStateManager {
         return CoreUtils.inReadLock(stateLock, () -> {
             int partitionId = partitionFor(transactionalId);
             if (loadingPartitions.contains(partitionId)) {
+                log.info("TX Coordinator {} partition {} for transactionalId {} is loading",
+                        transactionConfig.getTransactionMetadataTopicName(), partitionId, transactionalId);
                 return Either.left(Errors.COORDINATOR_LOAD_IN_PROGRESS);
             } else if (leavingPartitions.contains(partitionId)) {
                 log.info("TX Coordinator {} partition {} for transactionalId {} is unloading",
@@ -590,6 +592,8 @@ public class TransactionStateManager {
             } else {
                 Map<String, TransactionMetadata> metadataMap = transactionMetadataCache.get(partitionId);
                 if (metadataMap == null) {
+                    log.info("TX Coordinator {} partition {} for transactionalId {} is not here",
+                            transactionConfig.getTransactionMetadataTopicName(), partitionId, transactionalId);
                     return Either.left(Errors.NOT_COORDINATOR);
                 }
 
@@ -748,6 +752,8 @@ public class TransactionStateManager {
                 for (Map.Entry<String, TransactionMetadata> entry : loadedTransactions.entrySet()) {
                     TransactionMetadata txnMetadata = entry.getValue();
                     txnMetadata.inLock(() -> {
+                        log.info("{} found TX {} state {} missing partitions {}",
+                                entry.getKey(), txnMetadata.getState(), txnMetadata.getTopicPartitions());
                         switch (txnMetadata.getState()) {
                             case PREPARE_ABORT:
                                 transactionsPendingForCompletion.add(
@@ -780,6 +786,9 @@ public class TransactionStateManager {
                 loadingPartitions.remove(topicPartition.partition());
 
                 transactionsPendingForCompletion.forEach(pendingTxn -> {
+                    log.info("{} recover send markers result {} for {}", topicPartition,
+                            pendingTxn.result,
+                            pendingTxn.txnMetadata.getTransactionalId());
                     sendTxnMarkersCallback.send(pendingTxn.result, pendingTxn.txnMetadata, pendingTxn.transitMetadata);
                 });
             }
