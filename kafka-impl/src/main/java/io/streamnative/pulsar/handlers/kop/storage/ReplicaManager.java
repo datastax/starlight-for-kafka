@@ -50,6 +50,7 @@ import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.client.api.PulsarClientException;
 
 /**
  * Used to append records. Mapping to Kafka ReplicaManager.scala.
@@ -193,6 +194,11 @@ public class ReplicaManager {
 
                             addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                        } else if (ex.getCause() instanceof PulsarClientException) {
+                            log.error("Error on Pulsar Client while handling append for {}", fullPartitionName, ex);
+
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.BROKER_NOT_AVAILABLE));
                         } else {
                             log.error("System error while handling append for {}", fullPartitionName, ex);
                             addPartitionResponse.accept(topicPartition,
