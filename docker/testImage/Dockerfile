@@ -1,4 +1,4 @@
-FROM us-central1-docker.pkg.dev/datastax-gcp-pulsar/pulsar/lunastreaming-all:latest-210
+FROM datastax/lunastreaming-all:2.10_2.10
 USER root
 RUN apt-get update && apt-get -y install openjdk-11-dbg
 RUN rm /pulsar/protocols/*.nar /pulsar/proxyextensions/*.nar
