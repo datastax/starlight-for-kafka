@@ -1110,6 +1110,7 @@ public class PartitionLog {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }
+        log.info("start recoverTxEntries for {} at offset {}", fullPartitionName, offset);
         SchemaManager schemaManager = new SchemaManager() {
             @Override
             public CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion) {
@@ -1140,8 +1141,9 @@ public class PartitionLog {
             final long offsetToStart;
             if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
                 offsetToStart = 0;
-                log.info("recoverTxEntries for {}: offset {} is out-of-range, maybe the topic has been trimmed, "
-                         + "starting from {}",
+                log.info("recoverTxEntries for {}: offset {} is out-of-range, "
+                         + "maybe the topic has been deleted/recreated, "
+                         + "starting recovery from {}",
                         topicPartition, offset, offsetToStart);
             } else {
                 offsetToStart = offset;

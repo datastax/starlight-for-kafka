@@ -72,6 +72,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
+        this.conf.setKafkaMetadataNamespace("__kafka");
         this.conf.setOffsetsTopicNumPartitions(10);
         this.conf.setKafkaTxnLogTopicNumPartitions(10);
         this.conf.setKafkaTxnProducerStateTopicNumPartitions(10);
@@ -523,7 +524,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.beginTransaction();
         String lastMessage = "committed mgs";
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer.commitTransaction();
 
@@ -588,7 +589,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
-        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
 
@@ -653,7 +654,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.initTransactions();
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
-        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
 
@@ -669,6 +670,98 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().namespaces().unload(namespace);
 
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
+    }
+
+
+    @Test(timeOut = 1000 * 20)
+    public void basicRecoveryAfterDeleteCreateTopic()
+            throws Exception {
+
+        String topicName = "basicRecoveryAfterDeleteCreateTopic";
+        String transactionalId = "myProducer-deleteCreate";
+        String isolation = "read_committed";
+
+        TopicName fullTopicName = TopicName.get(topicName);
+
+        String namespace = fullTopicName.getNamespace();
+
+        admin.topics().createPartitionedTopic(topicName, 4);
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
+
+        producer.initTransactions();
+
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        producer.beginTransaction();
+
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+        producer.flush();
+
+        // force take snapshot
+        protocolHandler
+                .getReplicaManager()
+                .takeProducerStateSnapshots()
+                .get();
+
+        String secondMessage = "deleted msg 2";
+        producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
+        producer.flush();
+
+        // verify that a non-transactional consumer can read the messages
+        consumeTxnMessage(topicName, 10, secondMessage, "read_uncommitted",
+                "uncommitted_reader1");
+
+        for (int i = 0; i < 10; i++) {
+            log.info("************DELETE");
+        }
+        // delete/create
+        pulsar.getAdminClient().namespaces().unload(namespace);
+        admin.topics().deletePartitionedTopic(topicName, true);
+
+        // unfortunately the PH is not notified of the deletion
+        // so we unload the namespace in order to clear local references/caches
+        pulsar.getAdminClient().namespaces().unload(namespace);
+
+        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(0).toString());
+        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(1).toString());
+        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(2).toString());
+        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(3).toString());
+
+        admin.topics().createPartitionedTopic(topicName, 4);
+        for (int i = 0; i < 10; i++) {
+            log.info("************CREATED");
+        }
+        // the snapshot now points to a offset that doesn't make sense in the new topic
+        // because the new topic is empty
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
+        producer2.initTransactions();
+        producer2.beginTransaction();
+        String lastMessage = "committed mgs";
+        for (int i = 0; i < 10; i++) {
+            log.info("************BEFORE");
+        }
+        // this "send" triggers recovery of the ProducerStateManager on the topic
+        producer2.send(new ProducerRecord<>(topicName, 0, "good-message")).get();
+        for (int i = 0; i < 10; i++) {
+            log.info("************AFTER");
+        }
+        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+        producer2.commitTransaction();
+
+        consumeTxnMessage(topicName, 2, lastMessage, isolation, "readcommitter-reader-1");
     }
 
 
