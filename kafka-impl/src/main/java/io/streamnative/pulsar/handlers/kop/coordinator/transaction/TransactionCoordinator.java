@@ -517,7 +517,7 @@ public class TransactionCoordinator {
             } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
                 return Either.left(producerEpochFenceErrors());
             } else if (txnMetadata.getPendingState().isPresent()) {
-                log.info("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
+                log.debug("CONCURRENT_TRANSACTIONS: txnId: {} producerId: {} producerEpoch: {} "
                                 + "handleAddPartitionsToTransaction failed. pendingState == {}",
                         txnMetadata.getTransactionalId(), txnMetadata.getProducerId(), txnMetadata.getProducerEpoch(),
                         txnMetadata.getPendingState());
