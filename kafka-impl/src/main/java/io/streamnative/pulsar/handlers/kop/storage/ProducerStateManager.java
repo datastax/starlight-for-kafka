@@ -105,6 +105,10 @@ public class ProducerStateManager {
         executor.execute(new SafeRunnable() {
             @Override
             public void safeRun() {
+                if (mapEndOffset == -1) {
+                    result.complete(null);
+                    return;
+                }
                 log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
                 ProducerStateManagerSnapshot snapshot;
                 synchronized (abortedIndexList) {
