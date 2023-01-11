@@ -28,6 +28,7 @@ import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -40,6 +41,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -685,7 +688,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = fullTopicName.getNamespace();
 
-        admin.topics().createPartitionedTopic(topicName, 4);
+        // use Kafka API, this way we assign a topic UUID
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
 
         @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
@@ -738,7 +744,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(2).toString());
         protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(3).toString());
 
-        admin.topics().createPartitionedTopic(topicName, 4);
+        // create the topic again, using the kafka APIs
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
+
         for (int i = 0; i < 10; i++) {
             log.info("************CREATED");
         }
@@ -1051,7 +1059,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileSendFirstRecord() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1072,7 +1080,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileCommitTransaction() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1100,7 +1108,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileSendOffsets() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1130,7 +1138,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testProducerFencedWhileAbortAndBegin() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
@@ -1156,7 +1164,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.close();
     }
 
-    @Test
+    @Test(timeOut = 20000)
     public void testNotFencedWithBeginTransaction() throws Exception {
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();

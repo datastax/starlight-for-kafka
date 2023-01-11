@@ -73,22 +73,28 @@ public class PartitionLogManager {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
-        return logMap.computeIfAbsent(kopTopic, key -> {
+        CompletableFuture<PartitionLog> res =  logMap.computeIfAbsent(kopTopic, key -> {
+            log.info("init getLog {}", key);
             CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
-                    time, topicPartition, kopTopic, entryfilterMap,
+                    time, topicPartition, key, entryfilterMap,
                     kafkaTopicLookupService,
                     prodPerTenant)
-                    .recoverTransactions(recoveryExecutor);
+                    .initialise(recoveryExecutor);
 
-            result.exceptionally(error -> {
-                // in case of failure we have to remove the CompletableFuture from the map
-                log.error("Recovery of {} failed", key, error);
-                logMap.remove(key, result);
-                return null;
+            result.whenComplete((___, error) -> {
+                if (error != null) {
+                    // in case of failure we have to remove the CompletableFuture from the map
+                    log.error("Recovery of {} failed", key, error);
+                    logMap.remove(key, result);
+                }
             });
 
             return result;
         });
+        if (res.isCompletedExceptionally()) {
+            logMap.remove(kopTopic, res);
+        }
+        return res;
     }
 
     public CompletableFuture<PartitionLog> removeLog(String topicName) {

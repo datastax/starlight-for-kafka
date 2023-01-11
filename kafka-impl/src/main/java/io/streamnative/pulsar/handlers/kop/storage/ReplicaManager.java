@@ -42,6 +42,7 @@ import org.apache.commons.lang3.mutable.MutableLong;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InvalidTopicException;
+import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.FetchRequest;
@@ -79,7 +80,8 @@ public class ReplicaManager {
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition, String namespacePrefix) {
+    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition,
+                                                           String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
@@ -199,6 +201,9 @@ public class ReplicaManager {
 
                             addPartitionResponse.accept(topicPartition,
                                     new ProduceResponse.PartitionResponse(Errors.BROKER_NOT_AVAILABLE));
+                        } else if (ex.getCause() instanceof NotLeaderOrFollowerException) {
+                            addPartitionResponse.accept(topicPartition,
+                                    new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                         } else {
                             log.error("System error while handling append for {}", fullPartitionName, ex);
                             addPartitionResponse.accept(topicPartition,

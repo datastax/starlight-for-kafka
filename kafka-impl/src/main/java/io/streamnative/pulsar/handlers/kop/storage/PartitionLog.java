@@ -47,7 +47,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -112,18 +111,35 @@ public class PartitionLog {
     private static final KopLogValidator.CompressionCodec DEFAULT_COMPRESSION =
             new KopLogValidator.CompressionCodec(CompressionType.NONE.name, CompressionType.NONE.id);
 
+    /**
+     * During recovery we are not interested in looking up the schema.
+     */
+    private static final SchemaManager SCHEMA_MANAGER_FOR_RECOVERY  = new SchemaManager() {
+        @Override
+        public CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion) {
+            return CompletableFuture.completedFuture(null);
+        }
+    };
+
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
     private final Time time;
     private final TopicPartition topicPartition;
     private final String fullPartitionName;
-    private final AtomicReference<CompletableFuture<EntryFormatter>> entryFormatter = new AtomicReference<>();
     @Getter
-    private final ProducerStateManager producerStateManager;
+    private volatile ProducerStateManager producerStateManager;
 
     private final KafkaTopicLookupService kafkaTopicLookupService;
 
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+
+    private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
+
+    private volatile Map<String, String> topicProperties;
+
+    private volatile String kafkaTopicUUID;
+
+    private volatile EntryFormatter entryFormatter;
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
@@ -140,58 +156,60 @@ public class PartitionLog {
         this.topicPartition = topicPartition;
         this.fullPartitionName = fullPartitionName;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
-        this.producerStateManager = new ProducerStateManager(fullPartitionName, producerStateManagerSnapshotBuffer);
+        this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
-    public CompletableFuture<PartitionLog> recoverTransactions(OrderedExecutor executor) {
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
-                && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
-            return producerStateManager
-                    .recover(this, executor.chooseThread(fullPartitionName))
-                    .thenApply(___ -> this);
-        } else {
-            return CompletableFuture.completedFuture(this);
-        }
-    }
-
-    private CompletableFuture<EntryFormatter> getEntryFormatter(
-            CompletableFuture<Optional<PersistentTopic>> topicFuture) {
-        return entryFormatter.accumulateAndGet(null, (current, ___) -> {
-            if (current != null) {
-                return current;
+    public CompletableFuture<PartitionLog> initialise(OrderedExecutor executor) {
+        return loadTopicProperties().thenCompose(__ -> {
+            if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                    && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
+                return producerStateManager
+                        .recover(this, executor.chooseThread(fullPartitionName))
+                        .thenApply(___ -> this);
+            } else {
+                return CompletableFuture.completedFuture(this);
             }
-            return topicFuture.thenCompose((persistentTopic) -> {
-                if (!persistentTopic.isPresent()) {
-                    throw new IllegalStateException("Topic " + fullPartitionName + " is not ready");
-                }
-                TopicName logicalName = TopicName.get(persistentTopic.get().getName());
-                TopicName actualName;
-                if (logicalName.isPartitioned()) {
-                    actualName = TopicName.getPartitionedTopicName(persistentTopic.get().getName());
-                } else {
-                    actualName = logicalName;
-                }
-                CompletableFuture<EntryFormatter> result = persistentTopic.get().getBrokerService()
-                        .fetchPartitionedTopicMetadataAsync(actualName)
-                        .thenApply(metadata -> {
-                            if (metadata.partitions > 0) {
-                                return buildEntryFormatter(metadata.properties);
-                            } else {
-                                return buildEntryFormatter(persistentTopic.get().getManagedLedger().getProperties());
-                            }
-                        });
-
-                result.exceptionally(ex -> {
-                   // this error will happen in a separate thread, and during the execution of
-                   // accumulateAndGet
-                   // the only thing we can do is to clear the cache
-                   log.error("Cannot create the EntryFormatter for {}", fullPartitionName, ex);
-                   entryFormatter.set(null);
-                   return null;
-                });
-                return result;
-            });
         });
+    }
+
+    private CompletableFuture<Void> loadTopicProperties() {
+        final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+                kafkaTopicLookupService.getTopic(fullPartitionName, this);
+        return topicFuture
+                .thenCompose(topic -> fetchTopicProperties(topic))
+                .thenAccept(properties -> {
+                    this.topicProperties = properties;
+                    log.info("Topic properties for {} are {}", fullPartitionName, properties);
+                    this.entryFormatter = buildEntryFormatter(topicProperties);
+                    this.kafkaTopicUUID = properties.getOrDefault("kafkaTopicUUID", "NO-UUID");
+                    this.producerStateManager =
+                            new ProducerStateManager(fullPartitionName + "@" + kafkaTopicUUID,
+                            producerStateManagerSnapshotBuffer);
+                });
+    }
+
+    private CompletableFuture<Map<String, String>> fetchTopicProperties(Optional<PersistentTopic> persistentTopic) {
+        if (!persistentTopic.isPresent()) {
+            log.info("Topic {} not loaded here", fullPartitionName);
+            return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+        }
+        TopicName logicalName = TopicName.get(persistentTopic.get().getName());
+        TopicName actualName;
+        if (logicalName.isPartitioned()) {
+            actualName = TopicName.getPartitionedTopicName(persistentTopic.get().getName());
+        } else {
+            actualName = logicalName;
+        }
+        return persistentTopic.get().getBrokerService()
+                .fetchPartitionedTopicMetadataAsync(actualName)
+                .thenApply(metadata -> {
+                    if (metadata.partitions > 0) {
+                        return metadata.properties;
+                    } else {
+                        return persistentTopic.get().getManagedLedger().getProperties();
+                    }
+                })
+                .thenApply(map -> map != null ? map : Collections.emptyMap());
     }
 
     private EntryFormatter buildEntryFormatter(Map<String, String> topicProperties) {
@@ -445,7 +463,6 @@ public class PartitionLog {
                 return appendFuture;
             }
 
-            CompletableFuture<EntryFormatter> entryFormatterHandle = getEntryFormatter(topicFuture);
             final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
                 if (!persistentTopicOpt.isPresent()) {
                     appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
@@ -453,35 +470,29 @@ public class PartitionLog {
                 }
 
                 final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
-                entryFormatterHandle.whenComplete((entryFormatter, ee) ->{
-                    if (ee != null) {
-                        appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
-                        return;
-                    }
-                    if (entryFormatter instanceof KafkaMixedEntryFormatter) {
-                        final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
-                        appendInfo.firstOffset(Optional.of(logEndOffset));
-                    }
-                    final EncodeRequest encodeRequest = EncodeRequest.get(validRecords, appendInfo);
+                if (entryFormatter instanceof KafkaMixedEntryFormatter) {
+                    final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
+                    appendInfo.firstOffset(Optional.of(logEndOffset));
+                }
+                final EncodeRequest encodeRequest = EncodeRequest.get(validRecords, appendInfo);
 
-                    requestStats.getPendingTopicLatencyStats().registerSuccessfulEvent(
-                            time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
+                requestStats.getPendingTopicLatencyStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeRecordsProcess, TimeUnit.NANOSECONDS);
 
-                    long beforeEncodingStarts = time.nanoseconds();
-                    final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
-                    encodeRequest.recycle();
+                long beforeEncodingStarts = time.nanoseconds();
+                final EncodeResult encodeResult = entryFormatter.encode(encodeRequest);
+                encodeRequest.recycle();
 
-                    requestStats.getProduceEncodeStats().registerSuccessfulEvent(
-                            time.nanoseconds() - beforeEncodingStarts, TimeUnit.NANOSECONDS);
-                    appendRecordsContext.getStartSendOperationForThrottling()
-                            .accept(encodeResult.getEncodedByteBuf().readableBytes());
+                requestStats.getProduceEncodeStats().registerSuccessfulEvent(
+                        time.nanoseconds() - beforeEncodingStarts, TimeUnit.NANOSECONDS);
+                appendRecordsContext.getStartSendOperationForThrottling()
+                        .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
-                    publishMessages(persistentTopicOpt,
-                            appendFuture,
-                            appendInfo,
-                            encodeResult,
-                            appendRecordsContext);
-                });
+                publishMessages(persistentTopicOpt,
+                        appendFuture,
+                        appendInfo,
+                        encodeResult,
+                        appendRecordsContext);
             };
 
             appendRecordsContext.getPendingTopicFuturesMap()
@@ -666,14 +677,6 @@ public class PartitionLog {
         final CompletableFuture<String> groupNameFuture = kafkaConfig.isKopEnableGroupLevelConsumerMetrics()
                 ? context.getCurrentConnectedGroupNameAsync() : CompletableFuture.completedFuture(null);
 
-        final CompletableFuture<EntryFormatter> entryFormatterHandle =
-                getEntryFormatter(context.getTopicManager().getTopic(fullPartitionName));
-
-        entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
-        if (ee != null) {
-            future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR, this));
-            return;
-        }
         groupNameFuture.whenCompleteAsync((_groupName, ex) -> {
             if (ex != null) {
                 log.error("Get groupId failed.", ex);
@@ -709,9 +712,6 @@ public class PartitionLog {
             log.error("Partition {} read entry exceptionally. ", topicPartition, ex);
             future.complete(ReadRecordsResult.error(Errors.KAFKA_STORAGE_ERROR, this));
             return null;
-        });
-
-
         });
     }
 
@@ -1111,12 +1111,7 @@ public class PartitionLog {
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }
         log.info("start recoverTxEntries for {} at offset {}", fullPartitionName, offset);
-        SchemaManager schemaManager = new SchemaManager() {
-            @Override
-            public CompletableFuture<KeyValueSchemaIds> getSchemaIds(String topic, BytesSchemaVersion schemaVersion) {
-                return FutureUtil.failedFuture(new UnsupportedOperationException("not implemented yet"));
-            }
-        };
+
         return kafkaTopicLookupService
                 .getTopic(fullPartitionName, this).thenComposeAsync(topic -> {
             if (!topic.isPresent()) {
@@ -1176,7 +1171,7 @@ public class PartitionLog {
                 final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
 
                 AtomicLong entryCounter = new AtomicLong();
-                readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic.get(), entryCounter, schemaManager,
+                readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter,
                         future, executor);
 
             }).exceptionally(ex -> {
@@ -1190,9 +1185,7 @@ public class PartitionLog {
 
     private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
                                             KafkaTopicConsumerManager tcm,
-                                            PersistentTopic topic,
                                             AtomicLong entryCounter,
-                                            SchemaManager schemaManager,
                                             CompletableFuture<Long> future, Executor executor) {
         log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
         int maxReadEntriesNum = 200;
@@ -1223,7 +1216,7 @@ public class PartitionLog {
                     }
 
                     CompletableFuture<DecodeResult> decodedEntries = new CompletableFuture<>();
-                    decodeEntriesForRecovery(decodedEntries, entries, topic, schemaManager);
+                    decodeEntriesForRecovery(decodedEntries, entries, SCHEMA_MANAGER_FOR_RECOVERY);
 
                     decodedEntries.thenAccept((decodeResult) -> {
                         try {
@@ -1262,8 +1255,7 @@ public class PartitionLog {
                         } finally {
                             decodeResult.recycle();
                         }
-                        readNextEntriesForRecovery(cursor, cursorOffset, tcm, topic, entryCounter,
-                                schemaManager, future, executor);
+                        readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter, future, executor);
 
                     }).exceptionally(error -> {
                         log.error("Bad error while recovering {}", fullPartitionName, error);
@@ -1290,35 +1282,26 @@ public class PartitionLog {
     }
 
     private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,
-                               final List<Entry> entries, PersistentTopic topic,
+                               final List<Entry> entries,
                                SchemaManager schemaManager) {
 
         if (log.isDebugEnabled()) {
             log.debug("Read {} entries", entries.size());
         }
         final byte magic = RecordBatch.CURRENT_MAGIC_VALUE;
-        final CompletableFuture<EntryFormatter> entryFormatterHandle =
-                getEntryFormatter(CompletableFuture.completedFuture(Optional.of(topic)));
-        entryFormatterHandle.whenComplete((entryFormatter, ee) -> {
-            if (ee != null) {
-                future.completeExceptionally(new KafkaStorageException());
-                return;
-            }
-            final long startDecodingEntriesNanos = MathUtils.nowInNano();
-            entryFormatter.decode(entries, magic,
-                    fullPartitionName, schemaManager).whenComplete(
-                    (DecodeResult decodeResult, Throwable error) -> {
-                        if (error != null) {
-                            future.completeExceptionally(error);
-                            return;
-                        }
-                        requestStats.getFetchDecodeStats().registerSuccessfulEvent(
-                                MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
-                        future.complete(decodeResult);
+        final long startDecodingEntriesNanos = MathUtils.nowInNano();
+        entryFormatter.decode(entries, magic,
+                fullPartitionName, schemaManager).whenComplete(
+                (DecodeResult decodeResult, Throwable error) -> {
+                    if (error != null) {
+                        future.completeExceptionally(error);
+                        return;
                     }
-            );
-
-        });
+                    requestStats.getFetchDecodeStats().registerSuccessfulEvent(
+                            MathUtils.elapsedNanos(startDecodingEntriesNanos), TimeUnit.NANOSECONDS);
+                    future.complete(decodeResult);
+                }
+        );
     }
 
 }
