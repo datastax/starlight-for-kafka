@@ -1187,7 +1187,9 @@ public class PartitionLog {
                                             KafkaTopicConsumerManager tcm,
                                             AtomicLong entryCounter,
                                             CompletableFuture<Long> future, Executor executor) {
-        log.info("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
+        if (log.isDebugEnabled()) {
+            log.debug("readNextEntriesForRecovery {} cursorOffset {}", fullPartitionName, cursorOffset);
+        }
         int maxReadEntriesNum = 200;
         long adjustedMaxBytes = Long.MAX_VALUE;
         readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
@@ -1210,7 +1212,9 @@ public class PartitionLog {
                     tcm.add(cursorOffset.get(), Pair.of(cursor, cursorOffset.get()));
 
                     if (entries.isEmpty()) {
-                        log.info("No more entries to recover for {}", fullPartitionName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("No more entries to recover for {}", fullPartitionName);
+                        }
                         future.completeAsync(() -> entryCounter.get(), executor);
                         return;
                     }
