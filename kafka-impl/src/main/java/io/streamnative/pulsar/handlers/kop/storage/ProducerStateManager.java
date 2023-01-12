@@ -37,6 +37,8 @@ public class ProducerStateManager {
 
     @Getter
     private final String topicPartition;
+    private final String kafkaTopicUUID;
+
     private final Map<Long, ProducerStateEntry> producers = Maps.newConcurrentMap();
 
     // ongoing transactions sorted by the first offset of the transaction
@@ -47,9 +49,10 @@ public class ProducerStateManager {
 
     private volatile long mapEndOffset = -1;
 
-    public ProducerStateManager(String topicPartition,
+    public ProducerStateManager(String topicPartition, String kafkaTopicUUID,
                                 ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
         this.topicPartition = topicPartition;
+        this.kafkaTopicUUID = kafkaTopicUUID;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
     }
 
@@ -62,6 +65,13 @@ public class ProducerStateManager {
     private CompletableFuture<Void> applySnapshotAndRecover(ProducerStateManagerSnapshot snapshot,
                                                             PartitionLog partitionLog,
                                                             Executor executor) {
+        if (snapshot != null && kafkaTopicUUID != null
+                && !kafkaTopicUUID.equals(snapshot.getTopicUUID())) {
+            log.info("The latest snapshot for topic {} was for UUID {} that is different from {}. "
+                    + "Ignoring it (topic has been re-created)", topicPartition, snapshot.getTopicUUID(),
+                    kafkaTopicUUID);
+            snapshot = null;
+        }
         long offSetPosition = 0;
         synchronized (abortedIndexList) {
             this.abortedIndexList.clear();
@@ -113,6 +123,7 @@ public class ProducerStateManager {
                 ProducerStateManagerSnapshot snapshot;
                 synchronized (abortedIndexList) {
                     snapshot = new ProducerStateManagerSnapshot(topicPartition,
+                            kafkaTopicUUID,
                             mapEndOffset,
                             new HashMap<>(producers),
                             new TreeMap<>(ongoingTxns),
@@ -124,8 +135,8 @@ public class ProducerStateManager {
                             if (error != null) {
                                 result.completeExceptionally(error);
                             } else {
-                                log.info("Snapshot for {} taken at offset {}",
-                                        topicPartition, snapshot.getOffset());
+                                log.info("Snapshot for {} ({}) taken at offset {}",
+                                        topicPartition, kafkaTopicUUID, snapshot.getOffset());
                                 result.complete(snapshot);
                             }
                         });

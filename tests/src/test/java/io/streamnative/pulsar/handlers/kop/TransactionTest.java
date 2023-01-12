@@ -747,9 +747,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // create the topic again, using the kafka APIs
         kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
 
-        for (int i = 0; i < 10; i++) {
-            log.info("************CREATED");
-        }
         // the snapshot now points to a offset that doesn't make sense in the new topic
         // because the new topic is empty
 
@@ -758,14 +755,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.initTransactions();
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
-        for (int i = 0; i < 10; i++) {
-            log.info("************BEFORE");
-        }
+
         // this "send" triggers recovery of the ProducerStateManager on the topic
         producer2.send(new ProducerRecord<>(topicName, 0, "good-message")).get();
-        for (int i = 0; i < 10; i++) {
-            log.info("************AFTER");
-        }
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
 
