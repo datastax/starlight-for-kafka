@@ -27,12 +27,12 @@ jobs:
       run: ./ci/init_hydra_oauth_server.sh
       timeout-minutes: 5
 
-     - name: Setup ssh access to build runner VM
-       # ssh access is enabled for builds in own forks
-       if: ${{ github.event_name == 'pull_request' }}
-       uses: ./.github/actions/ssh-access
-       with:
-         limit-access-to-actor: true
+    - name: Setup ssh access to build runner VM
+      # ssh access is enabled for builds in own forks
+      if: ${{ github.event_name == 'pull_request' }}
+      uses: ./.github/actions/ssh-access
+      with:
+        limit-access-to-actor: true
 
     - name: Build with Maven skipTests
       run: mvn clean checkstyle:check install -ntp -B -DskipTests
