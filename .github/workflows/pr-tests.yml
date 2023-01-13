@@ -38,7 +38,7 @@ jobs:
       uses: codecov/codecov-action@v3
 
     - name: package surefire artifacts
-      if: {{ always() }}
+      if: ${{ cancelled() || failure() }}
       run: |
         rm -rf artifacts
         mkdir artifacts
