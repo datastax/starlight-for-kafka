@@ -38,7 +38,7 @@ jobs:
       uses: codecov/codecov-action@v3
 
     - name: package surefire artifacts
-      if: failure()
+      if: ${{ cancelled() || failure() }}
       run: |
         rm -rf artifacts
         mkdir artifacts
@@ -47,7 +47,7 @@ jobs:
 
     - uses: actions/upload-artifact@master
       name: upload surefire-artifacts
-      if: failure()
+      if: ${{ cancelled() || failure() }}
       with:
         name: surefire-artifacts
         path: artifacts.zip
