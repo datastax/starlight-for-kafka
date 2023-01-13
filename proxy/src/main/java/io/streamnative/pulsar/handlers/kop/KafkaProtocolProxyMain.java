@@ -70,6 +70,7 @@ public class KafkaProtocolProxyMain {
     private KafkaSchemaRegistryProxyManager schemaRegistryProxyManager;
     private AuthenticationService authenticationService;
     private AuthorizationService authorizationService;
+    private Authentication proxyToBrokerAuthentication;
     private Function<String, String> brokerAddressMapper;
     private EventLoopGroup eventLoopGroupStandaloneMode;
     private PrometheusMetricsProvider statsProvider;
@@ -121,6 +122,12 @@ public class KafkaProtocolProxyMain {
         }
         authenticationService = proxyService.getAuthenticationService();
         authorizationService = proxyService.getAuthorizationService();
+        String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
+        String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
+        proxyToBrokerAuthentication = AuthenticationUtil.create(auth, authParams);
+        if (this.proxyToBrokerAuthentication != null) {
+            this.proxyToBrokerAuthentication.start();
+        }
         if (proxyService.getDiscoveryProvider() != null) {
             brokerAddressMapper = new BrokerAddressMapper(proxyService);
             log.info("Using Proxy DiscoveryProvider");
@@ -182,6 +189,9 @@ public class KafkaProtocolProxyMain {
         if (statsProvider != null) {
             statsProvider.stop();
         }
+        if (proxyToBrokerAuthentication != null) {
+            proxyToBrokerAuthentication.close();
+        }
     }
 
     public Map<InetSocketAddress, ChannelInitializer<SocketChannel>> newChannelInitializers() {
@@ -203,13 +213,15 @@ public class KafkaProtocolProxyMain {
                     case PLAINTEXT:
                     case SASL_PLAINTEXT:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, authorizationService, kafkaConfig, false,
+                                authenticationService, authorizationService, proxyToBrokerAuthentication,
+                                kafkaConfig, false,
                                 advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                     case SSL:
                     case SASL_SSL:
                         builder.put(endPoint.getInetAddress(), new KafkaProxyChannelInitializer(pulsarAdminProvider,
-                                authenticationService, authorizationService, kafkaConfig, true,
+                                authenticationService, authorizationService, proxyToBrokerAuthentication,
+                                kafkaConfig, true,
                                 advertisedEndPoint, brokerAddressMapper, topicsLeaders, requestStats));
                         break;
                 }

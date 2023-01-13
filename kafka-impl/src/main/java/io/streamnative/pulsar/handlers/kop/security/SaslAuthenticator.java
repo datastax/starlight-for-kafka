@@ -195,6 +195,7 @@ public class SaslAuthenticator {
         this.oauth2CallbackHandler = allowedMechanisms.contains(OAuthBearerLoginModule.OAUTHBEARER_MECHANISM)
                 ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
+        this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
     }
 
     public void authenticate(ChannelHandlerContext ctx,
@@ -602,9 +603,8 @@ public class SaslAuthenticator {
                     null);
             return mechanism;
         } else {
-            if (log.isDebugEnabled()) {
-                log.debug("SASL mechanism '{}' requested by client is not supported", mechanism);
-            }
+            log.error("SASL mechanism '{}' requested by client is not supported, only {}",
+                        mechanism, allowedMechanisms);
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
             buildResponseOnAuthenticateFailure(header, request,
                     KafkaResponseUtils.newSaslHandshake(Errors.UNSUPPORTED_SASL_MECHANISM, allowedMechanisms),

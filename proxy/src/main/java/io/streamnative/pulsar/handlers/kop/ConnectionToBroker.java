@@ -32,6 +32,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
+import io.streamnative.pulsar.handlers.kop.security.PlainSaslServer;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -42,6 +43,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
+import javax.security.sasl.SaslException;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.message.SaslAuthenticateRequestData;
@@ -54,7 +56,10 @@ import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.SaslAuthenticateRequest;
 import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeRequest;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;
+import org.apache.kafka.common.security.oauthbearer.internals.OAuthBearerClientInitialResponse;
 import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.impl.auth.oauth2.AuthenticationOAuth2;
 import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.netty.EventLoopUtil;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
@@ -92,7 +97,7 @@ class ConnectionToBroker {
         if (connectionFuture != null) {
             return connectionFuture;
         }
-        log.info("Opening proxy connection to {} {} current user {}", brokerHost, brokerPort,
+        log.info("Opening proxy connection to {}:{} current user {}", brokerHost, brokerPort,
                 kafkaProxyRequestHandler.currentUser());
 
         EventLoopGroup workerGroup = kafkaProxyRequestHandler.getWorkerGroup();
@@ -169,6 +174,7 @@ class ConnectionToBroker {
     }
 
     private KafkaCommandDecoder.KafkaHeaderAndRequest buildSASLRequest() {
+        String mechanism = getMechanism();
         int dummyCorrelationId = kafkaProxyRequestHandler.getDummyCorrelationId();
         RequestHeader header = new RequestHeader(
                 ApiKeys.SASL_HANDSHAKE,
@@ -178,7 +184,7 @@ class ConnectionToBroker {
         );
         SaslHandshakeRequest request = new SaslHandshakeRequest
                 .Builder(new SaslHandshakeRequestData()
-                .setMechanism("PLAIN"))
+                .setMechanism(mechanism))
                 .build();
         ByteBuf buffer = KopResponseUtils.serializeRequest(header, request);
         KafkaCommandDecoder.KafkaHeaderAndRequest fullRequest = new KafkaCommandDecoder.KafkaHeaderAndRequest(
@@ -188,6 +194,16 @@ class ConnectionToBroker {
                 null
         );
         return fullRequest;
+    }
+
+    private String getMechanism() {
+        String mechanism;
+        if (kafkaProxyRequestHandler.getAuthentication() instanceof AuthenticationOAuth2) {
+            mechanism = OAuthBearerLoginModule.OAUTHBEARER_MECHANISM;
+        } else {
+            mechanism = PlainSaslServer.PLAIN_MECHANISM;
+        }
+        return mechanism;
     }
 
     private CompletableFuture<Channel> authenticate(final Channel channel) {
@@ -209,29 +225,54 @@ class ConnectionToBroker {
                 dummyCorrelationId
         );
 
-        String actualAuthenticationToken;
-        try {
-            // this can be token: or file://....
-            actualAuthenticationToken = kafkaProxyRequestHandler.getClientToken();
-        } catch (PulsarClientException err) {
-            log.info("Cannot read token for Proxy authentication", err);
-            return FutureUtil.failedFuture(err);
-        }
-        if (actualAuthenticationToken == null) {
-            log.info("This proxy has not been configuration for token authentication");
-            return FutureUtil.failedFuture(
-                    new Exception("This proxy has not been configuration for token authentication"));
+        String mechanism = getMechanism();
+        byte[] saslAuthBytes;
+
+        switch (mechanism) {
+            case PlainSaslServer.PLAIN_MECHANISM:
+                String actualAuthenticationToken;
+                try {
+                    // this can be token: or file://....
+                    actualAuthenticationToken = kafkaProxyRequestHandler
+                            .getAuthentication().getAuthData().getCommandData();
+                } catch (PulsarClientException err) {
+                    log.info("Cannot read token for Proxy authentication", err);
+                    return FutureUtil.failedFuture(err);
+                }
+                if (actualAuthenticationToken == null) {
+                    log.info("This proxy has not been configuration for token authentication");
+                    return FutureUtil.failedFuture(
+                            new Exception("This proxy has not been configuration for token authentication"));
+                }
+
+                String originalPrincipal = kafkaProxyRequestHandler.currentUser();
+                String originalTenant = kafkaProxyRequestHandler.getCurrentTenant();
+                String username = originalTenant != null ? originalPrincipal + "/" + originalTenant : originalPrincipal;
+                String prefix = "PROXY"; // the prefix PROXY means nothing, ignored by SaslUtils#parseSaslAuthBytes
+                String password = "token:" + actualAuthenticationToken;
+                String usernamePassword = prefix
+                        + "\u0000" + username
+                        + "\u0000" + password;
+                saslAuthBytes = usernamePassword.getBytes(UTF_8);
+                break;
+            case OAuthBearerLoginModule.OAUTHBEARER_MECHANISM:
+                try {
+                    String commandData = kafkaProxyRequestHandler
+                            .getAuthentication().getAuthData().getCommandData();
+                    saslAuthBytes = new OAuthBearerClientInitialResponse(commandData, null, null)
+                            .toBytes();
+                } catch (SaslException | PulsarClientException oauthError) {
+                    log.error("Error while preparing authentication", oauthError);
+                    return FutureUtil.failedFuture(oauthError);
+                }
+                break;
+            default:
+                log.error("No corresponding mechanism to {}",
+                        kafkaProxyRequestHandler.getAuthentication().getClass().getName());
+                saslAuthBytes = new byte[0];
+                break;
         }
 
-        String originalPrincipal = kafkaProxyRequestHandler.currentUser();
-        String originalTenant = kafkaProxyRequestHandler.getCurrentTenant();
-        String username = originalTenant != null ? originalPrincipal + "/" + originalTenant : originalPrincipal;
-        String prefix = "PROXY"; // the prefix PROXY means nothing, it is ignored by SaslUtils#parseSaslAuthBytes
-        String password = "token:" + actualAuthenticationToken;
-        String usernamePassword = prefix
-                + "\u0000" + username
-                + "\u0000" + password;
-        byte[] saslAuthBytes = usernamePassword.getBytes(UTF_8);
         SaslAuthenticateRequest request = new SaslAuthenticateRequest
                 .Builder(new SaslAuthenticateRequestData()
                 .setAuthBytes(saslAuthBytes))

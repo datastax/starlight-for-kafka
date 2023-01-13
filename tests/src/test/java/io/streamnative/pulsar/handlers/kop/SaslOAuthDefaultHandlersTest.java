@@ -39,8 +39,12 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SaslOAuthDefaultHandlersTest extends SaslOAuthBearerTestBase {
 
-    private static final String ADMIN_USER = "admin_user";
-    private static final String USER = "user";
+    protected static final String ADMIN_USER = "admin_user";
+
+    protected static final String PROXY_USER = "proxy_user";
+    protected static final String USER = "user";
+
+    protected SecretKey secretKey;
 
     @BeforeClass
     @Override
@@ -51,7 +55,7 @@ public class SaslOAuthDefaultHandlersTest extends SaslOAuthBearerTestBase {
         conf.setAuthenticationProviders(Sets.newHashSet(AuthenticationProviderToken.class.getName()));
 
         conf.setBrokerClientAuthenticationPlugin(AuthenticationToken.class.getName());
-        final SecretKey secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
+        secretKey = AuthTokenUtils.createSecretKey(SignatureAlgorithm.HS256);
         conf.setBrokerClientAuthenticationParameters(
                 "token:" + AuthTokenUtils.createToken(secretKey, ADMIN_USER, Optional.empty()));
         conf.setSuperUserRoles(Sets.newHashSet(ADMIN_USER));
@@ -61,6 +65,9 @@ public class SaslOAuthDefaultHandlersTest extends SaslOAuthBearerTestBase {
 
         conf.setSaslAllowedMechanisms(Sets.newHashSet("OAUTHBEARER"));
         conf.setKopOauth2ConfigFile("src/test/resources/kop-default-oauth2.properties");
+
+        overrideBrokerConfig(conf);
+
         super.internalSetup();
 
         admin.namespaces().grantPermissionOnNamespace(
@@ -68,6 +75,9 @@ public class SaslOAuthDefaultHandlersTest extends SaslOAuthBearerTestBase {
                 USER,
                 Sets.newHashSet(AuthAction.consume, AuthAction.produce)
         );
+    }
+
+    protected void overrideBrokerConfig(KafkaServiceConfiguration conf) {
     }
 
     @AfterClass

@@ -78,18 +78,25 @@ import org.testng.annotations.Test;
 @Slf4j
 public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
 
-    private static final String ADMIN_USER = "simple_client_id";
+    protected static final String ADMIN_USER = "simple_client_id";
+
+    protected static final String PROXY_USER = "proxy_id";
+
     private static final String ADMIN_SECRET = "admin_secret";
-    private static final String ISSUER_URL = "http://localhost:4444";
-    private static final String AUDIENCE = "http://example.com/api/v2/";
+
+    protected static final String PROXY_SECRET = "proxy_secret";
+    protected static final String ISSUER_URL = "http://localhost:4444";
+    protected static final String AUDIENCE = "http://example.com/api/v2/";
 
     private String adminCredentialPath = null;
+    protected String proxyCredentialPath = null;
 
     @BeforeClass(timeOut = 20000)
     @Override
     protected void setup() throws Exception {
         String tokenPublicKey = HydraOAuthUtils.getPublicKeyStr();
         adminCredentialPath = HydraOAuthUtils.createOAuthClient(ADMIN_USER, ADMIN_SECRET);
+        proxyCredentialPath = HydraOAuthUtils.createOAuthClient(PROXY_USER, PROXY_SECRET);
         super.resetConfig();
         // Broker's config
         conf.setAuthenticationEnabled(true);
@@ -109,7 +116,12 @@ public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
         conf.setKopOauth2AuthenticateCallbackHandler(OauthValidatorCallbackHandler.class.getName());
         conf.setKopOauth2ConfigFile("src/test/resources/kop-handler-oauth2.properties");
 
+        overrideBrokerConfig(conf);
+
         super.internalSetup();
+    }
+
+    protected void overrideBrokerConfig(KafkaServiceConfiguration conf) {
     }
 
     @AfterClass
@@ -281,7 +293,8 @@ public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
                                                       AuthenticationDataSource authenticationData,
                                                       ServiceConfiguration serviceConfiguration) {
             try {
-                return CompletableFuture.completedFuture(role.equals(ADMIN_USER));
+                return CompletableFuture.completedFuture(role.equals(ADMIN_USER)
+                        || role.equals(PROXY_USER));
             } catch (NullPointerException e) {
                 NULL_ROLE_STACKS.addAll(Arrays.asList(e.getStackTrace()));
                 return CompletableFuture.completedFuture(true);
