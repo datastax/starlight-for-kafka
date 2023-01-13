@@ -638,6 +638,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         buffer,
                         null
                 );
+                buffer.release();
 
                 if (log.isDebugEnabled()) {
                     log.debug("forward produce for {} to {}",
@@ -674,6 +675,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 });
                             });
                             return null;
+                        }).whenComplete((ignore1, ignore2) -> {
+                            singlePartitionRequest.close();
                         });
             });
         }
@@ -892,6 +895,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         buffer,
                                         null
                                 );
+                                buffer.release();
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("forward fetch for {} to {}", requestForSingleBroker.fetchData().keySet(),
@@ -923,6 +927,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                     errorsConsumer.accept(topicPartition, Errors.UNKNOWN_SERVER_ERROR)
                                             );
                                             return null;
+                                        }).whenComplete((ignore1, ignore2) -> {
+                                            singlePartitionRequest.close();
                                         });
                             });
                         }
@@ -1332,6 +1338,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         buffer,
                                         null
                                 );
+                                buffer.release();
 
                                 if (log.isDebugEnabled()) {
                                     log.debug("forward DeleteRequest for {} to {}",
@@ -1380,6 +1387,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                 });
                                             });
                                             return null;
+                                        }).whenComplete((ignore1, ignore2) -> {
+                                            singlePartitionRequest.close();
                                         });
                             });
                         }
@@ -1612,17 +1621,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .forConsumer(false, request.isolationLevel())
                     .setOffsetData(tsData)
                     .build(request.version());
-            ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
-
-            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
-                    header,
-                    requestForSinglePartition,
-                    buffer,
-                    null
-            );
 
             findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(brokerAddress -> {
+                        ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
+
+                        KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                                header,
+                                requestForSinglePartition,
+                                buffer,
+                                null
+                        );
+                        buffer.release();
                         grabConnectionToBroker(brokerAddress.node.host(), brokerAddress.node.port())
                                 .forwardRequest(singlePartitionRequest)
                                 .thenAccept(theResponse -> {
@@ -1632,6 +1642,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             buildDummyListOffsetsResponseData(entry.getKey());
                                     onResponse.accept(fullPartitionName, responseData);
                                     return null;
+                                }).whenComplete((ignore1, ignore2) -> {
+                                    singlePartitionRequest.close();
                                 });
                     }).exceptionally(err -> {
                         ListOffsetsResponseData responseData = buildDummyListOffsetsResponseData(entry.getKey());
@@ -1739,17 +1751,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .forConsumer(false, request.isolationLevel())
                     .setTargetTimes(Collections.singletonList(tsData))
                     .build(request.version());
-            ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
-
-            KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
-                    header,
-                    requestForSinglePartition,
-                    buffer,
-                    null
-            );
 
             findBroker(TopicName.get(fullPartitionName))
                     .thenAccept(brokerAddress -> {
+                        ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSinglePartition);
+                        KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
+                                header,
+                                requestForSinglePartition,
+                                buffer,
+                                null
+                        );
+                        buffer.release();
                         grabConnectionToBroker(brokerAddress.node.host(), brokerAddress.node.port())
                                 .forwardRequest(singlePartitionRequest)
                                 .thenAccept(theResponse -> {
@@ -1759,6 +1771,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             buildDummyListOffsetsResponseData(topicPartition);
                                     onResponse.accept(fullPartitionName, responseData);
                                     return null;
+                                }).whenComplete((ignore1, ignore2) -> {
+                                    singlePartitionRequest.close();
                                 });
                     }).exceptionally(err -> {
                         ListOffsetsResponseData responseData = buildDummyListOffsetsResponseData(topicPartition);
