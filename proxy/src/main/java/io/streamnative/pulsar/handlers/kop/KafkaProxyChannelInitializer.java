@@ -24,7 +24,7 @@ import lombok.Getter;
 import org.apache.kafka.common.Node;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
-import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
+import org.apache.pulsar.client.api.Authentication;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,12 +52,13 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
     private final RequestStats requestStats;
     private final Function<String, String> brokerAddressMapper;
     private final ConcurrentHashMap<String, Node> topicsLeaders;
-    private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
+    private final Authentication authentication;
 
     public KafkaProxyChannelInitializer(
             KafkaProtocolProxyMain.PulsarAdminProvider pulsarAdmin,
             AuthenticationService authenticationService,
             AuthorizationService authorizationService,
+            Authentication authentication,
             KafkaServiceConfiguration serviceConfig,
             boolean enableTLS,
             EndPoint advertisedEndPoint,
@@ -67,6 +68,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
         super();
         this.topicsLeaders = topicsLeaders;
         this.requestStats = requestStats;
+        this.authentication = authentication;
         this.brokerAddressMapper = brokerAddressMapper;
         this.authenticationService = authenticationService;
         this.authorizationService = authorizationService;
@@ -95,6 +97,7 @@ public class KafkaProxyChannelInitializer extends ChannelInitializer<SocketChann
                 new LengthFieldBasedFrameDecoder(MAX_FRAME_LENGTH, 0, 4, 0, 4));
         ch.pipeline().addLast("handler",
                 new KafkaProxyRequestHandler(id, pulsarAdmin, authenticationService, authorizationService, kafkaConfig,
+                        authentication,
                         // use the same eventloop to preserve ordering
                         enableTls, advertisedEndPoint, brokerAddressMapper, ch.eventLoop(),
                         requestStats, topicsLeaders));

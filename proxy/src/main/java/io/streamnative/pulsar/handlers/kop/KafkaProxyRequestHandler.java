@@ -147,8 +147,6 @@ import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Authentication;
-import org.apache.pulsar.client.api.PulsarClientException;
-import org.apache.pulsar.client.impl.AuthenticationUtil;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -164,7 +162,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     // this is for Proxy -> Broker authentication
-    private final Authentication authenticationToken;
+    private final Authentication authentication;
     private final boolean tlsEnabled;
     private final EndPoint advertisedEndPoint;
     private final String advertisedListeners;
@@ -179,6 +177,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     AuthenticationService authenticationService,
                                     AuthorizationService authorizationService,
                                     KafkaServiceConfiguration kafkaConfig,
+                                    Authentication authentication,
                                     boolean tlsEnabled,
                                     EndPoint advertisedEndPoint,
                                     Function<String, String> brokerAddressMapper,
@@ -190,9 +189,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         this.workerGroup = workerGroup;
         this.brokerAddressMapper = brokerAddressMapper;
         this.id = id;
-        String auth = kafkaConfig.getBrokerClientAuthenticationPlugin();
-        String authParams = kafkaConfig.getBrokerClientAuthenticationParameters();
-        this.authenticationToken = AuthenticationUtil.create(auth, authParams);
+        this.authentication = authentication;
 
         this.admin = pulsarAdmin;
         final boolean authenticationEnabled = kafkaConfig.isAuthenticationEnabled();
@@ -1979,8 +1976,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         keysToRemove.forEach(topicsLeaders::remove);
     }
 
-    String getClientToken() throws PulsarClientException {
-        return authenticationToken.getAuthData().getCommandData();
+    Authentication getAuthentication() {
+        return authentication;
     }
 
     /**
