@@ -40,6 +40,7 @@ import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.AuthenticationException;
+import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
@@ -367,6 +368,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case CREATE_PARTITIONS:
                         handleCreatePartitions(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DESCRIBE_CLUSTER:
+                        handleDescribeCluster(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     default:
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
@@ -503,8 +507,17 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void completeCloseOnAuthenticationFailure();
 
-    protected abstract void
-    handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+    protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                               CompletableFuture<AbstractResponse> resultFuture) {
+        String err = String.format("Kafka API (%s) Not supported.",
+                kafkaHeaderAndRequest.getHeader().apiKey());
+        log.error(err);
+
+        AbstractResponse apiResponse = kafkaHeaderAndRequest.getRequest()
+                .getErrorResponse(new UnsupportedVersionException("API " + kafkaHeaderAndRequest.getHeader().apiKey()
+                        + " is currently not supported"));
+        resultFuture.complete(apiResponse);
+    }
 
     protected abstract void
     handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
@@ -595,6 +608,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleCreatePartitions(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeCluster(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
 
     public static class KafkaHeaderAndRequest {
 

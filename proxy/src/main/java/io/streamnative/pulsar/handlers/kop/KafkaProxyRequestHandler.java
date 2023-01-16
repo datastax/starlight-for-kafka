@@ -75,6 +75,7 @@ import org.apache.kafka.common.message.DeleteGroupsRequestData;
 import org.apache.kafka.common.message.DeleteRecordsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsResponseData;
+import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeGroupsRequestData;
 import org.apache.kafka.common.message.EndTxnRequestData;
@@ -114,6 +115,8 @@ import org.apache.kafka.common.requests.DeleteRecordsRequest;
 import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
 import org.apache.kafka.common.requests.DeleteTopicsResponse;
+import org.apache.kafka.common.requests.DescribeClusterRequest;
+import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
@@ -340,17 +343,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             }
             return KafkaResponseUtils.newApiVersions(versionList);
         }
-    }
-
-    protected void handleError(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                               CompletableFuture<AbstractResponse> resultFuture) {
-        String err = String.format("Kafka API (%s) Not supported by kop server.",
-                kafkaHeaderAndRequest.getHeader().apiKey());
-        log.error(err);
-
-        AbstractResponse apiResponse = kafkaHeaderAndRequest.getRequest()
-                .getErrorResponse(new UnsupportedOperationException(err));
-        resultFuture.complete(apiResponse);
     }
 
     protected void handleInactive(KafkaHeaderAndRequest kafkaHeaderAndRequest,
@@ -1110,6 +1102,26 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 DescribeConfigsRequestData.class,
                 (metadataRequest) -> "system",
                 null);
+    }
+
+    protected void handleDescribeCluster(KafkaHeaderAndRequest describeConfigs,
+                                         CompletableFuture<AbstractResponse> resultFuture) {
+
+        Node selfNode = newSelfNode();
+        checkArgument(describeConfigs.getRequest() instanceof DescribeClusterRequest);
+        DescribeClusterResponseData data = new DescribeClusterResponseData();
+
+        DescribeClusterResponse response = new DescribeClusterResponse(data);
+        data.setControllerId(selfNode.id());
+        data.setClusterId(kafkaConfig.getClusterName());
+        data.setErrorCode(Errors.NONE.code());
+        data.setErrorMessage(Errors.NONE.message());
+
+        data.brokers().add(new DescribeClusterResponseData.DescribeClusterBroker()
+                .setBrokerId(selfNode.id())
+                .setHost(selfNode.host())
+                .setPort(selfNode.port()));
+        resultFuture.complete(response);
     }
 
     protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
