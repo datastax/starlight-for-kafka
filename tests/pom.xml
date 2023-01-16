@@ -18,12 +18,12 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>io.streamnative.pulsar.handlers</groupId>
+    <groupId>com.datastax.oss</groupId>
     <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
     <version>2.10.0.9-SNAPSHOT</version>
   </parent>
 
-  <groupId>io.streamnative.pulsar.handlers</groupId>
+  <groupId>com.datastax.oss</groupId>
   <artifactId>pulsar-protocol-handler-kafka-tests</artifactId>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Tests</name>
   <description>Tests for Kafka on Pulsar</description>
@@ -38,12 +38,12 @@
   <!-- include the dependencies -->
   <dependencies>
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-client-api</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-client-factory</artifactId>
       <version>${project.version}</version>
     </dependency>
@@ -53,21 +53,21 @@
       <version>${kafka.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>pulsar-protocol-handler-kafka</artifactId>
       <version>${project.version}</version>
 
     </dependency>
 
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>pulsar-kafka-proxy</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
 
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>oauth-client</artifactId>
       <version>${project.version}</version>
       <scope>test</scope>
@@ -143,7 +143,7 @@
     </dependency>
 
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>test-listener</artifactId>
       <scope>test</scope>
     </dependency>

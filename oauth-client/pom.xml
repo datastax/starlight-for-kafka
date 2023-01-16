@@ -19,7 +19,7 @@
 
   <parent>
     <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-    <groupId>io.streamnative.pulsar.handlers</groupId>
+    <groupId>com.datastax.oss</groupId>
     <version>2.10.0.9-SNAPSHOT</version>
   </parent>
 
@@ -53,7 +53,7 @@
     </dependency>
 
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>test-listener</artifactId>
       <scope>test</scope>
     </dependency>

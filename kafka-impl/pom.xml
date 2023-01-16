@@ -18,12 +18,12 @@
   <modelVersion>4.0.0</modelVersion>
 
   <parent>
-    <groupId>io.streamnative.pulsar.handlers</groupId>
+    <groupId>com.datastax.oss</groupId>
     <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
     <version>2.10.0.9-SNAPSHOT</version>
   </parent>
 
-  <groupId>io.streamnative.pulsar.handlers</groupId>
+  <groupId>com.datastax.oss</groupId>
   <artifactId>pulsar-protocol-handler-kafka</artifactId>
   <name>StreamNative :: Pulsar Protocol Handler :: Kafka</name>
   <description>Kafka on Pulsar implemented using Pulsar Protocol Handler</description>
@@ -110,7 +110,7 @@
     </dependency>
 
     <dependency>
-      <groupId>io.streamnative.pulsar.handlers</groupId>
+      <groupId>com.datastax.oss</groupId>
       <artifactId>test-listener</artifactId>
       <scope>test</scope>
     </dependency>
