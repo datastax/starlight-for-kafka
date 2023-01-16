@@ -20,7 +20,7 @@ jobs:
         run: mvn -B package -DskipTests
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: "kafka-impl/**/*.nar,kafka-impl/**/*.asc,proxy/**/*.nar,proxy/**/*.asc"
+          artifacts: "kafka-impl/**/*.nar,kafka-impl/**/*.asc,proxy/**/*.nar,proxy/**/*.asc,oauth-client/**/oauth-client*.jar,oauth-client/**/oauth-client*.asc"
           token: ${{ secrets.GITHUB_TOKEN }}
           generateReleaseNotes: true
           prerelease: true
