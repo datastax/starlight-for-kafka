@@ -21,9 +21,9 @@ import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
-import io.streamnative.pulsar.handlers.kop.security.oauth.ServerConfig;
+import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
+import com.datastax.oss.kafka.oauth.OauthValidatorCallbackHandler;
+import com.datastax.oss.kafka.oauth.ServerConfig;
 import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;

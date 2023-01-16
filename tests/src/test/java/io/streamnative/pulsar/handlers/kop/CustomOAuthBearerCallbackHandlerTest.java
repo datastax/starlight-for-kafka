@@ -19,8 +19,8 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerToken;
-import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerValidatorCallback;
+import com.datastax.oss.kafka.oauth.KopOAuthBearerToken;
+import com.datastax.oss.kafka.oauth.KopOAuthBearerValidatorCallback;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
