@@ -63,4 +63,22 @@ public class DistributedClusterProxyTest extends DistributedClusterTest {
     public void testOneBrokerShutdown() throws Exception {
         super.testOneBrokerShutdown();
     }
+
+    @Test(timeOut = 240000)
+    @Override
+    public void testMultiBrokerProduceAndConsumeNonPartitionedTopic() throws Exception {
+        super.testMultiBrokerProduceAndConsumeNonPartitionedTopic();
+    }
+
+    @Test(timeOut = 240000)
+    @Override
+    public void testMultiBrokerProduceAndConsumeOnePartitionedTopic() throws Exception {
+        super.testMultiBrokerProduceAndConsumeOnePartitionedTopic();
+    }
+
+    @Test(timeOut = 180000)
+    @Override
+    public void testDescribeCluster() throws Exception {
+        super.testDescribeCluster();
+    }
 }

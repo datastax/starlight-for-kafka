@@ -855,6 +855,7 @@ public abstract class KopProtocolHandlerTestBase {
         restConnect = "http://localhost:" + getKafkaSchemaRegistryProxyPort();
 
         Properties config = new Properties();
+        config.put("clusterName", conf.getClusterName());
         config.put("zookeeperServers", conf.getMetadataStoreUrl());
         config.put("metadataStoreUrl", conf.getMetadataStoreUrl());
         config.put("configurationMetadataStoreUrl", conf.getConfigurationMetadataStoreUrl());
