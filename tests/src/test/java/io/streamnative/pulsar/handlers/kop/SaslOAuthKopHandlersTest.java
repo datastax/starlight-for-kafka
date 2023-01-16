@@ -20,10 +20,10 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
-import com.google.common.collect.Sets;
 import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
 import com.datastax.oss.kafka.oauth.OauthValidatorCallbackHandler;
 import com.datastax.oss.kafka.oauth.ServerConfig;
+import com.google.common.collect.Sets;
 import java.io.IOException;
 import java.net.URL;
 import java.time.Duration;
