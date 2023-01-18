@@ -33,6 +33,16 @@ public class DirectBufferOutputStream extends ByteBufferOutputStream {
     private final int initialCapacity;
     @Getter
     private final ByteBuf byteBuf;
+    private final byte[] singleByteWritesBuffer = new byte[64];
+    private final int maxPos = singleByteWritesBuffer.length - 1;
+    private int singleByteWritesBufferPos = -1;
+
+    private void flushSingleByteWritesBuffer() {
+        if (singleByteWritesBufferPos >= 0) {
+            byteBuf.writeBytes(singleByteWritesBuffer, 0, singleByteWritesBufferPos + 1);
+            singleByteWritesBufferPos = -1;
+        }
+    }
 
     public DirectBufferOutputStream(int initialCapacity) {
         super(EMPTY_BUFFER);
@@ -42,21 +52,29 @@ public class DirectBufferOutputStream extends ByteBufferOutputStream {
 
     @Override
     public void write(int b) {
-        byteBuf.writeByte(b);
+        // Kafka encoder calls this method very frequently
+        // writing single bytes to a Netty ByteBuf is overkilling.
+        singleByteWritesBuffer[++singleByteWritesBufferPos] = (byte) b;
+        if (singleByteWritesBufferPos == maxPos) {
+            flushSingleByteWritesBuffer();
+        }
     }
 
     @Override
     public void write(byte[] bytes, int off, int len) {
+        flushSingleByteWritesBuffer();
         byteBuf.writeBytes(bytes, off, len);
     }
 
     @Override
     public void write(ByteBuffer sourceBuffer) {
+        flushSingleByteWritesBuffer();
         byteBuf.writeBytes(sourceBuffer);
     }
 
     @Override
     public ByteBuffer buffer() {
+        flushSingleByteWritesBuffer();
         // When this method is called, the internal NIO ByteBuffer should be treated as a buffer that has only been
         // written. In this case, the position should be the same with the limit because the caller side will usually
         // call `ByteBuffer#flip()` to reset position and limit.
@@ -67,11 +85,13 @@ public class DirectBufferOutputStream extends ByteBufferOutputStream {
 
     @Override
     public int position() {
+        flushSingleByteWritesBuffer();
         return byteBuf.readerIndex();
     }
 
     @Override
     public void position(int position) {
+        flushSingleByteWritesBuffer();
         if (position > byteBuf.capacity()) {
             byteBuf.capacity(position);
         }
@@ -81,5 +101,25 @@ public class DirectBufferOutputStream extends ByteBufferOutputStream {
     @Override
     public int initialCapacity() {
         return initialCapacity;
+    }
+
+    @Override
+    public void flush() {
+        flushSingleByteWritesBuffer();
+    }
+
+    @Override
+    public int remaining() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int limit() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void close() {
+        flush();
     }
 }
