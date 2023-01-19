@@ -342,6 +342,8 @@ public class TransactionCoordinator {
                             responseCallback.accept(initTransactionError(errors));
                         } else {
                             // reply to client and let it backoff and retry
+                            log.info("Abort current transaction for producer {}, returning CONCURRENT_TRANSACTIONS",
+                                    transactionalId);
                             responseCallback.accept(initTransactionError(Errors.CONCURRENT_TRANSACTIONS));
                         }
                     });
@@ -407,6 +409,8 @@ public class TransactionCoordinator {
         CompletableFuture<Either<Errors, EpochAndTxnTransitMetadata>> resultFuture = new CompletableFuture<>();
         if (txnMetadata.pendingTransitionInProgress()) {
             // return a retriable exception to let the client backoff and retry
+            log.info("initProducer {}, returning CONCURRENT_TRANSACTIONS because there is a pending transition: {}",
+                    transactionalId, txnMetadata);
             resultFuture.complete(Either.left(Errors.CONCURRENT_TRANSACTIONS));
             return resultFuture;
         }
@@ -421,6 +425,8 @@ public class TransactionCoordinator {
                 case PREPARE_ABORT:
                 case PREPARE_COMMIT:
                     // reply to client and let it backoff and retry
+                    log.info("initProducer {}, returning CONCURRENT_TRANSACTIONS because state is {}: {}",
+                            transactionalId, txnMetadata.getState(), txnMetadata);
                     resultFuture.complete(Either.left(Errors.CONCURRENT_TRANSACTIONS));
                     break;
                 case COMPLETE_ABORT:
@@ -782,6 +788,9 @@ public class TransactionCoordinator {
                 } else if (txnMetadata.getProducerEpoch() != producerEpoch) {
                     return Either.left(producerEpochFenceErrors());
                 } else if (txnMetadata.getPendingState().isPresent()) {
+                    log.info("completeEndTxn {}, returning CONCURRENT_TRANSACTIONS because"
+                                    + " there is a pending transition: {}",
+                            transactionalId, txnMetadata);
                     return Either.left(Errors.CONCURRENT_TRANSACTIONS);
                 } else {
                     switch (txnMetadata.getState()) {

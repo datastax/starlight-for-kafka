@@ -40,6 +40,7 @@ import org.apache.kafka.common.record.RecordBatch;
 @Builder
 @Data
 @AllArgsConstructor
+@ToString
 public class TransactionMetadata {
 
     private static final int DefaultTxnTimeOutMs = 1000 * 60;
