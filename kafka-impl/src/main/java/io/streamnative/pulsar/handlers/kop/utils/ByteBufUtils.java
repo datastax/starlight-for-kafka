@@ -221,6 +221,10 @@ public class ByteBufUtils {
                 if (valueSchemaId >= 0) {
                     value = prependSchemaId(value, valueSchemaId);
                 }
+
+                keyByteBuffer = ensureOnHeap(keyByteBuffer);
+                value = ensureOnHeap(value);
+
                 if (magic >= RecordBatch.MAGIC_VALUE_V2) {
                     final Header[] headers = getHeadersFromMetadata(singleMessageMetadata.getPropertiesList());
                     builder.appendWithOffset(baseOffset + i,
@@ -271,6 +275,17 @@ public class ByteBufUtils {
                 directBufferOutputStream.getByteBuf(),
                 conversionCount,
                 MathUtils.elapsedNanos(startConversionNanos));
+    }
+
+    private static ByteBuffer ensureOnHeap(ByteBuffer value) {
+        if (value != null && !value.hasArray()) {
+            byte[] arr = new byte[value.remaining()];
+            value.get(arr);
+            value = ByteBuffer.wrap(arr);
+            return value;
+        } else {
+            return value;
+        }
     }
 
     @NonNull
