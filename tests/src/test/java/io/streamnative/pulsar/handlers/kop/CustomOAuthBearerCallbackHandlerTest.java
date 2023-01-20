@@ -17,8 +17,6 @@ import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
-import com.datastax.oss.kafka.oauth.KopOAuthBearerToken;
-import com.datastax.oss.kafka.oauth.KopOAuthBearerValidatorCallback;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
 import java.util.HashSet;
@@ -32,6 +30,9 @@ import javax.crypto.SecretKey;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
+
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerToken;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerValidatorCallback;
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;

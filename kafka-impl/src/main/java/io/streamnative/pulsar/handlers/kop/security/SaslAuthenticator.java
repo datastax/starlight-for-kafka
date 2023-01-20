@@ -16,14 +16,14 @@ package io.streamnative.pulsar.handlers.kop.security;
 import static com.google.common.base.Preconditions.checkArgument;
 import static org.apache.kafka.common.protocol.ApiKeys.API_VERSIONS;
 
-import com.datastax.oss.kafka.oauth.KopOAuthBearerSaslServer;
-import com.datastax.oss.kafka.oauth.KopOAuthBearerUnsecuredValidatorCallbackHandler;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.concurrent.Future;
 import io.netty.util.concurrent.GenericFutureListener;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerSaslServer;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerUnsecuredValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
 import java.util.Collections;
