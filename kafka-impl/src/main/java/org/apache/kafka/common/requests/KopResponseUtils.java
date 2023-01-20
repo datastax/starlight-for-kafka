@@ -64,7 +64,7 @@ public class KopResponseUtils {
 
         int headerSize = header.size(cache, headerVersion);
         int messageSize = apiMessage.size(cache, apiVersion);
-        ByteBuffer result = ByteBuffer.allocateDirect(headerSize + messageSize);
+        ByteBuffer result = ByteBuffer.allocate(headerSize + messageSize);
         ByteBufferAccessor writable = new ByteBufferAccessor(result);
         header.write(writable, cache, headerVersion);
         apiMessage.write(writable, cache, apiVersion);
