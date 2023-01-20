@@ -15,6 +15,8 @@ package com.datastax.oss.kafka.oauth;
 
 import java.util.HashMap;
 import java.util.Map;
+
+import io.streamnative.pulsar.handlers.kop.security.auth.ServerConfig;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 

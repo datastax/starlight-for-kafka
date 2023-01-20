@@ -22,7 +22,7 @@ import static org.testng.Assert.assertTrue;
 
 import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
 import com.datastax.oss.kafka.oauth.OauthValidatorCallbackHandler;
-import com.datastax.oss.kafka.oauth.ServerConfig;
+import io.streamnative.pulsar.handlers.kop.security.auth.ServerConfig;
 import com.google.common.collect.Sets;
 import java.io.IOException;
 import java.net.URL;
