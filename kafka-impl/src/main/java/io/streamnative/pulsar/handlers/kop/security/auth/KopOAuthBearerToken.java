@@ -11,4 +11,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.kafka.oauth;
+package io.streamnative.pulsar.handlers.kop.security.auth;
+
+import org.apache.kafka.common.annotation.InterfaceStability;
+import org.apache.kafka.common.security.oauthbearer.OAuthBearerToken;
+import org.apache.pulsar.broker.authentication.AuthenticationDataSource;
+
+/**
+ * Support pass the auth data to oauth server.
+ */
+@InterfaceStability.Evolving
+public interface KopOAuthBearerToken extends OAuthBearerToken {
+
+    /**
+     * Pass the auth data to oauth server.
+     */
+    AuthenticationDataSource authDataSource();
+}
+

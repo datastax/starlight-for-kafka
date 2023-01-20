@@ -17,10 +17,10 @@ import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
-import com.datastax.oss.kafka.oauth.KopOAuthBearerToken;
-import com.datastax.oss.kafka.oauth.KopOAuthBearerValidatorCallback;
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerToken;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerValidatorCallback;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;

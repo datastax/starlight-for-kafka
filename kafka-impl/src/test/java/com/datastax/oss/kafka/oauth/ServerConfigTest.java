@@ -13,6 +13,7 @@
  */
 package com.datastax.oss.kafka.oauth;
 
+import io.streamnative.pulsar.handlers.kop.security.auth.ServerConfig;
 import java.util.HashMap;
 import java.util.Map;
 import org.testng.Assert;

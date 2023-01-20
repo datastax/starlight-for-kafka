@@ -14,8 +14,8 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
-import com.datastax.oss.kafka.oauth.OauthValidatorCallbackHandler;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.security.auth.OauthValidatorCallbackHandler;
 import java.net.URL;
 import java.util.Properties;
 import lombok.extern.slf4j.Slf4j;

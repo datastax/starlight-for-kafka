@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.kafka.oauth;
+package io.streamnative.pulsar.handlers.kop.security.auth;
 
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;
