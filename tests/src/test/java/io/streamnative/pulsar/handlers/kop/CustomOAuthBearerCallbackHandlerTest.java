@@ -19,6 +19,8 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import io.jsonwebtoken.SignatureAlgorithm;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerToken;
+import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerValidatorCallback;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -30,9 +32,6 @@ import javax.crypto.SecretKey;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
-
-import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerToken;
-import io.streamnative.pulsar.handlers.kop.security.auth.KopOAuthBearerValidatorCallback;
 import lombok.Cleanup;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;

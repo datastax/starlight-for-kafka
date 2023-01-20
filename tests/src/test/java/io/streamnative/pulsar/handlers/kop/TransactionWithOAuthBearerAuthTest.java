@@ -15,10 +15,9 @@ package io.streamnative.pulsar.handlers.kop;
 
 import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.security.auth.OauthValidatorCallbackHandler;
 import java.net.URL;
 import java.util.Properties;
-
-import io.streamnative.pulsar.handlers.kop.security.auth.OauthValidatorCallbackHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.authentication.AuthenticationProviderToken;
 import org.apache.pulsar.client.admin.PulsarAdmin;
