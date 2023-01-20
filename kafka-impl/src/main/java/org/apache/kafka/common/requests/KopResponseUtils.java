@@ -64,7 +64,6 @@ public class KopResponseUtils {
 
         int headerSize = header.size(cache, headerVersion);
         int messageSize = apiMessage.size(cache, apiVersion);
-        //ByteBuf result = PulsarByteBufAllocator.DEFAULT.directBuffer(headerSize + messageSize);
         ByteBuffer result = ByteBuffer.allocateDirect(headerSize + messageSize);
         ByteBufferAccessor writable = new ByteBufferAccessor(result);
         header.write(writable, cache, headerVersion);
