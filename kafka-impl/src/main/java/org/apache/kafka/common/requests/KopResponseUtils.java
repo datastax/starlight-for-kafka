@@ -14,17 +14,12 @@
 package org.apache.kafka.common.requests;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufOutputStream;
-import java.io.DataOutputStream;
-import java.nio.ByteBuffer;
-
 import io.netty.buffer.Unpooled;
+import java.nio.ByteBuffer;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.protocol.Message;
 import org.apache.kafka.common.protocol.ObjectSerializationCache;
-import org.apache.kafka.common.protocol.Writable;
-import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 
 /**
  * Provide util classes to access protected fields in kafka structures.
