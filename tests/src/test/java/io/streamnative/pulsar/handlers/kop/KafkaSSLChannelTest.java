@@ -56,6 +56,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     private String kopClientTruststoreLocation;
     private String kopClientTruststorePassword;
     private final boolean withCertHost;
+    private final boolean useBrokerClientTrustore;
 
     static {
         final HostnameVerifier defaultHostnameVerifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier();
@@ -72,9 +73,10 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         javax.net.ssl.HttpsURLConnection.setDefaultHostnameVerifier(localhostAcceptedHostnameVerifier);
     }
 
-    public KafkaSSLChannelTest(final String entryFormat, boolean withCertHost) {
+    public KafkaSSLChannelTest(final String entryFormat, boolean withCertHost, boolean useBrokerClientTrustore) {
         super(entryFormat);
         this.withCertHost = withCertHost;
+        this.useBrokerClientTrustore = useBrokerClientTrustore;
         setSslConfigurations(withCertHost);
     }
 
@@ -102,10 +104,12 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     @Factory
     public static Object[] instances() {
         return new Object[] {
-                new KafkaSSLChannelTest("pulsar", false),
-                new KafkaSSLChannelTest("pulsar", true),
-                new KafkaSSLChannelTest("kafka", false),
-                new KafkaSSLChannelTest("kafka", true)
+                new KafkaSSLChannelTest("pulsar", false, false),
+                new KafkaSSLChannelTest("pulsar", true, false),
+                new KafkaSSLChannelTest("kafka", false, false),
+                new KafkaSSLChannelTest("kafka", true, false),
+                // test rokerClientTlsTrustStore
+                new KafkaSSLChannelTest("kafka", true, true)
         };
     }
 
@@ -115,8 +119,13 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         conf.setKopSslKeystoreType("JKS");
         conf.setKopSslKeystoreLocation(kopSslKeystoreLocation);
         conf.setKopSslKeystorePassword(kopSslKeystorePassword);
-        conf.setKopSslTruststoreLocation(kopSslTruststoreLocation);
-        conf.setKopSslTruststorePassword(kopSslTruststorePassword);
+        if (useBrokerClientTrustore) {
+            conf.setBrokerClientTlsTrustStore(kopSslTruststoreLocation);
+            conf.setBrokerClientTlsTrustStorePassword(kopSslTruststorePassword);
+        } else {
+            conf.setKopSslTruststoreLocation(kopSslTruststoreLocation);
+            conf.setKopSslTruststorePassword(kopSslTruststorePassword);
+        }
     }
 
     @BeforeMethod
