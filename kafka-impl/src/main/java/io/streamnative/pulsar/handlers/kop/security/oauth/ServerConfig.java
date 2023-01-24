@@ -14,8 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.util.Map;
-
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import lombok.Getter;
 
 /**
