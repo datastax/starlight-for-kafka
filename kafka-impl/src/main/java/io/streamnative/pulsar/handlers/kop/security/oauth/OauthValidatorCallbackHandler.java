@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security.auth;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import java.io.IOException;
@@ -24,6 +24,7 @@ import javax.naming.AuthenticationException;
 import javax.security.auth.callback.Callback;
 import javax.security.auth.callback.UnsupportedCallbackException;
 import javax.security.auth.login.AppConfigurationEntry;
+
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.security.auth.AuthenticateCallbackHandler;
 import org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule;

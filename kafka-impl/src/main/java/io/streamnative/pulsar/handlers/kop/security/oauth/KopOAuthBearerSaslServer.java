@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security.auth;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.AUTH_DATA_SOURCE_PROP;
 import static io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator.USER_NAME_PROP;

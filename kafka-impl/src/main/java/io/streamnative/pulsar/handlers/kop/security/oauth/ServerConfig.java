@@ -11,9 +11,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.streamnative.pulsar.handlers.kop.security.auth;
+package io.streamnative.pulsar.handlers.kop.security.oauth;
 
 import java.util.Map;
+
+import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import lombok.Getter;
 
 /**
