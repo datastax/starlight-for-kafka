@@ -122,6 +122,8 @@ public abstract class KopProtocolHandlerTestBase {
     @Getter
     protected int kafkaProxyPort = PortManager.nextFreePort();
     @Getter
+    protected int kafkaProxyPortTls = PortManager.nextFreePort();
+    @Getter
     protected int kafkaBrokerPortTls = PortManager.nextFreePort();
     @Getter
     protected int kafkaSchemaRegistryPort = PortManager.nextFreePort();
@@ -886,7 +888,7 @@ public abstract class KopProtocolHandlerTestBase {
         ProxyConfiguration proxyConfiguration = ConfigurationUtils.create(config, ProxyConfiguration.class);
 
         proxyConfiguration.getProperties().put("kafkaListeners",
-                PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + ",");
+                PLAINTEXT_PREFIX + "localhost:" + kafkaProxyPort + "," + SSL_PREFIX + "localhost:" + kafkaProxyPortTls);
         proxyConfiguration.setBrokerWebServiceURL("http://localhost:" + getBrokerWebservicePort());
 
         // Map Pulsar port to KOP port
