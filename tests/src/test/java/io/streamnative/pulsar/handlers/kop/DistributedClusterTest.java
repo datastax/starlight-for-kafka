@@ -38,6 +38,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
 import org.slf4j.Logger;
@@ -112,13 +113,13 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         primaryKafkaBrokerPort = PortManager.nextFreePort();
         secondaryKafkaBrokerPort = PortManager.nextFreePort();
         conf1 = resetConfig(
-            primaryBrokerPort,
-            primaryBrokerWebservicePort,
-            primaryKafkaBrokerPort);
+                primaryBrokerPort,
+                primaryBrokerWebservicePort,
+                primaryKafkaBrokerPort);
         conf2 = resetConfig(
-            secondaryBrokerPort,
-            secondaryBrokerWebservicePort,
-            secondaryKafkaBrokerPort);
+                secondaryBrokerPort,
+                secondaryBrokerWebservicePort,
+                secondaryKafkaBrokerPort);
         conf = conf1;
 
         brokerPort = primaryBrokerPort;
@@ -126,9 +127,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaBrokerPort = primaryKafkaBrokerPort;
 
         log.info("Ports --  broker1: {}, brokerWeb1:{}, kafka1: {}",
-            primaryBrokerPort, primaryBrokerWebservicePort, primaryKafkaBrokerPort);
+                primaryBrokerPort, primaryBrokerWebservicePort, primaryKafkaBrokerPort);
         log.info("Ports --  broker2: {}, brokerWeb2:{}, kafka2: {}\n",
-            secondaryBrokerPort, secondaryBrokerWebservicePort, secondaryKafkaBrokerPort);
+                secondaryBrokerPort, secondaryBrokerWebservicePort, secondaryKafkaBrokerPort);
     }
 
     @Override
@@ -153,13 +154,13 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             admin.namespaces().createNamespace("public/default");
             admin.namespaces().setNamespaceReplicationClusters("public/default", Sets.newHashSet("test"));
             admin.namespaces().setRetention("public/default",
-                new RetentionPolicies(60, 1000));
+                    new RetentionPolicies(60, 1000));
         }
         if (!admin.namespaces().getNamespaces("public").contains("public/__kafka")) {
             admin.namespaces().createNamespace("public/__kafka");
             admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
             admin.namespaces().setRetention("public/__kafka",
-                new RetentionPolicies(-1, -1));
+                    new RetentionPolicies(-1, -1));
         }
 
         List<String> brokers =  admin.brokers().getActiveBrokers(configClusterName);
@@ -241,7 +242,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         String pulsarTopicName = "persistent://public/default/" + kafkaTopicName;
 
         String offsetNs = ((KafkaServiceConfiguration) conf).getKafkaMetadataTenant() + "/"
-            + ((KafkaServiceConfiguration) conf).getKafkaMetadataNamespace();
+                + ((KafkaServiceConfiguration) conf).getKafkaMetadataNamespace();
         String offsetsTopicName = "persistent://" + offsetNs + "/" + GROUP_METADATA_TOPIC_NAME;
 
         // 0.  Preparing:
@@ -399,7 +400,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+                .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getClientPort(), "consumer-group-1");
         KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getClientPort(), "consumer-group-2");
         log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
@@ -520,7 +521,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         pulsarService1.getAdminClient().topics().createPartitionedTopic(pulsarTopicName, 1);
         try {
             // 1. check lookup result.
-            String result = admin.lookups().lookupTopic(pulsarTopicName);
+            String result = admin.lookups()
+                    .lookupTopic(TopicName.get("persistent://public/default/" + kafkaTopicName)
+                    .getPartition(0).toString());
             log.info("Server address:{}", result);
             int kafkaPort;
             if (result.endsWith(String.valueOf(primaryBrokerPort))) {
@@ -598,7 +601,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);
 
         List<TopicPartition> topicPartitions = IntStream.range(0, partitionNumber)
-            .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
+                .mapToObj(i -> new TopicPartition(kafkaTopicName, i)).collect(Collectors.toList());
         KConsumer kConsumer1 = new KConsumer(kafkaTopicName, getClientPort(), "consumer-group-1");
         KConsumer kConsumer2 = new KConsumer(kafkaTopicName, getClientPort(), "consumer-group-2");
         log.info("Partition size: {}, will consume and commitOffset for 2 consumers",
