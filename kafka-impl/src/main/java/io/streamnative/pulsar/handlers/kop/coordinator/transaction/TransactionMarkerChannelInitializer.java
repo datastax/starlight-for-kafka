@@ -24,8 +24,8 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
 import java.util.concurrent.CompletableFuture;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
  * Transaction marker channel initializer.
