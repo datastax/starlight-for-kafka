@@ -147,8 +147,8 @@ public class PulsarContainer implements AutoCloseable {
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerServicePortTls", "6651");
         pulsarContainer.withEnv("PULSAR_PREFIX_webServicePortTls", "8443");
 
-        pulsarContainer.withEnv("PULSAR_PREFIX_tlsAllowInsecureConnection", "true");
-        pulsarContainer.withEnv("PULSAR_PREFIX_tlsHostnameVerificationEnabled", "false");
+        pulsarContainer.withEnv("PULSAR_PREFIX_tlsAllowInsecureConnection", "false");
+        pulsarContainer.withEnv("PULSAR_PREFIX_tlsHostnameVerificationEnabled", "true");
 
         pulsarContainer.withEnv("PULSAR_PREFIX_kopTlsEnabledWithBroker", "true");
         pulsarContainer.withEnv("PULSAR_PREFIX_tlsEnabledWithBroker", "true");
@@ -248,8 +248,8 @@ public class PulsarContainer implements AutoCloseable {
             proxyContainer.withEnv("PULSAR_PREFIX_tlsEnabledWithBroker", "true");
             proxyContainer.withEnv("PULSAR_PREFIX_kopSslTruststoreLocation", "/pulsar/conf/ca.jks");
             proxyContainer.withEnv("PULSAR_PREFIX_kopSslTruststorePassword", "pulsar");
-            proxyContainer.withEnv("PULSAR_PREFIX_tlsAllowInsecureConnection", "true");
-            proxyContainer.withEnv("PULSAR_PREFIX_tlsHostnameVerificationEnabled", "false");
+            proxyContainer.withEnv("PULSAR_PREFIX_tlsAllowInsecureConnection", "false");
+            proxyContainer.withEnv("PULSAR_PREFIX_tlsHostnameVerificationEnabled", "true");
         }
 
         proxyContainer.start();
