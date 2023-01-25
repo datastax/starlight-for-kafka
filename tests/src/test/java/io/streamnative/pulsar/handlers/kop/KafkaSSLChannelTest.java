@@ -40,7 +40,6 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.testng.Assert;
 import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeMethod;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Factory;
 import org.testng.annotations.Test;
 
@@ -114,16 +113,11 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @DataProvider(name = "ports")
-    Object[] ports() {
-        return new Object[][]{
-                {"brokerTls", getKafkaBrokerPortTls()},
-                {"proxyTls", getKafkaProxyPortTls()},
-        };
-    }
-
-
     protected void sslSetUpForBroker() throws Exception {
+
+        // require TLS verification
+        conf.setTlsHostnameVerificationEnabled(true);
+
         conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setKopTlsEnabledWithBroker(true);
         conf.setKopSslKeystoreType("JKS");
@@ -143,21 +137,18 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     protected void setup() throws Exception {
         sslSetUpForBroker();
         super.internalSetup();
-        super.startProxy();
         log.info("success internal setup");
     }
 
     @AfterMethod
     @Override
     protected void cleanup() throws Exception {
-        stopProxy();
         super.internalCleanup();
     }
 
     // verify producer with SSL configured could produce successfully.
-    @Test(dataProvider = "ports")
-    public void testKafkaProduceSSL(String name, int port) throws Exception {
-        log.info("Connecting to {} at localhost:{}", name, port);
+    @Test
+    public void testKafkaProduceSSL() throws Exception {
         int partitionNumber = 1;
         boolean isBatch = false;
         String topicName = "kopKafkaProduceKafkaConsumeSSL" + partitionNumber;
@@ -174,7 +165,7 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         String messageStrPrefix = "Message_Kop_KafkaProduceKafkaConsume_" + partitionNumber + "_";
 
         @Cleanup
-        SslProducer kProducer = new SslProducer(topicName, port,
+        SslProducer kProducer = new SslProducer(topicName, getKafkaBrokerPortTls(),
                 kopClientTruststoreLocation, kopClientTruststorePassword);
 
         for (int i = 0; i < totalMsgs; i++) {
@@ -235,13 +226,12 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(dataProvider = "ports")
-    public void basicProduceAndConsumeWithTxTest(String name, int port) throws Exception {
-        log.info("Connecting to {} at localhost:{}", name, port);
+    @Test
+    public void basicProduceAndConsumeWithTxTest() throws Exception {
         final String isolation = "read_committed";
         String topicName = "test-tls-tx-" + this.withCertHost + "_" + entryFormat;
         String transactionalId = "test-id-" + this.withCertHost + "_" + entryFormat;
-        String kafkaServer = "localhost:" + port;
+        String kafkaServer = "localhost:" + getKafkaBrokerPortTls();
 
         Properties producerProps = new Properties();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaServer);
