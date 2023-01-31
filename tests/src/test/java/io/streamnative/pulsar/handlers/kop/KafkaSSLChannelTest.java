@@ -85,8 +85,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
      * @param withCertHost the keystore with certHost or not.
      */
     private void setSslConfigurations(boolean withCertHost) {
-        String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "2" : "") + "/";
-        if (!withCertHost) {
+        String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "" : "2") + "/";
+        if (withCertHost) {
             this.kopSslKeystoreLocation = path + "broker.keystore.jks";
             this.kopSslKeystorePassword = "broker";
             this.kopSslTruststoreLocation = path + "broker.truststore.jks";
@@ -115,8 +115,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
 
     protected void sslSetUpForBroker() throws Exception {
 
-        // require TLS verification
-        conf.setTlsHostnameVerificationEnabled(true);
+        // require TLS verification when hostname is on certificate
+        conf.setTlsHostnameVerificationEnabled(withCertHost);
 
         conf.setKafkaTransactionCoordinatorEnabled(true);
         conf.setKopTlsEnabledWithBroker(true);
