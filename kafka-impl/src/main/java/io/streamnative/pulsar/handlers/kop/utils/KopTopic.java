@@ -20,6 +20,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import java.util.function.Function;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -29,6 +30,7 @@ import org.apache.pulsar.common.naming.TopicName;
  *   1. getOriginalName() when read a Kafka request from client or write a Kafka response to client.
  *   2. getFullName() when access Pulsar resources.
  */
+@Slf4j
 public class KopTopic {
 
     private static final String persistentDomain = "persistent://";
@@ -60,6 +62,13 @@ public class KopTopic {
     }
 
     private String expandToFullName(String topic, String namespacePrefix) {
+
+        if (topic.startsWith("venice_")) {
+            String original = topic;
+            topic = topic.substring("venice_".length()).replace("__", "/");
+            log.info("Converted {} to {}", original, topic);
+        }
+
         if (topic.startsWith(persistentDomain)) {
             if (topic.substring(persistentDomain.length()).split("/").length != 3) {
                 throw new KoPTopicIllegalArgumentException("Invalid topic name '" + topic + "', it should be "
