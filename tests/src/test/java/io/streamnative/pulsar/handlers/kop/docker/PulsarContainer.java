@@ -140,7 +140,7 @@ public class PulsarContainer implements AutoCloseable {
 
         // for KOP broker to broker communications via TLS
         pulsarContainer.withEnv("PULSAR_PREFIX_kopSslTruststoreLocation", "/pulsar/conf/ca.jks");
-        pulsarContainer.withEnv("PULSAR_PREFIX_kopSslTruststorePassword", "");
+        pulsarContainer.withEnv("PULSAR_PREFIX_kopSslTruststorePassword", "pulsar");
 
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerServiceURLTLS", "pulsar+ssl://pulsar:6651");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURLTLS", "https://pulsar:8443");
@@ -152,6 +152,9 @@ public class PulsarContainer implements AutoCloseable {
 
         pulsarContainer.withEnv("PULSAR_PREFIX_kopTlsEnabledWithBroker", "true");
         pulsarContainer.withEnv("PULSAR_PREFIX_tlsEnabledWithBroker", "true");
+        pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientTlsEnabledWithKeyStore", "true");
+        pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientTlsTrustStore", "/pulsar/conf/ca.jks");
+        pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientTlsTrustStorePassword", "pulsar");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerServiceURLTLS", "pulsar+ssl://pulsar:6651");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURLTLS", "https://pulsar:8443");
     }
@@ -246,6 +249,9 @@ public class PulsarContainer implements AutoCloseable {
             // Proxy to broker communication
             proxyContainer.withEnv("PULSAR_PREFIX_kopTlsEnabledWithBroker", "true");
             proxyContainer.withEnv("PULSAR_PREFIX_tlsEnabledWithBroker", "true");
+            proxyContainer.withEnv("PULSAR_PREFIX_brokerClientTlsEnabledWithKeyStore", "true");
+            proxyContainer.withEnv("PULSAR_PREFIX_brokerClientTlsTrustStore", "/pulsar/conf/ca.jks");
+            proxyContainer.withEnv("PULSAR_PREFIX_brokerClientTlsTrustStorePassword", "pulsar");
             proxyContainer.withEnv("PULSAR_PREFIX_kopSslTruststoreLocation", "/pulsar/conf/ca.jks");
             proxyContainer.withEnv("PULSAR_PREFIX_kopSslTruststorePassword", "pulsar");
             proxyContainer.withEnv("PULSAR_PREFIX_tlsAllowInsecureConnection", "false");
