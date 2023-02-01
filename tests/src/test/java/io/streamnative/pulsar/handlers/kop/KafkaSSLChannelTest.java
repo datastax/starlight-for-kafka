@@ -202,7 +202,8 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         private final KafkaProducer<Integer, String> producer;
         private final String topic;
 
-        public SslProducer(String topic, int port, boolean withCertHost, String truststoreLocation, String truststorePassword) {
+        public SslProducer(String topic, int port, boolean withCertHost, String truststoreLocation,
+                           String truststorePassword) {
             Properties props = new Properties();
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost" + ":" + port);
             props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoKafkaOnPulsarProducerSSL");
