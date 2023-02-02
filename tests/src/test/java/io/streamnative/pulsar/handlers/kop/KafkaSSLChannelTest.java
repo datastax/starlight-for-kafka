@@ -88,11 +88,11 @@ public class KafkaSSLChannelTest extends KopProtocolHandlerTestBase {
         String path = "./src/test/resources/ssl/certificate" + (withCertHost ? "" : "2") + "/";
         if (withCertHost) {
             this.kopSslKeystoreLocation = path + "broker.keystore.jks";
-            this.kopSslKeystorePassword = "pulsar";
+            this.kopSslKeystorePassword = "broker";
             this.kopSslTruststoreLocation = path + "broker.truststore.jks";
-            this.kopSslTruststorePassword = "pulsar";
+            this.kopSslTruststorePassword = "broker";
             this.kopClientTruststoreLocation = path + "broker.truststore.jks";
-            this.kopClientTruststorePassword = "pulsar";
+            this.kopClientTruststorePassword = "broker";
         } else {
             this.kopSslKeystoreLocation = path + "server.keystore.jks";
             this.kopSslKeystorePassword = "server";
