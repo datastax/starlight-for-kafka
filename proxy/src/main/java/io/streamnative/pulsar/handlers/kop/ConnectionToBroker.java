@@ -117,7 +117,7 @@ class ConnectionToBroker {
             public void initChannel(SocketChannel ch) throws Exception {
                 if (enableTls) {
                     ch.pipeline().addLast(TLS_HANDLER,
-                            new SslHandler(SSLUtils.createClientSslEngine(sslContextFactory)));
+                            new SslHandler(SSLUtils.createClientSslEngine(sslContextFactory, brokerHost, brokerPort)));
                 }
                 ch.pipeline().addLast(new LengthFieldPrepender(4));
                 ch.pipeline().addLast("frameDecoder",

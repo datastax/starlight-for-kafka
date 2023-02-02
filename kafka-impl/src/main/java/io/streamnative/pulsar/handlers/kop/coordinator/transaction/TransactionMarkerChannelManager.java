@@ -78,6 +78,8 @@ public class TransactionMarkerChannelManager {
 
     private final Bootstrap bootstrap;
 
+    private final TransactionMarkerChannelInitializer transactionMarkerChannelInitializer;
+
     private final Map<InetSocketAddress, CompletableFuture<TransactionMarkerChannelHandler>> handlerMap =
             new ConcurrentHashMap<>();
 
@@ -183,7 +185,9 @@ public class TransactionMarkerChannelManager {
         bootstrap = new Bootstrap();
         bootstrap.group(eventLoopGroup);
         bootstrap.channel(EventLoopUtil.getClientSocketChannelClass(eventLoopGroup));
-        bootstrap.handler(new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this));
+        transactionMarkerChannelInitializer =
+                new TransactionMarkerChannelInitializer(kafkaConfig, enableTls, this);
+        bootstrap.handler(transactionMarkerChannelInitializer);
     }
 
     public CompletableFuture<TransactionMarkerChannelHandler> getChannel(InetSocketAddress socketAddress) {
@@ -193,7 +197,10 @@ public class TransactionMarkerChannelManager {
         ensureDrainQueuedTransactionMarkersActivity();
         return handlerMap.computeIfAbsent(socketAddress, address -> {
             CompletableFuture<TransactionMarkerChannelHandler> handlerFuture = new CompletableFuture<>();
-            ChannelFutures.toCompletableFuture(bootstrap.connect(socketAddress))
+            ChannelFutures.toCompletableFuture(bootstrap.register())
+                    .thenCompose(ch -> transactionMarkerChannelInitializer
+                            .initTls(ch, socketAddress.getHostString(), socketAddress.getPort()))
+                    .thenCompose(ch -> ChannelFutures.toCompletableFuture(ch.connect(socketAddress)))
                     .thenAccept(channel -> {
                         handlerFuture.complete(
                                 (TransactionMarkerChannelHandler) channel.pipeline().get("txnHandler"));

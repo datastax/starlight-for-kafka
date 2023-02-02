@@ -159,9 +159,6 @@ public class KafkaSSLChannelWithClientAuthTest extends KopProtocolHandlerTestBas
             props.put("ssl.keystore.location", "./src/test/resources/ssl/certificate/client.keystore.jks");
             props.put("ssl.keystore.password", "client");
 
-            // default is https, here need to set empty.
-            props.put("ssl.endpoint.identification.algorithm", "");
-
             producer = new KafkaProducer<>(props);
             this.topic = topic;
         }
