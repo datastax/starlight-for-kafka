@@ -63,8 +63,6 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
 
     @DataProvider(name = "batchSizeList")
     public static Object[][] batchSizeList() {
-        // For the messageStrPrefix in testKafkaProduceMessageOrder(), 100 messages will be split to 50, 34, 25, 20
-        // batches associated with following batch.size config.
         return new Object[][] { { 200 }, { 250 }, { 300 }, { 350 } };
     }
 
@@ -119,16 +117,14 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
-            // TODO: set a non zero value in order to create larger batches
-            props.put(ProducerConfig.LINGER_MS_CONFIG, 0);
+            props.put(ProducerConfig.LINGER_MS_CONFIG, 100); // give some time to build bigger batches
             props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
 
             // 1. produce message with Kafka producer.
             @Cleanup
             KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
-            // TODO: set a value larger than batchSide
-            int totalMsgs = 100;
+            int totalMsgs = batchSize * 2 + batchSize / 2;
             String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
 
             List<CompletableFuture<RecordMetadata>> handles = new ArrayList<>();
@@ -140,7 +136,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
                     if (e != null) {
                         result.completeExceptionally(e);
                     } else {
-                        log.info("Success write message {} to offset {}", index, recordMetadata.offset());
+                        log.info("Success written message {} to offset {}", index, recordMetadata.offset());
                         result.complete(recordMetadata);
                     }
                 });
@@ -184,7 +180,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
                 assertNull(msg);
                 // Check number of batches is in range (1, totalMsgs) to avoid each batch has only one message or all
                 // messages are batched into a single batch.
-                log.info("Successfully written {} batches of {} messages to kafka, maxBatchSize is {}",
+                log.info("Successfully written {} batches, total {} messages to kafka, maxBatchSize is {}",
                         numBatches, totalMsgs, maxBatchSize);
                 assertTrue(numBatches > 1 && numBatches < totalMsgs);
             }
