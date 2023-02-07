@@ -21,9 +21,13 @@ import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +36,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.client.api.Consumer;
@@ -39,6 +44,8 @@ import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.impl.BatchMessageIdImpl;
 import org.apache.pulsar.client.impl.TopicMessageIdImpl;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.util.FutureUtil;
+import org.junit.jupiter.params.shadow.com.univocity.parsers.common.record.Record;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -112,40 +119,55 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
             props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
             props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, IntegerSerializer.class);
             props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+            // TODO: set a non zero value in order to create larger batches
+            props.put(ProducerConfig.LINGER_MS_CONFIG, 0);
             props.put(ProducerConfig.BATCH_SIZE_CONFIG, batchSize); // avoid all messages are in a single batch
 
             // 1. produce message with Kafka producer.
             @Cleanup
             KafkaProducer<Integer, String> producer = new KafkaProducer<>(props);
 
+            // TODO: set a value larger than batchSide
             int totalMsgs = 100;
             String messageStrPrefix = "Message_Kop_KafkaProducePulsarConsumeOrder_";
 
+            List<CompletableFuture<RecordMetadata>> handles = new ArrayList<>();
             for (int i = 0; i < totalMsgs; i++) {
                 final int index = i;
+                CompletableFuture<RecordMetadata> result = new CompletableFuture<>();
+                handles.add(result);
                 producer.send(new ProducerRecord<>(topicName, i, messageStrPrefix + i), (recordMetadata, e) -> {
-                    assertNull(e);
-                    log.info("Success write message {} to offset {}", index, recordMetadata.offset());
+                    if (e != null) {
+                        result.completeExceptionally(e);
+                    } else {
+                        log.info("Success write message {} to offset {}", index, recordMetadata.offset());
+                        result.complete(recordMetadata);
+                    }
                 });
             }
+            FutureUtil.waitForAll(handles).get();
 
             // 2. Consume messages use Pulsar client Consumer.
             if (conf.getEntryFormat().equals("pulsar")) {
                 Message<byte[]> msg = null;
                 int numBatches = 0;
+                int maxBatchSize = 0;
+                List<Integer> receivedKeys = new ArrayList<>();
                 for (int i = 0; i < totalMsgs; i++) {
                     msg = consumer.receive(1000, TimeUnit.MILLISECONDS);
                     assertNotNull(msg);
                     Integer key = kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey()));
+                    receivedKeys.add(key);
                     assertEquals(messageStrPrefix + key.toString(), new String(msg.getValue()));
 
                     if (log.isDebugEnabled()) {
-                        log.debug("Pulsar consumer get i: {} message: {}, key: {}",
+                        log.debug("Pulsar consumer get i: {} message: {}, key: {}, msgId {}",
                                 i,
                                 new String(msg.getData()),
-                                kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString());
+                                kafkaIntDeserialize(Base64.getDecoder().decode(msg.getKey())).toString(),
+                                msg.getMessageId());
                     }
-                    assertEquals(i, key.intValue());
+                    assertEquals(i, key.intValue(), "Received " + receivedKeys + " at i=" + i);
 
                     consumer.acknowledge(msg);
 
@@ -154,6 +176,7 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
                     if (id.getBatchIndex() == 0) {
                         numBatches++;
                     }
+                    maxBatchSize = Math.max(maxBatchSize, id.getBatchIndex() + 1);
                 }
 
                 // verify have received all messages
@@ -161,7 +184,8 @@ public abstract class KafkaMessageOrderTestBase extends KopProtocolHandlerTestBa
                 assertNull(msg);
                 // Check number of batches is in range (1, totalMsgs) to avoid each batch has only one message or all
                 // messages are batched into a single batch.
-                log.info("Successfully write {} batches of {} messages to bookie", numBatches, totalMsgs);
+                log.info("Successfully written {} batches of {} messages to kafka, maxBatchSize is {}",
+                        numBatches, totalMsgs, maxBatchSize);
                 assertTrue(numBatches > 1 && numBatches < totalMsgs);
             }
 
