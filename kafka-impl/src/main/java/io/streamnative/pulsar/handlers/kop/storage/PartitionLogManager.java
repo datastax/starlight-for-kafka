@@ -42,7 +42,7 @@ public class PartitionLogManager {
 
     private final KafkaServiceConfiguration kafkaConfig;
     private final RequestStats requestStats;
-    private final Map<String, CompletableFuture<PartitionLog>> logMap;
+    private final Map<String, PartitionLog> logMap;
     private final Time time;
     private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
 
@@ -69,35 +69,37 @@ public class PartitionLogManager {
         this.recoveryExecutor = recoveryExecutor;
     }
 
-    public CompletableFuture<PartitionLog> getLog(TopicPartition topicPartition, String namespacePrefix) {
+    public PartitionLog getLog(TopicPartition topicPartition, String namespacePrefix) {
         String kopTopic = KopTopic.toString(topicPartition, namespacePrefix);
         String tenant = TopicName.get(kopTopic).getTenant();
         ProducerStateManagerSnapshotBuffer prodPerTenant = producerStateManagerSnapshotBuffer.apply(tenant);
-        CompletableFuture<PartitionLog> res =  logMap.computeIfAbsent(kopTopic, key -> {
-            log.info("init getLog {}", key);
-            CompletableFuture<PartitionLog> result = new PartitionLog(kafkaConfig, requestStats,
+        PartitionLog res =  logMap.computeIfAbsent(kopTopic, key -> {
+            PartitionLog partitionLog = new PartitionLog(kafkaConfig, requestStats,
                     time, topicPartition, key, entryfilterMap,
                     kafkaTopicLookupService,
-                    prodPerTenant)
+                    prodPerTenant);
+
+            CompletableFuture<PartitionLog> initialiseResult = partitionLog
                     .initialise(recoveryExecutor);
 
-            result.whenComplete((___, error) -> {
+            initialiseResult.whenComplete((___, error) -> {
                 if (error != null) {
                     // in case of failure we have to remove the CompletableFuture from the map
                     log.error("Recovery of {} failed", key, error);
-                    logMap.remove(key, result);
+                    logMap.remove(key, partitionLog);
                 }
             });
 
-            return result;
+            return partitionLog;
         });
-        if (res.isCompletedExceptionally()) {
+        if (res.isInitialisationFailed()) {
+            log.error("Recovery of {} failed", kopTopic, res);
             logMap.remove(kopTopic, res);
         }
         return res;
     }
 
-    public CompletableFuture<PartitionLog> removeLog(String topicName) {
+    public PartitionLog removeLog(String topicName) {
         log.info("removePartitionLog {}", topicName);
         return logMap.remove(topicName);
     }
@@ -109,15 +111,12 @@ public class PartitionLogManager {
     public CompletableFuture<Void> takeProducerStateSnapshots() {
         List<CompletableFuture<Void>> handles = new ArrayList<>();
         logMap.values().forEach(log -> {
-            if (log.isDone() && !log.isCompletedExceptionally()) {
-                PartitionLog partitionLog = log.getNow(null);
-                if (partitionLog != null) {
-                    handles.add(partitionLog
-                            .getProducerStateManager()
-                            .takeSnapshot(recoveryExecutor)
-                            .thenApply(___ -> null));
+                if (log.isInitialised()) {
+                    handles.add(log
+                        .getProducerStateManager()
+                        .takeSnapshot(recoveryExecutor)
+                        .thenApply(___ -> null));
                 }
-            }
         });
         return FutureUtil.waitForAll(handles);
     }
@@ -125,12 +124,9 @@ public class PartitionLogManager {
     public CompletableFuture<?> purgeAbortedTxns() {
         List<CompletableFuture<Long>> handles = new ArrayList<>();
         logMap.values().forEach(log -> {
-            if (log.isDone() && !log.isCompletedExceptionally()) {
-                PartitionLog partitionLog = log.getNow(null);
-                if (partitionLog != null) {
-                    handles.add(partitionLog
-                            .purgeAbortedTxns());
-                }
+            if (log.isInitialised()) {
+                handles.add(log
+                        .purgeAbortedTxns());
             }
         });
         return FutureUtil

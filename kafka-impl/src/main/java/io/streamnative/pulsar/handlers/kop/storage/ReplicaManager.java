@@ -80,20 +80,15 @@ public class ReplicaManager {
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition,
+    public PartitionLog getPartitionLog(TopicPartition topicPartition,
                                                            String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
     public void removePartitionLog(String topicName) {
-        CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
+        PartitionLog partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
-            if (partitionLog.isDone()) {
-                log.debug("PartitionLog: {} has bean removed.", topicName);
-            } else {
-                log.error("PartitionLog: {} has bean removed but recovery wasn't finished",
-                        topicName);
-            }
+            log.debug("PartitionLog: {} has bean removed.", topicName);
         }
     }
 
@@ -124,7 +119,7 @@ public class ReplicaManager {
                 }
             });
             if (log.isDebugEnabled()) {
-                log.debug("Complete handle appendRecords.");
+                log.debug("Complete handle appendRecords. {}", responseMap);
             }
             completableFuture.complete(responseMap);
 
@@ -154,6 +149,9 @@ public class ReplicaManager {
                     new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
             BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
                     (topicPartition, response) -> {
+                if (log.isDebugEnabled()) {
+                     log.debug("Completed produce for {}", topicPartition);
+                }
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
@@ -172,17 +170,12 @@ public class ReplicaManager {
                             Errors.forException(new InvalidTopicException(
                                     String.format("Cannot append to internal topic %s", topicPartition.topic())))));
                 } else {
-                    getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
-                        partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+                    PartitionLog partitionLog =
+                            getPartitionLog(topicPartition, namespacePrefix);
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                                 .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                         new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
-                                .exceptionally(ex -> {
-                                    log.error("Internal error while handling append to {}", fullPartitionName, ex);
-                                    addPartitionResponse.accept(topicPartition,
-                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                                    return null;
-                                });
-                    }).exceptionally(ex -> {
+                    .exceptionally(ex -> {
                         if (isCannotLoadTopicError(ex)) {
                             log.error("Cannot load topic error while handling append for {}", fullPartitionName, ex);
                             addPartitionResponse.accept(topicPartition,
@@ -311,6 +304,7 @@ public class ReplicaManager {
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
+                    .awaitInitialisation()
                     .thenCompose(partitionLog ->{
                         return partitionLog
                                 .readRecords(fetchInfo, readCommitted,
