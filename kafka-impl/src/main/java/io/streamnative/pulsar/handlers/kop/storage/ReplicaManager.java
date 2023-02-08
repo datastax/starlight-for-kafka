@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -124,7 +125,7 @@ public class ReplicaManager {
                 }
             });
             if (log.isDebugEnabled()) {
-                log.debug("Complete handle appendRecords.");
+                log.debug("Complete handle appendRecords. {}", responseMap);
             }
             completableFuture.complete(responseMap);
 
@@ -154,6 +155,9 @@ public class ReplicaManager {
                     new PendingProduceCallback(topicPartitionNum, responseMap, completableFuture, entriesPerPartition);
             BiConsumer<TopicPartition, ProduceResponse.PartitionResponse> addPartitionResponse =
                     (topicPartition, response) -> {
+                if (log.isDebugEnabled()) {
+                     log.debug("Completed produce for {}", topicPartition);
+                }
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
@@ -172,7 +176,12 @@ public class ReplicaManager {
                             Errors.forException(new InvalidTopicException(
                                     String.format("Cannot append to internal topic %s", topicPartition.topic())))));
                 } else {
-                    getPartitionLog(topicPartition, namespacePrefix).thenAccept(partitionLog -> {
+                    CompletableFuture<PartitionLog> partitionLogRecovery =
+                            getPartitionLog(topicPartition, namespacePrefix);
+                    // we don't want to run the writes on the recovery threadpool
+                    // otherwise we could not guarantee ordering
+                    ExecutorService executor = appendRecordsContext.getCtx().executor();
+                    partitionLogRecovery.thenAcceptAsync(partitionLog -> {
                         partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                                 .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                         new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
@@ -182,7 +191,7 @@ public class ReplicaManager {
                                             new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
                                     return null;
                                 });
-                    }).exceptionally(ex -> {
+                    }, executor).exceptionally(ex -> {
                         if (isCannotLoadTopicError(ex)) {
                             log.error("Cannot load topic error while handling append for {}", fullPartitionName, ex);
                             addPartitionResponse.accept(topicPartition,
