@@ -297,7 +297,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
 
         pulsar.getAdminClient().topics().createPartitionedTopic(topic, 2);
 
-        @Cleanup final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
+        final KafkaProducer<String, String> kafkaProducer = newKafkaProducer();
         sendSingleMessages(kafkaProducer, topic, Arrays.asList("a", "b", "c"));
 
         List<String> expectValues = Arrays.asList("a", "b", "c");
@@ -338,6 +338,8 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(kafkaReceives.stream().sorted().collect(Collectors.toList()), expectValues,
                 "Expected " + expectValues
                         + " but received " + kafkaReceives.stream().sorted().collect(Collectors.toList()));
+
+        kafkaProducer.close();
 
         pulsar.getAdminClient().topics().deletePartitionedTopic(topic);
     }

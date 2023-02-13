@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
@@ -123,9 +122,10 @@ public class KafkaTopicManager {
             }
             return Optional.empty();
         }
-        ConcurrentHashMap<String, Producer> references = requestHandler
-                .getKafkaTopicManagerSharedState().getReferences();
-        return Optional.of(references.computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
+        return requestHandler
+                .getKafkaTopicManagerSharedState()
+                .registerProducer(topicName, requestHandler,
+                        () -> registerInPersistentTopic(persistentTopic));
     }
 
     // when channel close, release all the topics reference in persistentTopic
@@ -153,8 +153,6 @@ public class KafkaTopicManager {
             }
             CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
                     kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
-            // cache for removing producer
-            requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
             return topicCompletableFuture;
         } catch (Throwable error) {
             log.error("Unhandled error here for {}", topicName, error);
