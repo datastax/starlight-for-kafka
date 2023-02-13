@@ -138,6 +138,11 @@ public class PartitionLog {
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
+    @Getter
+    private volatile PersistentTopic persistentTopic;
+
+    private final CompletableFuture<PartitionLog> initFuture = new CompletableFuture<>();
+
     private volatile Map<String, String> topicProperties;
 
     private volatile String kafkaTopicUUID;
@@ -164,22 +169,31 @@ public class PartitionLog {
     }
 
     public CompletableFuture<PartitionLog> initialise(OrderedExecutor executor) {
-        return loadTopicProperties().thenCompose(__ -> {
+        loadTopicProperties().thenRun(() -> {
             if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                     && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
-                return producerStateManager
+                producerStateManager
                         .recover(this, executor.chooseThread(fullPartitionName))
-                        .thenApply(___ -> this);
+                        .thenRun(() -> initFuture.complete(this));
             } else {
-                return CompletableFuture.completedFuture(this);
+                initFuture.complete(this);
             }
         });
+        return initFuture;
+    }
+
+    public CompletableFuture<PartitionLog> awaitInitialisation() {
+        return initFuture;
+    }
+
+    public boolean isInitialised() {
+        return initFuture.isDone() && !initFuture.isCompletedExceptionally();
     }
 
     private CompletableFuture<Void> loadTopicProperties() {
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture =
+        CompletableFuture<Optional<PersistentTopic>> persistentTopicFuture =
                 kafkaTopicLookupService.getTopic(fullPartitionName, this);
-        return topicFuture
+        return persistentTopicFuture
                 .thenCompose(topic -> fetchTopicProperties(topic))
                 .thenAccept(properties -> {
                     this.topicProperties = properties;
@@ -197,6 +211,7 @@ public class PartitionLog {
             log.info("Topic {} not loaded here", fullPartitionName);
             return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
         }
+        this.persistentTopic = persistentTopic.get();
         TopicName logicalName = TopicName.get(persistentTopic.get().getName());
         TopicName actualName;
         if (logicalName.isPartitioned()) {
@@ -453,27 +468,9 @@ public class PartitionLog {
             MemoryRecords validRecords = trimInvalidBytes(records, appendInfo);
 
             // Append Message into pulsar
-            final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                    topicManager.getTopic(fullPartitionName);
-            if (topicFuture.isCompletedExceptionally()) {
-                topicFuture.exceptionally(e -> {
-                    appendFuture.completeExceptionally(e);
-                    return Optional.empty();
-                });
-                return appendFuture;
-            }
-            if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-                appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
-                return appendFuture;
-            }
 
-            final Consumer<Optional<PersistentTopic>> persistentTopicConsumer = persistentTopicOpt -> {
-                if (!persistentTopicOpt.isPresent()) {
-                    appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
-                    return;
-                }
-
-                final ManagedLedger managedLedger = persistentTopicOpt.get().getManagedLedger();
+            final Consumer<PartitionLog> sequentialExecutor = ___ -> {
+                final ManagedLedger managedLedger = persistentTopic.getManagedLedger();
                 if (entryFormatter instanceof KafkaMixedEntryFormatter) {
                     final long logEndOffset = MessageMetadataUtils.getLogEndOffset(managedLedger);
                     appendInfo.firstOffset(Optional.of(logEndOffset));
@@ -492,7 +489,7 @@ public class PartitionLog {
                 appendRecordsContext.getStartSendOperationForThrottling()
                         .accept(encodeResult.getEncodedByteBuf().readableBytes());
 
-                publishMessages(persistentTopicOpt,
+                publishMessages(
                         appendFuture,
                         appendInfo,
                         encodeResult,
@@ -501,7 +498,7 @@ public class PartitionLog {
 
             appendRecordsContext.getPendingTopicFuturesMap()
                     .computeIfAbsent(topicPartition, ignored -> new PendingTopicFutures(requestStats))
-                    .addListener(topicFuture, persistentTopicConsumer, appendFuture::completeExceptionally);
+                    .addListener(initFuture, sequentialExecutor, appendFuture::completeExceptionally);
         } catch (Exception exception) {
             log.error("Failed to handle write request for {} origin {}",
                     topicPartition, origin, exception);
@@ -511,23 +508,7 @@ public class PartitionLog {
         return appendFuture;
     }
 
-    public Position getLastPosition(KafkaTopicManager topicManager) {
-        final CompletableFuture<Optional<PersistentTopic>> topicFuture =
-                topicManager.getTopic(fullPartitionName);
-        if (topicFuture.isCompletedExceptionally()) {
-            return PositionImpl.EARLIEST;
-        }
-        if (topicFuture.isDone() && !topicFuture.getNow(Optional.empty()).isPresent()) {
-            return PositionImpl.EARLIEST;
-        }
-        Optional<PersistentTopic> topicOpt = topicFuture.getNow(Optional.empty());
-        if (topicOpt.isPresent()) {
-            return getLastPosition(topicOpt.get());
-        }
-        return PositionImpl.EARLIEST;
-    }
-
-    private Position getLastPosition(PersistentTopic persistentTopic) {
+    public Position getLastPosition() {
         return persistentTopic.getLastPosition();
     }
 
@@ -858,18 +839,10 @@ public class PartitionLog {
         }, null);
     }
 
-    private void publishMessages(final Optional<PersistentTopic> persistentTopicOpt,
-                                 final CompletableFuture<Long> appendFuture,
+    private void publishMessages(final CompletableFuture<Long> appendFuture,
                                  final LogAppendInfo appendInfo,
                                  final EncodeResult encodeResult,
                                  final AppendRecordsContext appendRecordsContext) {
-        if (!persistentTopicOpt.isPresent()) {
-            encodeResult.recycle();
-            // It will trigger a retry send of Kafka client
-            appendFuture.completeExceptionally(Errors.NOT_LEADER_OR_FOLLOWER.exception());
-            return;
-        }
-        PersistentTopic persistentTopic = persistentTopicOpt.get();
         checkAndRecordPublishQuota(persistentTopic, appendInfo.validBytes(),
                 appendInfo.numMessages(), appendRecordsContext);
         if (persistentTopic.isSystemTopic()) {
@@ -1087,56 +1060,50 @@ public class PartitionLog {
                 );
     }
     private CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
-        return kafkaTopicLookupService
-                .getTopic(fullPartitionName, this).thenCompose(topic -> {
-                    if (!topic.isPresent()) {
-                        log.debug("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
-                        return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
-                    }
-                    final CompletableFuture<Long> future = new CompletableFuture<>();
+        final CompletableFuture<Long> future = new CompletableFuture<>();
 
-                    // The future that is returned by getTopicConsumerManager is always completed normally
-                    KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("purge-aborted-tx",
-                            true, topic.get());
-                    future.whenComplete((___, error) -> {
-                        // release resources in any case
-                        try {
-                            tcm.close();
-                        } catch (Exception err) {
-                            log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
-                                    fullPartitionName, err);
-                        }
-                    });
+        // The future that is returned by getTopicConsumerManager is always completed normally
+        KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("purge-aborted-tx",
+                true, persistentTopic);
+        future.whenComplete((___, error) -> {
+            // release resources in any case
+            try {
+                tcm.close();
+            } catch (Exception err) {
+                log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
+                        fullPartitionName, err);
+            }
+        });
 
-                    ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
-                    // this is a DUMMY entry with -1
-                    PositionImpl firstPosition = managedLedger.getFirstPosition();
-                    // look for the first entry with data
-                    PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
+        ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+        // this is a DUMMY entry with -1
+        PositionImpl firstPosition = managedLedger.getFirstPosition();
+        // look for the first entry with data
+        PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
 
-                    managedLedger.asyncReadEntry(nextValidPosition, new AsyncCallbacks.ReadEntryCallback() {
-                        @Override
-                        public void readEntryComplete(Entry entry, Object ctx) {
-                            try {
-                                long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
-                                log.info("First offset for topic {} is {} - position {}", fullPartitionName,
-                                        startOffset, entry.getPosition());
-                                future.complete(startOffset);
-                            } catch (Exception err) {
-                                future.completeExceptionally(err);
-                            } finally {
-                                entry.release();
-                            }
-                        }
+        managedLedger.asyncReadEntry(nextValidPosition, new AsyncCallbacks.ReadEntryCallback() {
+            @Override
+            public void readEntryComplete(Entry entry, Object ctx) {
+                try {
+                    long startOffset = MessageMetadataUtils.peekBaseOffsetFromEntry(entry);
+                    log.info("First offset for topic {} is {} - position {}", fullPartitionName,
+                            startOffset, entry.getPosition());
+                    future.complete(startOffset);
+                } catch (Exception err) {
+                    future.completeExceptionally(err);
+                } finally {
+                    entry.release();
+                }
+            }
 
-                        @Override
-                        public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
-                            future.completeExceptionally(exception);
-                        }
-                    }, null);
+            @Override
+            public void readEntryFailed(ManagedLedgerException exception, Object ctx) {
+                future.completeExceptionally(exception);
+            }
+        }, null);
 
-                    return future;
-                });
+        return future;
+
     }
 
 
@@ -1148,75 +1115,67 @@ public class PartitionLog {
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }
         log.info("start recoverTxEntries for {} at offset {}", fullPartitionName, offset);
+        final CompletableFuture<Long> future = new CompletableFuture<>();
 
-        return kafkaTopicLookupService
-                .getTopic(fullPartitionName, this).thenComposeAsync(topic -> {
-            if (!topic.isPresent()) {
-                log.info("Topic {} not owned by this broker, cannot recover now", fullPartitionName);
-                return FutureUtil.failedFuture(new NotLeaderOrFollowerException());
+        // The future that is returned by getTopicConsumerManager is always completed normally
+        KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
+                true, persistentTopic);
+        future.whenComplete((___, error) -> {
+            // release resources in any case
+            try {
+                tcm.close();
+            } catch (Exception err) {
+                log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
+                        fullPartitionName, err);
             }
-            final CompletableFuture<Long> future = new CompletableFuture<>();
+        });
 
-            // The future that is returned by getTopicConsumerManager is always completed normally
-            KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
-                    true, topic.get());
-            future.whenComplete((___, error) -> {
-                // release resources in any case
-                try {
-                    tcm.close();
-                } catch (Exception err) {
-                    log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
-                            fullPartitionName, err);
-                }
-            });
+        final long offsetToStart;
+        if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
+            offsetToStart = 0;
+            log.info("recoverTxEntries for {}: offset {} is out-of-range, "
+                     + "maybe the topic has been deleted/recreated, "
+                     + "starting recovery from {}",
+                    topicPartition, offset, offsetToStart);
+        } else {
+            offsetToStart = offset;
+        }
 
-            final long offsetToStart;
-            if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
-                offsetToStart = 0;
-                log.info("recoverTxEntries for {}: offset {} is out-of-range, "
-                         + "maybe the topic has been deleted/recreated, "
-                         + "starting recovery from {}",
-                        topicPartition, offset, offsetToStart);
-            } else {
-                offsetToStart = offset;
-            }
-
-            if (log.isDebugEnabled()) {
-                log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
-                        topicPartition, offsetToStart);
-            }
+        if (log.isDebugEnabled()) {
+            log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
+                    topicPartition, offsetToStart);
+        }
 
 
-            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
+        final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
 
-            if (cursorFuture == null) {
-                // tcm is closed, just return a NONE error because the channel may be still active
-                log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
-                future.completeExceptionally(new NotLeaderOrFollowerException());
-                return future;
-            }
-
-            cursorFuture.thenAccept((cursorLongPair) -> {
-
-                if (cursorLongPair == null) {
-                    log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
-                            + "Fetch for topic return error.", offsetToStart, topicPartition);
-                    future.completeExceptionally(new NotLeaderOrFollowerException());
-                    return;
-                }
-                final ManagedCursor cursor = cursorLongPair.getLeft();
-                final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
-
-                AtomicLong entryCounter = new AtomicLong();
-                readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter,
-                        future, executor);
-
-            }).exceptionally(ex -> {
-                future.completeExceptionally(new NotLeaderOrFollowerException());
-                return null;
-            });
+        if (cursorFuture == null) {
+            // tcm is closed, just return a NONE error because the channel may be still active
+            log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
+            future.completeExceptionally(new NotLeaderOrFollowerException());
             return future;
-        }, executor);
+        }
+
+        cursorFuture.thenAccept((cursorLongPair) -> {
+
+            if (cursorLongPair == null) {
+                log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
+                        + "Fetch for topic return error.", offsetToStart, topicPartition);
+                future.completeExceptionally(new NotLeaderOrFollowerException());
+                return;
+            }
+            final ManagedCursor cursor = cursorLongPair.getLeft();
+            final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
+
+            AtomicLong entryCounter = new AtomicLong();
+            readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter,
+                    future, executor);
+
+        }).exceptionally(ex -> {
+            future.completeExceptionally(new NotLeaderOrFollowerException());
+            return null;
+        });
+        return future;
     }
 
 

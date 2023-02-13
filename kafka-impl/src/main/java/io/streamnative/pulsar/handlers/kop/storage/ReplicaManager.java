@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -81,20 +80,15 @@ public class ReplicaManager {
         this.metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
     }
 
-    public CompletableFuture<PartitionLog> getPartitionLog(TopicPartition topicPartition,
+    public PartitionLog getPartitionLog(TopicPartition topicPartition,
                                                            String namespacePrefix) {
         return logManager.getLog(topicPartition, namespacePrefix);
     }
 
     public void removePartitionLog(String topicName) {
-        CompletableFuture<PartitionLog> partitionLog = logManager.removeLog(topicName);
+        PartitionLog partitionLog = logManager.removeLog(topicName);
         if (log.isDebugEnabled() && partitionLog != null) {
-            if (partitionLog.isDone()) {
-                log.debug("PartitionLog: {} has bean removed.", topicName);
-            } else {
-                log.error("PartitionLog: {} has bean removed but recovery wasn't finished",
-                        topicName);
-            }
+            log.debug("PartitionLog: {} has bean removed.", topicName);
         }
     }
 
@@ -176,22 +170,12 @@ public class ReplicaManager {
                             Errors.forException(new InvalidTopicException(
                                     String.format("Cannot append to internal topic %s", topicPartition.topic())))));
                 } else {
-                    CompletableFuture<PartitionLog> partitionLogRecovery =
+                    PartitionLog partitionLog =
                             getPartitionLog(topicPartition, namespacePrefix);
-                    // we don't want to run the writes on the recovery threadpool
-                    // otherwise we could not guarantee ordering
-                    ExecutorService executor = appendRecordsContext.getCtx().executor();
-                    partitionLogRecovery.thenAcceptAsync(partitionLog -> {
-                        partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
+                    partitionLog.appendRecords(memoryRecords, origin, appendRecordsContext)
                                 .thenAccept(offset -> addPartitionResponse.accept(topicPartition,
                                         new ProduceResponse.PartitionResponse(Errors.NONE, offset, -1L, -1L)))
-                                .exceptionally(ex -> {
-                                    log.error("Internal error while handling append to {}", fullPartitionName, ex);
-                                    addPartitionResponse.accept(topicPartition,
-                                            new ProduceResponse.PartitionResponse(Errors.forException(ex.getCause())));
-                                    return null;
-                                });
-                    }, executor).exceptionally(ex -> {
+                    .exceptionally(ex -> {
                         if (isCannotLoadTopicError(ex)) {
                             log.error("Cannot load topic error while handling append for {}", fullPartitionName, ex);
                             addPartitionResponse.accept(topicPartition,
@@ -320,6 +304,7 @@ public class ReplicaManager {
         };
         readPartitionInfo.forEach((tp, fetchInfo) -> {
             getPartitionLog(tp, context.getNamespacePrefix())
+                    .awaitInitialisation()
                     .thenCompose(partitionLog ->{
                         return partitionLog
                                 .readRecords(fetchInfo, readCommitted,
