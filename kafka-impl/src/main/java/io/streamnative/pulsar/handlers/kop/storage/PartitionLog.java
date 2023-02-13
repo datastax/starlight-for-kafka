@@ -169,12 +169,20 @@ public class PartitionLog {
     }
 
     public CompletableFuture<PartitionLog> initialise(OrderedExecutor executor) {
-        loadTopicProperties().thenRun(() -> {
+        loadTopicProperties().whenComplete((___, errorLoadTopic) -> {
+            if (errorLoadTopic != null) {
+                initFuture.completeExceptionally(errorLoadTopic);
+                return;
+            }
             if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                     && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
                 producerStateManager
                         .recover(this, executor.chooseThread(fullPartitionName))
-                        .thenRun(() -> initFuture.complete(this));
+                        .thenRun(() -> initFuture.complete(this))
+                        .exceptionally(error -> {
+                            initFuture.completeExceptionally(error);
+                            return null;
+                        });
             } else {
                 initFuture.complete(this);
             }
@@ -188,6 +196,10 @@ public class PartitionLog {
 
     public boolean isInitialised() {
         return initFuture.isDone() && !initFuture.isCompletedExceptionally();
+    }
+
+    public boolean isInitialisationFailed() {
+        return initFuture.isDone() && initFuture.isCompletedExceptionally();
     }
 
     private CompletableFuture<Void> loadTopicProperties() {

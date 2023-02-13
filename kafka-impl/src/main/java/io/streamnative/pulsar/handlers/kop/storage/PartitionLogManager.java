@@ -92,6 +92,10 @@ public class PartitionLogManager {
 
             return partitionLog;
         });
+        if (res.isInitialisationFailed()) {
+            log.error("Recovery of {} failed", kopTopic, res);
+            logMap.remove(kopTopic, res);
+        }
         return res;
     }
 
