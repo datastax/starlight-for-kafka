@@ -123,9 +123,10 @@ public class KafkaTopicManager {
             }
             return Optional.empty();
         }
-        ConcurrentHashMap<String, Producer> references = requestHandler
+        ConcurrentHashMap<KafkaRequestHandler, Producer> references = requestHandler
                 .getKafkaTopicManagerSharedState().getReferences();
-        return Optional.of(references.computeIfAbsent(topicName, (__) -> registerInPersistentTopic(persistentTopic)));
+        return Optional.of(references.computeIfAbsent(requestHandler,
+                (__) -> registerInPersistentTopic(persistentTopic)));
     }
 
     // when channel close, release all the topics reference in persistentTopic
@@ -153,8 +154,6 @@ public class KafkaTopicManager {
             }
             CompletableFuture<Optional<PersistentTopic>> topicCompletableFuture =
                     kafkaTopicLookupService.getTopic(topicName, requestHandler.ctx.channel());
-            // cache for removing producer
-            requestHandler.getKafkaTopicManagerSharedState().getTopics().put(topicName, topicCompletableFuture);
             return topicCompletableFuture;
         } catch (Throwable error) {
             log.error("Unhandled error here for {}", topicName, error);
