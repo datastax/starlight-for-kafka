@@ -22,9 +22,11 @@ import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
 import java.util.Map;
 import javax.management.JMException;
 import javax.management.ObjectName;
+import lombok.extern.slf4j.Slf4j;
 import org.testng.ITestResult;
 import org.testng.TestListenerAdapter;
 import org.testng.internal.thread.ThreadTimeoutException;
@@ -33,13 +35,28 @@ import org.testng.internal.thread.ThreadTimeoutException;
  * TestNG test listener which prints full thread dump into System.err
  * in case a test is failed due to timeout.
  */
+@Slf4j
 public class TimeOutTestListener extends TestListenerAdapter {
+    @Override
+    public void onTestStart(ITestResult tr) {
+        if (tr.getParameters() != null && tr.getParameters().length > 0) {
+            log.info("onTestStart {} {}", tr.getMethod(), Arrays.toString(tr.getParameters()));
+        } else {
+            log.info("onTestStart {}", tr.getMethod());
+        }
+        super.onTestStart(tr);
+    }
 
     @Override
     public void onTestFailure(ITestResult tr) {
+        if (tr.getParameters() != null && tr.getParameters().length > 0) {
+            log.info("onTestFailure {} {}", tr.getMethod(), Arrays.toString(tr.getParameters()));
+        } else {
+            log.info("onTestFailure {}", tr.getMethod());
+        }
         super.onTestFailure(tr);
 
-        if (tr != null && tr.getThrowable() != null
+        if (tr.getThrowable() != null
                 && tr.getThrowable() instanceof ThreadTimeoutException) {
             System.err.println("====> TEST TIMED OUT. PRINTING THREAD DUMP. <====");
             System.err.println();
