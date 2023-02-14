@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import java.net.SocketAddress;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.broker.PulsarService;
@@ -123,10 +122,10 @@ public class KafkaTopicManager {
             }
             return Optional.empty();
         }
-        ConcurrentHashMap<KafkaRequestHandler, Producer> references = requestHandler
-                .getKafkaTopicManagerSharedState().getReferences();
-        return Optional.of(references.computeIfAbsent(requestHandler,
-                (__) -> registerInPersistentTopic(persistentTopic)));
+        return requestHandler
+                .getKafkaTopicManagerSharedState()
+                .registerProducer(topicName, requestHandler,
+                        () -> registerInPersistentTopic(persistentTopic));
     }
 
     // when channel close, release all the topics reference in persistentTopic
