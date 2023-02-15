@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -354,7 +355,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryTestAfterTopicUnload(int numTransactionsBetweenSnapshots) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenSnapshots;
-        String transactionalId = "myProducer_" + numTransactionsBetweenSnapshots;
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
 
@@ -422,7 +423,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
         String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
-        String transactionalId = "myProducer_" + numTransactionsBetweenUnloads;
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
 
@@ -494,7 +495,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAbortedTransaction(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "basicRecoveryAbortedTransaction_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -549,7 +550,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerFenced_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -616,7 +617,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             throws Exception {
 
         String topicName = "basicRecoveryAbortedTransactionDueToProducerTimedOut_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         String namespace = TopicName.get(topicName).getNamespace();
@@ -681,7 +682,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             throws Exception {
 
         String topicName = "basicRecoveryAfterDeleteCreateTopic";
-        String transactionalId = "myProducer-deleteCreate";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         TopicName fullTopicName = TopicName.get(topicName);
@@ -769,7 +770,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
 
         String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         TopicName fullTopicName = TopicName.get(topicName);
@@ -885,7 +886,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void testRecoverFromInvalidSnapshotAfterTrim() throws Exception {
 
         String topicName = "testRecoverFromInvalidSnapshotAfterTrim";
-        String transactionalId = "myProducer";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
         TopicName fullTopicName = TopicName.get(topicName);
