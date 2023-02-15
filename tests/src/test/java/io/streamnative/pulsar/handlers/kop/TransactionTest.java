@@ -62,6 +62,7 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -97,6 +98,24 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
+
+
+    @AfterMethod(alwaysRun = true)
+    void removeUselessTopics() throws Exception {
+        List<String> partitionedTopicList = admin.topics()
+                .getPartitionedTopicList(tenant + "/" + namespace);
+        for (String topic : partitionedTopicList) {
+            log.info("delete partitioned topic {}", topic);
+            admin.topics().deletePartitionedTopic(topic, true);
+        }
+
+        List<String> topics = admin.topics().getList(tenant + "/" + namespace);
+        for (String topic : topics) {
+            log.info("delete non-partitioned topic {}", topic);
+            admin.topics().delete(topic,  true, true);
+        }
+    }
+
 
     @DataProvider(name = "produceConfigProvider")
     protected static Object[][] produceConfigProvider() {
@@ -159,6 +178,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                                            String transactionalId,
                                            String isolation,
                                            boolean isBatch) throws Exception {
+
+        topicName = topicName + "_" + isBatch + "_" + isolation;
+
         @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
@@ -234,7 +256,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         List<String> messages = new ArrayList<>();
 
-        log.info("the last message is: {}", lastMessage);
+        log.info("waiting for message {} in topic {}", lastMessage, topicName);
         AtomicInteger receiveCount = new AtomicInteger(0);
         while (true) {
             ConsumerRecords<Integer, String> consumerRecords =
@@ -280,7 +302,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     public void txnOffsetTest(String topic, int messageCnt, boolean isCommit) throws Exception {
-        String groupId = "my-group-id";
+        String groupId = "my-group-id-" + messageCnt + "-" + isCommit;
 
         List<String> sendMsgs = prepareData(topic, "first send message - ", messageCnt);
 
@@ -422,7 +444,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 1000 * 30, dataProvider = "basicRecoveryTestAfterTopicUnloadNumTransactions")
     public void basicTestWithTopicUnload(int numTransactionsBetweenUnloads) throws Exception {
 
-        String topicName = "basicRecoveryTestAfterTopicUnload_" + numTransactionsBetweenUnloads;
+        String topicName = "basicTestWithTopicUnload_" + numTransactionsBetweenUnloads;
         String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
         boolean isBatch = false;
@@ -766,10 +788,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
 
-    @Test(timeOut = 60000, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 10000, dataProvider = "takeSnapshotBeforeRecovery")
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
-
-        String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery;
+        String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery + "_" + UUID.randomUUID();
         String transactionalId = "myProducer_" + UUID.randomUUID();
         String isolation = "read_committed";
 
@@ -1055,6 +1076,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendFirstRecord() throws Exception {
+        String topicName = "testProducerFencedWhileSendFirstRecord";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
         producer1.beginTransaction();
@@ -1062,11 +1084,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         assertThat(
                 expectThrows(ExecutionException.class, () -> {
-                    producer1.send(new ProducerRecord<>("test", "test"))
+                    producer1.send(new ProducerRecord<>(topicName, "test"))
                             .get();
                 }).getCause(), instanceOf(ProducerFencedException.class));
 
@@ -1076,20 +1098,21 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileCommitTransaction() throws Exception {
+        String topicName = "testProducerFencedWhileCommitTransaction";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
         final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
 
         // producer1 is still able to write (TODO: this should throw a InvalidProducerEpochException)
-        producer1.send(new ProducerRecord<>("test", "test")).get();
+        producer1.send(new ProducerRecord<>(topicName, "test")).get();
 
         // but it cannot commit
         expectThrows(ProducerFencedException.class, () -> {
@@ -1104,21 +1127,22 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendOffsets() throws Exception {
+        String topicName = "testProducerFencedWhileSendOffsets";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
         final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
 
         // producer1 cannot offsets
         expectThrows(ProducerFencedException.class, () -> {
-            producer1.sendOffsetsToTransaction(ImmutableMap.of(new TopicPartition("test", 0),
+            producer1.sendOffsetsToTransaction(ImmutableMap.of(new TopicPartition(topicName, 0),
                             new OffsetAndMetadata(0L)),
                     "testGroup");
         });
@@ -1134,16 +1158,17 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testProducerFencedWhileAbortAndBegin() throws Exception {
+        String topicName = "testProducerFencedWhileAbortAndBegin";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
         producer1.beginTransaction();
-        producer1.send(new ProducerRecord<>("test", "test"))
+        producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
         final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         // producer1 cannot abort
         expectThrows(ProducerFencedException.class, () -> {
@@ -1160,13 +1185,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 20000)
     public void testNotFencedWithBeginTransaction() throws Exception {
+        String topicName = "testNotFencedWithBeginTransaction";
         final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
         producer1.initTransactions();
 
         final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
         producer2.initTransactions();
         producer2.beginTransaction();
-        producer2.send(new ProducerRecord<>("test", "test")).get();
+        producer2.send(new ProducerRecord<>(topicName, "test")).get();
 
         // beginTransaction doesn't do anything
         producer1.beginTransaction();

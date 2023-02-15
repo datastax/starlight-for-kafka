@@ -191,17 +191,19 @@ public class PulsarTopicProducerStateManagerSnapshotBuffer implements ProducerSt
             return CompletableFuture.completedFuture(null);
         }
         return ensureProducerHandle().thenCompose(opProducer -> {
-            // nobody can write now to the topic
-            // wait for local cache to be up-to-date
             return ensureLatestData(true)
                     .thenCompose((___) -> {
                         ProducerStateManagerSnapshot latest = latestSnapshots.get(snapshot.getTopicPartition());
-                        if (latest != null && latest.getOffset() > snapshot.getOffset()) {
-                            log.error("Topic ownership changed for {}. Found a snapshot at {} "
-                                    + "while trying to write the snapshot at {}", snapshot.getTopicPartition(),
+                        if (latest != null
+                                && Objects.equals(latest.getTopicUUID(), snapshot.getTopicUUID())
+                                && latest.getOffset() > snapshot.getOffset()) {
+                            log.error("Topic ownership changed for {} {}. Found a snapshot at {} "
+                                    + "while trying to write the snapshot at {}",
+                                    snapshot.getTopicPartition(), snapshot.getTopicUUID(),
                                     latest.getOffset(), snapshot.getOffset());
                             return FutureUtil.failedFuture(new NotLeaderOrFollowerException("No more owner of "
-                                    + "ProducerState for topic " + topic));
+                                    + "ProducerState for topic " + snapshot.getTopicPartition()
+                                    + " " + snapshot.getTopicUUID()));
                         }
                         return opProducer
                                 .newMessage()
