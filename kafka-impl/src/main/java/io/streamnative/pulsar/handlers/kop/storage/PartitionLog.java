@@ -46,6 +46,7 @@ import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -138,6 +139,8 @@ public class PartitionLog {
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
+    private final ExecutorService recoveryExecutor;
+
     @Getter
     private volatile PersistentTopic persistentTopic;
 
@@ -156,7 +159,8 @@ public class PartitionLog {
                         String fullPartitionName,
                         ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
                         KafkaTopicLookupService kafkaTopicLookupService,
-                        ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
+                        ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer,
+                        OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
         this.entryfilterMap = entryfilterMap;
         this.requestStats = requestStats;
@@ -166,9 +170,10 @@ public class PartitionLog {
         this.preciseTopicPublishRateLimitingEnable = kafkaConfig.isPreciseTopicPublishRateLimiterEnable();
         this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+        this.recoveryExecutor = recoveryExecutor.chooseThread(fullPartitionName);
     }
 
-    public CompletableFuture<PartitionLog> initialise(OrderedExecutor executor) {
+    public CompletableFuture<PartitionLog> initialise() {
         loadTopicProperties().whenComplete((___, errorLoadTopic) -> {
             if (errorLoadTopic != null) {
                 initFuture.completeExceptionally(errorLoadTopic);
@@ -177,7 +182,7 @@ public class PartitionLog {
             if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                     && kafkaConfig.isKafkaTransactionStateProducerRecoveryEnabled()) {
                 producerStateManager
-                        .recover(this, executor.chooseThread(fullPartitionName))
+                        .recover(this, recoveryExecutor)
                         .thenRun(() -> initFuture.complete(this))
                         .exceptionally(error -> {
                             initFuture.completeExceptionally(error);
@@ -214,7 +219,9 @@ public class PartitionLog {
                     this.kafkaTopicUUID = properties.get("kafkaTopicUUID");
                     this.producerStateManager =
                             new ProducerStateManager(fullPartitionName, kafkaTopicUUID,
-                            producerStateManagerSnapshotBuffer);
+                            producerStateManagerSnapshotBuffer,
+                                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                                    kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds());
                 });
     }
 
@@ -658,8 +665,8 @@ public class PartitionLog {
         final List<Entry> committedEntries = readCommitted ? getCommittedEntries(entries, lso) : entries;
 
         if (log.isDebugEnabled()) {
-            log.debug("Read {} entries but only {} entries are committed, lso {}",
-                    entries.size(), committedEntries.size(), lso);
+            log.debug("Read {} entries but only {} entries are committed, lso {}, highWatermark {}",
+                    entries.size(), committedEntries.size(), lso, highWatermark);
         }
         if (committedEntries.isEmpty()) {
             future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE,
@@ -1057,7 +1064,7 @@ public class PartitionLog {
      * Remove all the AbortedTxn that are no more referred by existing data on the topic.
      * @return
      */
-    public CompletableFuture<Long> purgeAbortedTxns() {
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffset() {
         if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(null);
@@ -1067,9 +1074,9 @@ public class PartitionLog {
             return CompletableFuture.completedFuture(null);
         }
         return fetchOldestAvailableIndexFromTopic()
-                .thenApply(offset ->
-                    producerStateManager.purgeAbortedTxns(offset)
-                );
+                .thenAccept(offset ->
+                    producerStateManager.updateAbortedTxnsPurgeOffset(offset));
+
     }
     private CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
         final CompletableFuture<Long> future = new CompletableFuture<>();
@@ -1088,6 +1095,11 @@ public class PartitionLog {
         });
 
         ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
+        if (managedLedger.getNumberOfEntries() == 0) {
+            // empty topic, we cannot read anything
+            future.complete(-1L);
+            return future;
+        }
         // this is a DUMMY entry with -1
         PositionImpl firstPosition = managedLedger.getFirstPosition();
         // look for the first entry with data
@@ -1118,6 +1130,30 @@ public class PartitionLog {
 
     }
 
+    public CompletableFuture<?> takeProducerSnapshot() {
+        return initFuture.thenCompose((___)  -> {
+            // snapshot can be taken only on the same thread that is used for writes
+            ManagedLedgerImpl ml = (ManagedLedgerImpl) getPersistentTopic().getManagedLedger();
+            ExecutorService executorService = ml.getExecutor().chooseThread(ml.getName());
+            return this
+                    .getProducerStateManager()
+                    .takeSnapshot(executorService);
+        });
+    }
+
+    public CompletableFuture<Long> forcePurgeAbortTx() {
+        return initFuture.thenCompose((___)  -> {
+            // purge can be taken only on the same thread that is used for writes
+            ManagedLedgerImpl ml = (ManagedLedgerImpl) getPersistentTopic().getManagedLedger();
+            ExecutorService executorService = ml.getExecutor().chooseThread(ml.getName());
+
+            return updatePurgeAbortedTxnsOffset()
+                    .thenApplyAsync((____) -> {
+                return getProducerStateManager().executePurgeAbortedTx();
+            }, executorService);
+        });
+    }
+
 
     public CompletableFuture<Long> recoverTxEntries(
                                              long offset,
@@ -1126,70 +1162,77 @@ public class PartitionLog {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }
-        log.info("start recoverTxEntries for {} at offset {}", fullPartitionName, offset);
-        final CompletableFuture<Long> future = new CompletableFuture<>();
+        return fetchOldestAvailableIndexFromTopic().thenCompose((minOffset -> {
+            log.info("start recoverTxEntries for {} at offset {} minOffset {}",
+                    fullPartitionName, offset, minOffset);
+            final CompletableFuture<Long> future = new CompletableFuture<>();
 
-        // The future that is returned by getTopicConsumerManager is always completed normally
-        KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
-                true, persistentTopic);
-        future.whenComplete((___, error) -> {
-            // release resources in any case
-            try {
-                tcm.close();
-            } catch (Exception err) {
-                log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
-                        fullPartitionName, err);
+            // The future that is returned by getTopicConsumerManager is always completed normally
+            KafkaTopicConsumerManager tcm = new KafkaTopicConsumerManager("recover-tx",
+                    true, persistentTopic);
+            future.whenComplete((___, error) -> {
+                // release resources in any case
+                try {
+                    tcm.close();
+                } catch (Exception err) {
+                    log.error("Cannot safely close the temporary KafkaTopicConsumerManager for {}",
+                            fullPartitionName, err);
+                }
+            });
+
+            final long offsetToStart;
+            if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
+                offsetToStart = 0;
+                log.info("recoverTxEntries for {}: offset {} is out-of-range, "
+                                + "maybe the topic has been deleted/recreated, "
+                                + "starting recovery from {}",
+                        topicPartition, offset, offsetToStart);
+            } else {
+                offsetToStart = offset;
             }
-        });
 
-        final long offsetToStart;
-        if (checkOffsetOutOfRange(tcm, offset, topicPartition, -1)) {
-            offsetToStart = 0;
-            log.info("recoverTxEntries for {}: offset {} is out-of-range, "
-                     + "maybe the topic has been deleted/recreated, "
-                     + "starting recovery from {}",
-                    topicPartition, offset, offsetToStart);
-        } else {
-            offsetToStart = offset;
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
-                    topicPartition, offsetToStart);
-        }
+            if (minOffset < 0) {
+                producerStateManager.handleMissingDataBeforeRecovery(minOffset);
+            }
 
 
-        final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
+            if (log.isDebugEnabled()) {
+                log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",
+                        topicPartition, offsetToStart);
+            }
 
-        if (cursorFuture == null) {
-            // tcm is closed, just return a NONE error because the channel may be still active
-            log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
-            future.completeExceptionally(new NotLeaderOrFollowerException());
-            return future;
-        }
 
-        cursorFuture.thenAccept((cursorLongPair) -> {
+            final CompletableFuture<Pair<ManagedCursor, Long>> cursorFuture = tcm.removeCursorFuture(offsetToStart);
 
-            if (cursorLongPair == null) {
-                log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
-                        + "Fetch for topic return error.", offsetToStart, topicPartition);
+            if (cursorFuture == null) {
+                // tcm is closed, just return a NONE error because the channel may be still active
+                log.warn("KafkaTopicConsumerManager is closed, remove TCM of {}", fullPartitionName);
                 future.completeExceptionally(new NotLeaderOrFollowerException());
-                return;
+                return future;
             }
-            final ManagedCursor cursor = cursorLongPair.getLeft();
-            final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
 
-            AtomicLong entryCounter = new AtomicLong();
-            readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter,
-                    future, executor);
+            cursorFuture.thenAccept((cursorLongPair) -> {
 
-        }).exceptionally(ex -> {
-            future.completeExceptionally(new NotLeaderOrFollowerException());
-            return null;
-        });
-        return future;
+                if (cursorLongPair == null) {
+                    log.warn("KafkaTopicConsumerManager.remove({}) return null for topic {}. "
+                            + "Fetch for topic return error.", offsetToStart, topicPartition);
+                    future.completeExceptionally(new NotLeaderOrFollowerException());
+                    return;
+                }
+                final ManagedCursor cursor = cursorLongPair.getLeft();
+                final AtomicLong cursorOffset = new AtomicLong(cursorLongPair.getRight());
+
+                AtomicLong entryCounter = new AtomicLong();
+                readNextEntriesForRecovery(cursor, cursorOffset, tcm, entryCounter,
+                        future, executor);
+
+            }).exceptionally(ex -> {
+                future.completeExceptionally(new NotLeaderOrFollowerException());
+                return null;
+            });
+            return future;
+        }));
     }
-
 
     private void readNextEntriesForRecovery(ManagedCursor cursor, AtomicLong cursorOffset,
                                             KafkaTopicConsumerManager tcm,
@@ -1291,6 +1334,10 @@ public class PartitionLog {
             producerStateManager.completeTxn(completedTxn);
         });
         producerStateManager.updateMapEndOffset(lastOffset);
+
+        // do system clean up stuff in this thread
+        producerStateManager.maybeTakeSnapshot(recoveryExecutor);
+        producerStateManager.maybePurgeAbortedTx();
     }
 
     private void decodeEntriesForRecovery(final CompletableFuture<DecodeResult> future,
