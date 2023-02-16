@@ -84,6 +84,7 @@ public class ProducerStateManager {
                 this.mapEndOffset = snapshot.getOffset();
                 offSetPosition = snapshot.getOffset();
                 log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
+                log.info("Aborted transactions after recovery {}", snapshot.getAbortedIndexList());
             } else {
                 log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
             }
@@ -128,6 +129,9 @@ public class ProducerStateManager {
                             new HashMap<>(producers),
                             new TreeMap<>(ongoingTxns),
                             new ArrayList<>(abortedIndexList));
+                }
+                if (log.isDebugEnabled()) {
+                    log.debug("Snapshot for {}: {}", topicPartition, snapshot);
                 }
                 producerStateManagerSnapshotBuffer
                         .write(snapshot)
@@ -216,9 +220,13 @@ public class ProducerStateManager {
 
     public void updateTxnIndex(CompletedTxn completedTxn, long lastStableOffset) {
         if (completedTxn.isAborted()) {
+            AbortedTxn abortedTxn = new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
+                    completedTxn.lastOffset(), lastStableOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("Adding new AbortedTxn {}", abortedTxn);
+            }
             synchronized (abortedIndexList) {
-                abortedIndexList.add(new AbortedTxn(completedTxn.producerId(), completedTxn.firstOffset(),
-                        completedTxn.lastOffset(), lastStableOffset));
+                abortedIndexList.add(abortedTxn);
             }
         }
     }
