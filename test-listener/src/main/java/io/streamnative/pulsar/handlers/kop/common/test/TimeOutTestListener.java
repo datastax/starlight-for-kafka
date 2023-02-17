@@ -44,6 +44,9 @@ public class TimeOutTestListener extends TestListenerAdapter {
         } else {
             log.info("{} {}", prefix, tr.getMethod());
         }
+        if (tr.getThrowable() != null) {
+            log.error("{} failed with error {}", tr.getMethod(), tr.getThrowable());
+        }
     }
 
     @Override

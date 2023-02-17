@@ -658,8 +658,8 @@ public class PartitionLog {
         final List<Entry> committedEntries = readCommitted ? getCommittedEntries(entries, lso) : entries;
 
         if (log.isDebugEnabled()) {
-            log.debug("Read {} entries but only {} entries are committed",
-                    entries.size(), committedEntries.size());
+            log.debug("Read {} entries but only {} entries are committed, lso {}",
+                    entries.size(), committedEntries.size(), lso);
         }
         if (committedEntries.isEmpty()) {
             future.complete(ReadRecordsResult.error(tcm.getManagedLedger().getLastConfirmedEntry(), Errors.NONE,
