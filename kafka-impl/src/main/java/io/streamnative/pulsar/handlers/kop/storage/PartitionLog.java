@@ -1078,7 +1078,7 @@ public class PartitionLog {
                     producerStateManager.updateAbortedTxnsPurgeOffset(offset));
 
     }
-    private CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
+    public CompletableFuture<Long> fetchOldestAvailableIndexFromTopic() {
         final CompletableFuture<Long> future = new CompletableFuture<>();
 
         // The future that is returned by getTopicConsumerManager is always completed normally
@@ -1096,8 +1096,11 @@ public class PartitionLog {
 
         ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) tcm.getManagedLedger();
         if (managedLedger.getNumberOfEntries() == 0) {
-            // empty topic, we cannot read anything
-            future.complete(-1L);
+            long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+            log.info("First offset for topic {} is {} as the topic is empty (numberOfEntries=0)",
+                    fullPartitionName, currentOffset);
+            future.complete(currentOffset);
+
             return future;
         }
         // this is a DUMMY entry with -1
@@ -1191,10 +1194,7 @@ public class PartitionLog {
                 offsetToStart = offset;
             }
 
-            if (minOffset < 0) {
-                producerStateManager.handleMissingDataBeforeRecovery(minOffset);
-            }
-
+            producerStateManager.handleMissingDataBeforeRecovery(minOffset, offset);
 
             if (log.isDebugEnabled()) {
                 log.debug("recoverTxEntries for {}: remove tcm to get cursor for fetch offset: {} .",

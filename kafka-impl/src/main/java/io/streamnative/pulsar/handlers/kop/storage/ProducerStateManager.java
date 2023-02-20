@@ -356,14 +356,15 @@ public class ProducerStateManager {
         }
     }
 
-    public void handleMissingDataBeforeRecovery(long minOffset) {
+    public void handleMissingDataBeforeRecovery(long minOffset, long snapshotOffset) {
         if (mapEndOffset == -1) {
             // empty topic
             return;
         }
-        // topic has been fully trimmed
-        if (minOffset < 0) {
-            log.info("{} handleMissingDataBeforeRecovery mapEndOffset {} minOffset {} RESETTING STATE",
+        // topic has been trimmed
+        if (snapshotOffset < minOffset) {
+            log.info("{} handleMissingDataBeforeRecovery mapEndOffset {} snapshotOffset "
+                            + "{} minOffset {} RESETTING STATE",
                     topicPartition,
                     mapEndOffset, minOffset);
             // topic was not empty (mapEndOffset has some value)

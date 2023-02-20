@@ -17,6 +17,7 @@ import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.expectThrows;
 import static org.testng.Assert.fail;
@@ -835,9 +836,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation, "readcommitter-reader-1");
     }
 
-
-    // DISABLED BECAUSE TRIMMING LEDGERS IS STILL UNRELIABLE
-    @Test(timeOut = 10000, dataProvider = "takeSnapshotBeforeRecovery", enabled = false)
+    @Test(timeOut = 10000, dataProvider = "takeSnapshotBeforeRecovery")
     public void testPurgeAbortedTx(boolean takeSnapshotBeforeRecovery) throws Exception {
         String topicName = "testPurgeAbortedTx_" + takeSnapshotBeforeRecovery + "_" + UUID.randomUUID();
         String transactionalId = "myProducer_" + UUID.randomUUID();
@@ -848,6 +847,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
         String namespace = fullTopicName.getNamespace();
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+        String namespacePrefix = namespace;
 
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
@@ -857,16 +858,31 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 pulsar.getProtocolHandlers().protocol("kafka");
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get(); // OFFSET 0
         producer.flush();
         // this transaction is to be purged later
-        producer.abortTransaction();
+        producer.abortTransaction();  // OFFSET 1
+
+        waitForTransactionsToBeInStableState(transactionalId);
+
+        PartitionLog partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+        List<FetchResponse.AbortedTransaction> abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
 
         producer.beginTransaction();
         String lastMessage = "msg1b";
-        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();  // OFFSET 2
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();  // OFFSET 3
+        producer.commitTransaction();  // OFFSET 4
 
         assertEquals(
             consumeTxnMessage(topicName, 2, lastMessage, isolation, "first_group"),
@@ -880,12 +896,28 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();  // OFFSET 5
+        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();  // OFFSET 6
+        producer.commitTransaction();  // OFFSET 7
+
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(1, abortedIndexList.size());
 
         waitForTransactionsToBeInStableState(transactionalId);
 
+        admin.namespaces().unload(namespace);
+        admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
         admin.namespaces().unload(namespace);
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
@@ -893,20 +925,60 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             takeSnapshot(topicName);
         }
 
-        // all the messages up to here will be trimmed
+        // validate that the topic has been trimmed
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
+        // all the messages up to here will be trimmed
+        log.info("BEFORE TRUNCATE");
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
+        log.info("AFTER TRUNCATE");
+
+        assertSame(partitionLog, protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix));
+
+        assertEquals(7L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+
+        assertEquals(1, abortedIndexList.size());
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get(); // OFFSET 8
+        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get(); // OFFSET 9
+        producer.commitTransaction();  // OFFSET 10
+
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // this TX is aborted and must not be purged
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "aborted 2")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 2")).get();  // OFFSET 11
         producer.flush();
-        producer.abortTransaction();
+        producer.abortTransaction();  // OFFSET 12
+
+        waitForTransactionsToBeInStableState(transactionalId);
+
+        abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
+
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(2, abortedIndexList.size());
 
         producer.beginTransaction();
         String lastMessage2 = "msg6";
@@ -914,10 +986,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.commitTransaction();
         producer.close();
 
-        TopicPartition topicPartition = new TopicPartition(topicName, 0);
-        String namespacePrefix = namespace;
+        waitForTransactionsToBeInStableState(transactionalId);
 
-        PartitionLog partitionLog = protocolHandler
+        partitionLog = protocolHandler
                 .getReplicaManager()
                 .getPartitionLog(topicPartition, namespacePrefix);
 
@@ -925,13 +996,16 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
-        List<FetchResponse.AbortedTransaction> abortedIndexList =
+        abortedIndexList =
                 partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(2,
-                abortedIndexList.size());
+
+        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(2, abortedIndexList.size());
+
 
         // verify that we actually drop (only) one aborted TX
         long purged = partitionLog.forcePurgeAbortTx().get();
@@ -943,8 +1017,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(1,
-             abortedIndexList.size());
+        assertEquals(1, abortedIndexList.size());
+        assertEquals(11, abortedIndexList.get(0).firstOffset);
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -968,22 +1042,23 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().topics().createPartitionedTopic(topicName, 1);
 
         String namespace = fullTopicName.getNamespace();
-
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+        String namespacePrefix = namespace;
 
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get();
+        producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get(); // OFFSET 0
         producer.flush();
-        producer.abortTransaction();
+        producer.abortTransaction(); // OFFSET 1
 
         producer.beginTransaction();
         String lastMessage = "msg1b";
-        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg1")).get(); // OFFSET 2
+        producer.send(new ProducerRecord<>(topicName, 0, lastMessage)).get(); // OFFSET 3
+        producer.commitTransaction(); // OFFSET 4
 
         assertEquals(
                 consumeTxnMessage(topicName, 2, lastMessage, isolation, "first_group"),
@@ -997,9 +1072,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg2")).get(); // OFFSET 5
+        producer.send(new ProducerRecord<>(topicName, 0, "msg3")).get(); // OFFSET 6
+        producer.commitTransaction();  // OFFSET 7
 
         // take a snapshot now, it refers to the offset of the last written record
         takeSnapshot(topicName);
@@ -1009,6 +1084,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         admin.namespaces().unload(namespace);
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+        PartitionLog partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(0L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+
         // all the messages up to here will be trimmed
 
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
@@ -1017,10 +1100,16 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // continue writing, this triggers recovery
         producer.beginTransaction();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
-        producer.commitTransaction();
+        producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();  // OFFSET 8
+        producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();  // OFFSET 9
+        producer.commitTransaction();  // OFFSET 10
         producer.close();
+
+        partitionLog = protocolHandler
+                .getReplicaManager()
+                .getPartitionLog(topicPartition, namespacePrefix);
+        partitionLog.awaitInitialisation().get();
+        assertEquals(8L, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
