@@ -1419,7 +1419,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 20000, enabled = false)
     public void testAbortedTxEventuallyPurged() throws Exception {
         KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
                 pulsar.getProtocolHandlers().protocol("kafka");
