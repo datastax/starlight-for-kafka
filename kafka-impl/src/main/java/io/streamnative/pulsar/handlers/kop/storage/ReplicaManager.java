@@ -333,12 +333,9 @@ public class ReplicaManager {
             log.debug("Request key {} unblocked {} fetch requests.", key.keyLabel(), completed);
         }
     }
-    public CompletableFuture<Void> takeProducerStateSnapshots() {
-        return logManager.takeProducerStateSnapshots();
-    }
 
-    public CompletableFuture<?> purgeAbortedTxns() {
-        return logManager.purgeAbortedTxns();
+    public CompletableFuture<?> updatePurgeAbortedTxnsOffsets() {
+        return logManager.updatePurgeAbortedTxnsOffsets();
     }
 
 

@@ -54,6 +54,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -391,9 +392,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         int totalTxnCount = 10;
         int messageCountPerTxn = 20;
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
             producer.beginTransaction();
@@ -420,10 +418,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             if (numTransactionsBetweenSnapshots > 0
                     && (txnIndex % numTransactionsBetweenSnapshots) == 0) {
                 // force take snapshot
-                protocolHandler
-                        .getReplicaManager()
-                        .takeProducerStateSnapshots()
-                        .get();
+                takeSnapshot(topicName);
             }
 
             if (txnIndex % 2 != 0) {
@@ -438,6 +433,26 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         final int expected =  totalTxnCount * messageCountPerTxn / 2;
         consumeTxnMessage(topicName, expected, lastMessage, isolation);
+    }
+
+    private void takeSnapshot(String topicName) throws Exception {
+        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                pulsar.getProtocolHandlers().protocol("kafka");
+
+        int numPartitions =
+                admin.topics().getPartitionedTopicMetadata(topicName).partitions;
+        for (int i = 0; i < numPartitions; i++) {
+            PartitionLog partitionLog = protocolHandler
+                    .getReplicaManager()
+                    .getPartitionLog(new TopicPartition(topicName, i), tenant + "/" + namespace);
+
+            // we can only take the snapshot on the only thread that is allowed to process mutations
+            // on the state
+            partitionLog
+                    .takeProducerSnapshot()
+                    .get();
+
+        }
     }
 
 
@@ -458,9 +473,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         int totalTxnCount = 10;
         int messageCountPerTxn = 20;
-
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
 
         String lastMessage = "";
         for (int txnIndex = 0; txnIndex < totalTxnCount; txnIndex++) {
@@ -527,20 +539,15 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         producer.beginTransaction();
 
         String firstMessage = "aborted msg 1";
 
         producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
         producer.flush();
+
         // force take snapshot
-        protocolHandler
-                .getReplicaManager()
-                .takeProducerStateSnapshots()
-                .get();
+        takeSnapshot(topicName);
 
         // recovery will re-process the topic from this point onwards
         String secondMessage = "aborted msg 2";
@@ -555,10 +562,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.commitTransaction();
 
         if (takeSnapshotBeforeRecovery) {
-            protocolHandler
-                    .getReplicaManager()
-                    .takeProducerStateSnapshots()
-                    .get();
+            takeSnapshot(topicName);
         }
 
         // unload the namespace, this will force a recovery
@@ -582,9 +586,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         producer.beginTransaction();
 
         String firstMessage = "aborted msg 1";
@@ -592,10 +593,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
         producer.flush();
         // force take snapshot
-        protocolHandler
-                .getReplicaManager()
-                .takeProducerStateSnapshots()
-                .get();
+        takeSnapshot(topicName);
 
         // recovery will re-process the topic from this point onwards
         String secondMessage = "aborted msg 2";
@@ -621,10 +619,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
-            protocolHandler
-                    .getReplicaManager()
-                    .takeProducerStateSnapshots()
-                    .get();
+            takeSnapshot(topicName);
         }
 
         // unload the namespace, this will force a recovery
@@ -649,9 +644,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         producer.beginTransaction();
 
         String firstMessage = "aborted msg 1";
@@ -659,10 +651,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, firstMessage)).get();
         producer.flush();
         // force take snapshot
-        protocolHandler
-                .getReplicaManager()
-                .takeProducerStateSnapshots()
-                .get();
+        takeSnapshot(topicName);
 
         // recovery will re-process the topic from this point onwards
         String secondMessage = "aborted msg 2";
@@ -686,10 +675,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
-            protocolHandler
-                    .getReplicaManager()
-                    .takeProducerStateSnapshots()
-                    .get();
+            takeSnapshot(topicName);
         }
 
         // unload the namespace, this will force a recovery
@@ -738,10 +724,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.flush();
 
         // force take snapshot
-        protocolHandler
-                .getReplicaManager()
-                .takeProducerStateSnapshots()
-                .get();
+        takeSnapshot(topicName);
 
         String secondMessage = "deleted msg 2";
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
@@ -839,20 +822,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         if (takeSnapshotBeforeRecovery) {
-            protocolHandler
-                    .getReplicaManager()
-                    .takeProducerStateSnapshots()
-                    .get();
+            takeSnapshot(topicName);
         }
 
         // all the messages up to here will be trimmed
 
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
-
-        if (takeSnapshotBeforeRecovery) {
-            admin.namespaces().unload(namespace);
-            admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
-        }
 
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
@@ -881,17 +856,26 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // verify that we have 2 aborted TX in memory
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
+        List<FetchResponse.AbortedTransaction> abortedIndexList =
+                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
         assertEquals(2,
-                partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
+                abortedIndexList.size());
 
         // verify that we actually drop (only) one aborted TX
-        long purged = partitionLog.purgeAbortedTxns().get();
+        long purged = partitionLog.forcePurgeAbortTx().get();
         assertEquals(purged, 1);
 
         // verify that we still have one aborted TX
         assertTrue(partitionLog.getProducerStateManager().hasSomeAbortedTransactions());
+        abortedIndexList = partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
+        abortedIndexList.forEach(tx -> {
+            log.info("TX {}", tx);
+        });
         assertEquals(1,
-             partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE).size());
+             abortedIndexList.size());
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -921,9 +905,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "aborted 1")).get();
         producer.flush();
@@ -950,10 +931,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.commitTransaction();
 
         // take a snapshot now, it refers to the offset of the last written record
-        protocolHandler
-                .getReplicaManager()
-                .takeProducerStateSnapshots()
-                .get();
+        takeSnapshot(topicName);
 
         admin.namespaces().unload(namespace);
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());

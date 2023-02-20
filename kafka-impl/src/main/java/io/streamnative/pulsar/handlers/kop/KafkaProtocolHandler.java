@@ -124,8 +124,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private MigrationManager migrationManager;
     private ReplicaManager replicaManager;
 
-    private ScheduledFuture<?> txnProducerStateSnapshotsTimeHandle;
-    private ScheduledFuture<?> txmPurgeAbortedTxTimeHandle;
+    private ScheduledFuture<?> txUpdatedPurgeAbortedTxOffsetsTimeHandle;
 
     private final Map<String, GroupCoordinator> groupCoordinatorsByTenant = new ConcurrentHashMap<>();
     private final Map<String, TransactionCoordinator> transactionCoordinatorByTenant = new ConcurrentHashMap<>();
@@ -318,19 +317,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         migrationManager = new MigrationManager(kafkaConfig, brokerService.getPulsar());
 
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
-                && kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds() > 0) {
-            txnProducerStateSnapshotsTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
-                        getReplicaManager().takeProducerStateSnapshots();
-            },
-            kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
-                    kafkaConfig.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
-            TimeUnit.SECONDS);
-        }
-
-        if (kafkaConfig.isKafkaTransactionCoordinatorEnabled()
                 && kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds() > 0) {
-            txmPurgeAbortedTxTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
-                        getReplicaManager().purgeAbortedTxns();
+            txUpdatedPurgeAbortedTxOffsetsTimeHandle = service.getPulsar().getExecutor().scheduleWithFixedDelay(() -> {
+                        getReplicaManager().updatePurgeAbortedTxnsOffsets();
                     },
                     kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
                     kafkaConfig.getKafkaTxnPurgeAbortedTxnIntervalSeconds(),
@@ -552,11 +541,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
 
     @Override
     public void close() {
-        if (txnProducerStateSnapshotsTimeHandle != null) {
-            txnProducerStateSnapshotsTimeHandle.cancel(false);
-        }
-        if (txmPurgeAbortedTxTimeHandle != null) {
-            txmPurgeAbortedTxTimeHandle.cancel(false);
+        if (txUpdatedPurgeAbortedTxOffsetsTimeHandle != null) {
+            txUpdatedPurgeAbortedTxOffsetsTimeHandle.cancel(false);
         }
 
         if (producePurgatory != null) {

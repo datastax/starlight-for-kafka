@@ -62,7 +62,9 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     protected void setUp() {
         producerStateManagerSnapshotBuffer = new MemoryProducerStateManagerSnapshotBuffer();
         stateManager = new ProducerStateManager(partition.toString(), null,
-                producerStateManagerSnapshotBuffer);
+                producerStateManagerSnapshotBuffer,
+                conf.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds());
     }
 
     @AfterMethod
@@ -212,7 +214,8 @@ public class ProducerStateManagerTest extends KopProtocolHandlerTestBase {
     public void testSequenceNotValidatedForGroupMetadataTopic() {
         TopicPartition partition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, 0);
         stateManager = new ProducerStateManager(partition.toString(), null,
-                producerStateManagerSnapshotBuffer);
+                producerStateManagerSnapshotBuffer, conf.getKafkaTxnProducerStateTopicSnapshotIntervalSeconds(),
+                conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds());
         short epoch = 0;
         append(stateManager, producerId, epoch, 99L, time.milliseconds(),
                 true, PartitionLog.AppendOrigin.Coordinator);

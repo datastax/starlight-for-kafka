@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.storage;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,13 +48,27 @@ public class ProducerStateManager {
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
+    private final int kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+    private final int kafkaTxnPurgeAbortedTxnIntervalSeconds;
+
     private volatile long mapEndOffset = -1;
 
+    private long lastSnapshotTime;
+    private long lastPurgeAbortedTxnTime;
+
+    private volatile long abortedTxnsPurgeOffset = -1;
+
     public ProducerStateManager(String topicPartition, String kafkaTopicUUID,
-                                ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer) {
+                                ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer,
+                                int kafkaTxnProducerStateTopicSnapshotIntervalSeconds,
+                                int kafkaTxnPurgeAbortedTxnIntervalSeconds) {
         this.topicPartition = topicPartition;
         this.kafkaTopicUUID = kafkaTopicUUID;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
+        this.kafkaTxnProducerStateTopicSnapshotIntervalSeconds = kafkaTxnProducerStateTopicSnapshotIntervalSeconds;
+        this.kafkaTxnPurgeAbortedTxnIntervalSeconds = kafkaTxnPurgeAbortedTxnIntervalSeconds;
+        this.lastSnapshotTime = System.currentTimeMillis();
+        this.lastPurgeAbortedTxnTime = System.currentTimeMillis();
     }
 
     public CompletableFuture<Void> recover(PartitionLog partitionLog, Executor executor) {
@@ -84,6 +99,7 @@ public class ProducerStateManager {
                 this.mapEndOffset = snapshot.getOffset();
                 offSetPosition = snapshot.getOffset();
                 log.info("Recover topic {} from offset {}", topicPartition, offSetPosition);
+                log.info("ongoingTxns transactions after recovery {}", snapshot.getOngoingTxns());
                 log.info("Aborted transactions after recovery {}", snapshot.getAbortedIndexList());
             } else {
                 log.info("No snapshot found for topic {}, recovering from the beginning", topicPartition);
@@ -102,12 +118,6 @@ public class ProducerStateManager {
                     return null;
                 });
 
-        result.thenRun(() -> {
-            // that a snapshot when the recovery is done
-            // this will make the next recovery faster
-            takeSnapshot(executor);
-        });
-
         return result;
     }
 
@@ -120,19 +130,7 @@ public class ProducerStateManager {
                     result.complete(null);
                     return;
                 }
-                log.info("Taking snapshot for {} mapEndOffset is {}", topicPartition, mapEndOffset);
-                ProducerStateManagerSnapshot snapshot;
-                synchronized (abortedIndexList) {
-                    snapshot = new ProducerStateManagerSnapshot(topicPartition,
-                            kafkaTopicUUID,
-                            mapEndOffset,
-                            new HashMap<>(producers),
-                            new TreeMap<>(ongoingTxns),
-                            new ArrayList<>(abortedIndexList));
-                }
-                if (log.isDebugEnabled()) {
-                    log.debug("Snapshot for {}: {}", topicPartition, snapshot);
-                }
+                ProducerStateManagerSnapshot snapshot = getProducerStateManagerSnapshot();
                 producerStateManagerSnapshotBuffer
                         .write(snapshot)
                         .whenComplete((res, error) -> {
@@ -147,6 +145,86 @@ public class ProducerStateManager {
             }
         });
         return result;
+    }
+
+    void updateAbortedTxnsPurgeOffset(long abortedTxnsPurgeOffset) {
+        if (log.isDebugEnabled()) {
+            log.debug("{} updateAbortedTxnsPurgeOffset {}", topicPartition, abortedTxnsPurgeOffset);
+        }
+        if (abortedTxnsPurgeOffset < 0) {
+            return;
+        }
+        this.abortedTxnsPurgeOffset = abortedTxnsPurgeOffset;
+    }
+
+    long maybePurgeAbortedTx() {
+        if (mapEndOffset == -1) {
+            return 0;
+        }
+        long now = System.currentTimeMillis();
+        long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
+        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+            return 0;
+        }
+        lastPurgeAbortedTxnTime = now;
+        return executePurgeAbortedTx();
+    }
+
+    @VisibleForTesting
+    long executePurgeAbortedTx() {
+        return purgeAbortedTxns(abortedTxnsPurgeOffset);
+    }
+
+    void maybeTakeSnapshot(Executor executor) {
+        if (mapEndOffset == -1) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long deltaFromLast = (now - lastSnapshotTime) / 1000;
+        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+            return;
+        }
+        lastSnapshotTime = now;
+
+
+        // take the snapshot in this thread, that is the same thread
+        // that executes mutations
+        ProducerStateManagerSnapshot snapshot = getProducerStateManagerSnapshot();
+
+        // write to Pulsar in another thread, and also ignore errors
+        executor.execute(new SafeRunnable() {
+            @Override
+            public void safeRun() {
+                producerStateManagerSnapshotBuffer
+                        .write(snapshot)
+                        .whenComplete((res, error) -> {
+                            if (error == null) {
+                                log.info("Snapshot for {} ({}) taken at offset {} written",
+                                        topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                            } else {
+                                log.info("Error writing snapshot for {} ({}) taken at offset {}",
+                                        topicPartition, kafkaTopicUUID, snapshot.getOffset(), error);
+                            }
+                        });
+            }
+        });
+
+    }
+
+    private ProducerStateManagerSnapshot getProducerStateManagerSnapshot() {
+        ProducerStateManagerSnapshot snapshot;
+        synchronized (abortedIndexList) {
+            snapshot = new ProducerStateManagerSnapshot(topicPartition,
+                    kafkaTopicUUID,
+                    mapEndOffset,
+                    new HashMap<>(producers),
+                    new TreeMap<>(ongoingTxns),
+                    new ArrayList<>(abortedIndexList));
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("Snapshot for {}: {}", topicPartition, snapshot);
+        }
+        return snapshot;
     }
 
     public ProducerAppendInfo prepareUpdate(Long producerId, PartitionLog.AppendOrigin origin) {
@@ -170,6 +248,9 @@ public class ProducerStateManager {
 
     public Optional<Long> firstUndecidedOffset() {
         Map.Entry<Long, TxnMetadata> entry = ongoingTxns.firstEntry();
+        if (log.isDebugEnabled()) {
+            log.debug("firstUndecidedOffset {} (ongoingTxns {})", entry, ongoingTxns);
+        }
         if (entry == null) {
             return Optional.empty();
         }
@@ -275,4 +356,22 @@ public class ProducerStateManager {
         }
     }
 
+    public void handleMissingDataBeforeRecovery(long minOffset) {
+        if (mapEndOffset == -1) {
+            // empty topic
+            return;
+        }
+        // topic has been fully trimmed
+        if (minOffset < 0) {
+            log.info("{} handleMissingDataBeforeRecovery mapEndOffset {} minOffset {} RESETTING STATE",
+                    topicPartition,
+                    mapEndOffset, minOffset);
+            // topic was not empty (mapEndOffset has some value)
+            // but there is no more data on the topic (trimmed?)
+            ongoingTxns.clear();
+            abortedIndexList.clear();
+            producers.clear();
+            mapEndOffset = -1;
+        }
+    }
 }
