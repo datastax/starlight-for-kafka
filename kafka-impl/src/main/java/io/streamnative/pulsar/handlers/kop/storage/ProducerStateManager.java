@@ -121,6 +121,7 @@ public class ProducerStateManager {
         return result;
     }
 
+    @VisibleForTesting
     public CompletableFuture<ProducerStateManagerSnapshot> takeSnapshot(Executor executor) {
         CompletableFuture<ProducerStateManagerSnapshot> result = new CompletableFuture<>();
         executor.execute(new SafeRunnable() {
@@ -163,7 +164,7 @@ public class ProducerStateManager {
         }
         long now = System.currentTimeMillis();
         long deltaFromLast = (now - lastPurgeAbortedTxnTime) / 1000;
-        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+        if (deltaFromLast > kafkaTxnPurgeAbortedTxnIntervalSeconds) {
             return 0;
         }
         lastPurgeAbortedTxnTime = now;
@@ -181,7 +182,11 @@ public class ProducerStateManager {
         }
         long now = System.currentTimeMillis();
         long deltaFromLast = (now - lastSnapshotTime) / 1000;
-        if (deltaFromLast / 1000 <= kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+        if (log.isDebugEnabled()) {
+            log.debug("maybeTakeSnapshot deltaFromLast {} vs kafkaTxnProducerStateTopicSnapshotIntervalSeconds {} ",
+                    deltaFromLast, kafkaTxnProducerStateTopicSnapshotIntervalSeconds);
+        }
+        if (deltaFromLast > kafkaTxnProducerStateTopicSnapshotIntervalSeconds) {
             return;
         }
         lastSnapshotTime = now;
