@@ -60,6 +60,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.naming.TopicName;
+import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
@@ -74,9 +75,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
 
-    @BeforeClass
-    @Override
-    protected void setup() throws Exception {
+    protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
         this.conf.setKafkaMetadataNamespace("__kafka");
         this.conf.setOffsetsTopicNumPartitions(10);
@@ -85,11 +84,21 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         this.conf.setKafkaTransactionCoordinatorEnabled(true);
         this.conf.setBrokerDeduplicationEnabled(true);
 
+        // disable automatic snapshots and purgeTx
+        this.conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(0);
+        this.conf.setKafkaTxnProducerStateTopicSnapshotIntervalSeconds(0);
+
         // enable tx expiration, but producers have
         // a very long TRANSACTION_TIMEOUT_CONFIG
         // so they won't expire by default
         this.conf.setKafkaTransactionalIdExpirationMs(5000);
         this.conf.setKafkaTransactionalIdExpirationEnable(true);
+    }
+
+    @BeforeClass
+    @Override
+    protected void setup() throws Exception {
+        setupTransactions();
         super.internalSetup();
         log.info("success internal setup");
     }
@@ -139,7 +148,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     @Test(timeOut = 1000 * 10)
     public void testInitTransaction() {
-        final KafkaProducer<Integer, String> producer = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
         producer.close();
@@ -307,9 +317,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         List<String> sendMsgs = prepareData(topic, "first send message - ", messageCnt);
 
+        String transactionalId = "myProducer_" + UUID.randomUUID();
         // producer
         @Cleanup
-        KafkaProducer<Integer, String> producer = buildTransactionProducer("12");
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         // consumer
         @Cleanup
@@ -581,7 +592,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = TopicName.get(topicName).getNamespace();
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
@@ -600,7 +610,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
 
 
-        @Cleanup
+
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
 
@@ -609,13 +619,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         expectThrows(ProducerFencedException.class, () -> {
             producer.commitTransaction();
         });
-
+        producer.close();
 
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
         producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
+        producer2.close();
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
@@ -639,7 +650,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = TopicName.get(topicName).getNamespace();
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
         producer.initTransactions();
@@ -664,7 +674,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producer.commitTransaction();
         });
 
-        @Cleanup
+        producer.close();
+
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
         producer2.initTransactions();
         producer2.beginTransaction();
@@ -672,6 +683,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
         producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
         producer2.commitTransaction();
+        producer2.close();
 
         if (takeSnapshotBeforeRecovery) {
             // force take snapshot
@@ -689,85 +701,96 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     public void basicRecoveryAfterDeleteCreateTopic()
             throws Exception {
 
-        String topicName = "basicRecoveryAfterDeleteCreateTopic";
-        String transactionalId = "myProducer_" + UUID.randomUUID();
-        String isolation = "read_committed";
+        AutoTopicCreationOverride autoTopicCreation = pulsar.getAdminClient()
+                .namespaces().getAutoTopicCreation(tenant + "/" + namespace);
+        try {
+            // prevent auto-topic creation
+            pulsar.getAdminClient().namespaces().setAutoTopicCreation(tenant + "/" + namespace,
+                    AutoTopicCreationOverride.builder().allowAutoTopicCreation(false).build());
 
-        TopicName fullTopicName = TopicName.get(topicName);
+            String topicName = "basicRecoveryAfterDeleteCreateTopic";
+            String transactionalId = "myProducer_" + UUID.randomUUID();
+            String isolation = "read_committed";
 
-        String namespace = fullTopicName.getNamespace();
+            TopicName fullTopicName = TopicName.get(topicName);
 
-        // use Kafka API, this way we assign a topic UUID
-        @Cleanup
-        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
-        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
+            String namespace = fullTopicName.getNamespace();
 
-        @Cleanup
-        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
+            // use Kafka API, this way we assign a topic UUID
+            @Cleanup
+            AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
 
-        producer.initTransactions();
+            KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
+            producer.initTransactions();
 
-        producer.beginTransaction();
+            KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
+                    pulsar.getProtocolHandlers().protocol("kafka");
 
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
-        producer.flush();
+            producer.beginTransaction();
 
-        // force take snapshot
-        takeSnapshot(topicName);
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
+            producer.flush();
 
-        String secondMessage = "deleted msg 2";
-        producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
-        producer.flush();
+            // force take snapshot
+            takeSnapshot(topicName);
 
-        // verify that a non-transactional consumer can read the messages
-        consumeTxnMessage(topicName, 10, secondMessage, "read_uncommitted",
-                "uncommitted_reader1");
+            String secondMessage = "deleted msg 2";
+            producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
+            producer.flush();
+            producer.close();
 
-        for (int i = 0; i < 10; i++) {
-            log.info("************DELETE");
+            // verify that a non-transactional consumer can read the messages
+            consumeTxnMessage(topicName, 10, secondMessage, "read_uncommitted",
+                    "uncommitted_reader1");
+
+            for (int i = 0; i < 10; i++) {
+                log.info("************DELETE");
+            }
+            // delete/create
+            pulsar.getAdminClient().namespaces().unload(namespace);
+            admin.topics().deletePartitionedTopic(topicName, true);
+
+            // unfortunately the PH is not notified of the deletion
+            // so we unload the namespace in order to clear local references/caches
+            pulsar.getAdminClient().namespaces().unload(namespace);
+
+            protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(0).toString());
+            protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(1).toString());
+            protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(2).toString());
+            protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(3).toString());
+
+            // create the topic again, using the kafka APIs
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
+
+            // the snapshot now points to a offset that doesn't make sense in the new topic
+            // because the new topic is empty
+
+            KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
+            producer2.initTransactions();
+            producer2.beginTransaction();
+            String lastMessage = "committed mgs";
+
+            // this "send" triggers recovery of the ProducerStateManager on the topic
+            producer2.send(new ProducerRecord<>(topicName, 0, "good-message")).get();
+            producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
+            producer2.commitTransaction();
+            producer2.close();
+
+            consumeTxnMessage(topicName, 2, lastMessage, isolation, "readcommitter-reader-1");
+        } finally {
+            pulsar.getAdminClient().namespaces()
+                    .setAutoTopicCreation(tenant + "/" + namespace, autoTopicCreation);
         }
-        // delete/create
-        pulsar.getAdminClient().namespaces().unload(namespace);
-        admin.topics().deletePartitionedTopic(topicName, true);
-
-        // unfortunately the PH is not notified of the deletion
-        // so we unload the namespace in order to clear local references/caches
-        pulsar.getAdminClient().namespaces().unload(namespace);
-
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(0).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(1).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(2).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(3).toString());
-
-        // create the topic again, using the kafka APIs
-        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
-
-        // the snapshot now points to a offset that doesn't make sense in the new topic
-        // because the new topic is empty
-
-        @Cleanup
-        KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId, 1000);
-        producer2.initTransactions();
-        producer2.beginTransaction();
-        String lastMessage = "committed mgs";
-
-        // this "send" triggers recovery of the ProducerStateManager on the topic
-        producer2.send(new ProducerRecord<>(topicName, 0, "good-message")).get();
-        producer2.send(new ProducerRecord<>(topicName, 0, lastMessage)).get();
-        producer2.commitTransaction();
-
-        consumeTxnMessage(topicName, 2, lastMessage, isolation, "readcommitter-reader-1");
     }
 
 
@@ -783,7 +806,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = fullTopicName.getNamespace();
 
-        @Cleanup
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
@@ -844,6 +866,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         String lastMessage2 = "msg6";
         producer.send(new ProducerRecord<>(topicName, 0, lastMessage2)).get();
         producer.commitTransaction();
+        producer.close();
 
         TopicPartition topicPartition = new TopicPartition(topicName, 0);
         String namespacePrefix = namespace;
@@ -900,7 +923,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         String namespace = fullTopicName.getNamespace();
 
-        @Cleanup
+
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
 
         producer.initTransactions();
@@ -947,6 +970,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get();
         producer.send(new ProducerRecord<>(topicName, 0, "msg5")).get();
         producer.commitTransaction();
+        producer.close();
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -1055,11 +1079,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendFirstRecord() throws Exception {
         String topicName = "testProducerFencedWhileSendFirstRecord";
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
         producer2.send(new ProducerRecord<>(topicName, "test")).get();
@@ -1077,13 +1102,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testProducerFencedWhileCommitTransaction() throws Exception {
         String topicName = "testProducerFencedWhileCommitTransaction";
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
         producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
         producer2.send(new ProducerRecord<>(topicName, "test")).get();
@@ -1106,13 +1132,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testProducerFencedWhileSendOffsets() throws Exception {
         String topicName = "testProducerFencedWhileSendOffsets";
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
         producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
         producer2.send(new ProducerRecord<>(topicName, "test")).get();
@@ -1137,13 +1164,14 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testProducerFencedWhileAbortAndBegin() throws Exception {
         String topicName = "testProducerFencedWhileAbortAndBegin";
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
         producer1.beginTransaction();
         producer1.send(new ProducerRecord<>(topicName, "test"))
                 .get();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
         producer2.send(new ProducerRecord<>(topicName, "test")).get();
@@ -1164,10 +1192,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     @Test(timeOut = 20000)
     public void testNotFencedWithBeginTransaction() throws Exception {
         String topicName = "testNotFencedWithBeginTransaction";
-        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer("prod-1");
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+        final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
         producer1.initTransactions();
 
-        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer("prod-1");
+        final KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
         producer2.beginTransaction();
         producer2.send(new ProducerRecord<>(topicName, "test")).get();
