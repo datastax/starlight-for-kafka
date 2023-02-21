@@ -86,6 +86,7 @@ public class PartitionLogManager {
                 if (error != null) {
                     // in case of failure we have to remove the CompletableFuture from the map
                     log.error("Recovery of {} failed", key, error);
+                    partitionLog.markAsUnloaded();
                     logMap.remove(key, partitionLog);
                 }
             });
@@ -94,6 +95,7 @@ public class PartitionLogManager {
         });
         if (res.isInitialisationFailed()) {
             log.error("Recovery of {} failed", kopTopic, res);
+            res.markAsUnloaded();
             logMap.remove(kopTopic, res);
         }
         return res;
@@ -101,7 +103,11 @@ public class PartitionLogManager {
 
     public PartitionLog removeLog(String topicName) {
         log.info("removePartitionLog {}", topicName);
-        return logMap.remove(topicName);
+        PartitionLog exists =  logMap.remove(topicName);
+        if (exists != null) {
+            exists.markAsUnloaded();
+        }
+        return exists;
     }
 
     public int size() {
