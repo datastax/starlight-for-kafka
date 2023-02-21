@@ -168,7 +168,7 @@ public class ProducerStateManager {
             log.debug("maybePurgeAbortedTx deltaFromLast {} vs kafkaTxnPurgeAbortedTxnIntervalSeconds {} ",
                     deltaFromLast, kafkaTxnPurgeAbortedTxnIntervalSeconds);
         }
-        if (deltaFromLast > kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+        if (deltaFromLast < kafkaTxnPurgeAbortedTxnIntervalSeconds) {
             return 0;
         }
         lastPurgeAbortedTxnTime = now;
@@ -190,7 +190,7 @@ public class ProducerStateManager {
             log.debug("maybeTakeSnapshot deltaFromLast {} vs kafkaTxnProducerStateTopicSnapshotIntervalSeconds {} ",
                     deltaFromLast, kafkaTxnProducerStateTopicSnapshotIntervalSeconds);
         }
-        if (deltaFromLast > kafkaTxnProducerStateTopicSnapshotIntervalSeconds) {
+        if (deltaFromLast < kafkaTxnProducerStateTopicSnapshotIntervalSeconds) {
             return;
         }
         lastSnapshotTime = now;
@@ -231,7 +231,7 @@ public class ProducerStateManager {
                     new ArrayList<>(abortedIndexList));
         }
         if (log.isDebugEnabled()) {
-            log.debug("Snapshot for {}: {}", topicPartition, snapshot);
+            log.debug("Took snapshot for {}: {}", topicPartition, snapshot);
         }
         return snapshot;
     }
