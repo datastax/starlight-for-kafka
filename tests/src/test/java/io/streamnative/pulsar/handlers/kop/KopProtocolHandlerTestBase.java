@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.AssertJUnit.assertEquals;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -979,8 +980,13 @@ public abstract class KopProtocolHandlerTestBase {
             KafkaTopicLookupService lookupService = new KafkaTopicLookupService(pulsar.getBrokerService());
             PersistentTopic topicHandle = lookupService.getTopic(topic, "test").get().get();
 
+            log.info("Stats {}",
+                    mapper.writeValueAsString(admin
+                            .topics()
+                            .getInternalStats(topic)));
+
             Awaitility.await().untilAsserted(() -> {
-                log.debug("Subscriptions {}", topicHandle.getSubscriptions());
+                log.debug("Subscriptions {}", topicHandle.getSubscriptions().keys());
                         assertTrue(topicHandle.getSubscriptions().isEmpty());
             });
 
@@ -995,6 +1001,12 @@ public abstract class KopProtocolHandlerTestBase {
             Thread.sleep(2000);
             topicHandle.getManagedLedger().trimConsumedLedgersInBackground(future);
             future.get(10, TimeUnit.SECONDS);
+
+            Awaitility.await().untilAsserted(() -> {
+                log.debug("{} getNumberOfEntries {} id {}", topicHandle.getName(), topicHandle.getNumberOfEntries());
+                assertEquals(topicHandle.getNumberOfEntries(), 0);
+            });
+
         } finally {
             admin.namespaces().setRetention(namespace, oldRetentionPolicies);
             if (deduplicationStatus != null) {
