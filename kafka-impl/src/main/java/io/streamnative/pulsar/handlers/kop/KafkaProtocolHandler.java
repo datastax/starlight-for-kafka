@@ -44,11 +44,16 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgato
 import io.streamnative.pulsar.handlers.kop.utils.ssl.SSLUtils;
 import io.streamnative.pulsar.handlers.kop.utils.timer.SystemTimer;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.Getter;
@@ -70,6 +75,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
+import org.apache.pulsar.common.util.FutureUtil;
 
 /**
  * Kafka Protocol Handler load and run by Pulsar Service.
@@ -565,21 +571,37 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         sendResponseScheduler.shutdown();
         schemaManagerCache.clear();
 
+        List<CompletableFuture<?>> closeHandles = new ArrayList<>();
         if (offsetTopicClient != null) {
-            offsetTopicClient.close();
+            closeHandles.add(offsetTopicClient.closeAsync());
         }
         if (txnTopicClient != null) {
-            txnTopicClient.close();
+            closeHandles.add(txnTopicClient.closeAsync());
+        }
+        if (lookupClient != null) {
+            closeHandles.add(lookupClient.closeAsync());
         }
         if (adminManager != null) {
             adminManager.shutdown();
         }
-        if (lookupClient != null) {
-            lookupClient.close();
-        }
 
         recoveryExecutor.shutdown();
 
+        // do not block the broker forever
+        // see https://github.com/apache/pulsar/issues/19579
+        try {
+            FutureUtil
+                    .waitForAll(closeHandles)
+                    .get(Math.max(kafkaConfig.getBrokerShutdownTimeoutMs() / 10, 1000),
+                            TimeUnit.MILLISECONDS);
+        } catch (ExecutionException err) {
+            log.warn("Error while closing some of the internal PulsarClients", err.getCause());
+        } catch (TimeoutException err) {
+            log.warn("Could not stop all the internal PulsarClients within the configured timeout");
+        } catch (InterruptedException err) {
+            Thread.currentThread().interrupt();
+            log.warn("Could not stop all the internal PulsarClients");
+        }
     }
 
     @VisibleForTesting
