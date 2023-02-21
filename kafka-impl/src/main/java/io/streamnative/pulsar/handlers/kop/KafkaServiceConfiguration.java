@@ -469,7 +469,7 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
             category = CATEGORY_KOP_TRANSACTION,
             doc = "Interval for purging aborted transactions from memory (requires reads from storage)"
     )
-    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 0;
+    private int kafkaTxnPurgeAbortedTxnIntervalSeconds = 60 * 60 * 24;
 
     @FieldContext(
             category = CATEGORY_KOP_TRANSACTION,
