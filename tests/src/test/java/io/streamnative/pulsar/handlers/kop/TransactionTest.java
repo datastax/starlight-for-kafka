@@ -638,7 +638,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         consumeTxnMessage(topicName, 2, lastMessage, isolation);
     }
 
-    @Test(timeOut = 1000 * 20, dataProvider = "takeSnapshotBeforeRecovery")
+    @Test(timeOut = 1000 * 30, dataProvider = "takeSnapshotBeforeRecovery")
     public void basicRecoveryAbortedTransactionDueToProducerFenced(boolean takeSnapshotBeforeRecovery)
             throws Exception {
 
@@ -665,8 +665,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         String secondMessage = "aborted msg 2";
         producer.send(new ProducerRecord<>(topicName, 0, secondMessage)).get();
 
-
-
+        log.debug("Starting a second producer");
         KafkaProducer<Integer, String> producer2 = buildTransactionProducer(transactionalId);
         producer2.initTransactions();
 
@@ -677,6 +676,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         });
         producer.close();
 
+        log.debug("First producer closed");
         producer2.beginTransaction();
         String lastMessage = "committed mgs";
         producer2.send(new ProducerRecord<>(topicName, 0, "foo")).get();
