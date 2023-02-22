@@ -28,7 +28,7 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_3.0";
+    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_3.3";
     private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.3";
     private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
     private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
