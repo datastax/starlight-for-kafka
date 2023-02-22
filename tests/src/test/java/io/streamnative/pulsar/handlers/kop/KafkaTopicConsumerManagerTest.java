@@ -103,7 +103,6 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic(topic, 1);
         admin.lookups().lookupPartitionedTopic(topic);
         String partitionName = TopicName.get(topic).getPartition(0).toString();
-        // trigger topic load
         CompletableFuture<Topic> handle =
                 pulsar.getBrokerService().getOrCreateTopic(partitionName);
         handle.get();
@@ -123,7 +122,7 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
         assertNotNull(topicConsumerManager2);
 
-        assertSame(topicConsumerManager, topicConsumerManager2);
+        assertTrue(topicConsumerManager == topicConsumerManager2);
         assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
                 .getKafkaTopicConsumerManagerCache().getCount(), 1);
 
