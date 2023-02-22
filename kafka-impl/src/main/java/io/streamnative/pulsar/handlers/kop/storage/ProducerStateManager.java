@@ -208,8 +208,10 @@ public class ProducerStateManager {
                         .write(snapshot)
                         .whenComplete((res, error) -> {
                             if (error == null) {
-                                log.info("Snapshot for {} ({}) taken at offset {} written",
-                                        topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                if (log.isDebugEnabled()) {
+                                    log.debug("Snapshot for {} ({}) taken at offset {} written",
+                                            topicPartition, kafkaTopicUUID, snapshot.getOffset());
+                                }
                             } else {
                                 log.info("Error writing snapshot for {} ({}) taken at offset {}",
                                         topicPartition, kafkaTopicUUID, snapshot.getOffset(), error);
