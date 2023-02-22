@@ -898,7 +898,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
@@ -922,10 +922,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         waitForTransactionsToBeInStableState(transactionalId);
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
+
 
         if (takeSnapshotBeforeRecovery) {
             takeSnapshot(topicName);
@@ -1074,7 +1075,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
@@ -1087,7 +1088,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         waitForTransactionsToBeInStableState(transactionalId);
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
@@ -1102,7 +1103,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
 
         // continue writing, this triggers recovery
         producer.beginTransaction();
@@ -1471,7 +1472,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             // unload and reload in order to have at least 2 ledgers in the
             // topic, this way we can drop the head ledger
-            admin.namespaces().unload(namespacePrefix);
+            admin.topics().unload(fullTopicName);
             admin.lookups().lookupTopic(fullTopicName);
 
             assertTrue(partitionLog.isUnloaded());
