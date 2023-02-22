@@ -275,8 +275,6 @@ public abstract class KopProtocolHandlerTestBase {
     protected void triggerTopicLookup(String topicName) {
         try {
             String brokerUrl = pulsar.getAdminClient().lookups().lookupTopic(topicName);
-            // Lookup Topic is not enough in order to LOAD a topic
-            pulsar.getAdminClient().topics().getStats(topicName);
             if (log.isDebugEnabled()) {
                 log.debug("Topic [{}] brokerUrl: {}", topicName, brokerUrl);
             }

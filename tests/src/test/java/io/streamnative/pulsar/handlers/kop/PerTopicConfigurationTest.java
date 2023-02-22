@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNull;
 
-import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
@@ -34,7 +33,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
 import org.apache.pulsar.client.api.SubscriptionInitialPosition;
-import org.apache.pulsar.common.naming.TopicName;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -52,8 +50,6 @@ public class PerTopicConfigurationTest extends KopProtocolHandlerTestBase {
     protected void setup() throws Exception {
         conf.setEntryFormat("kafka");
         super.internalSetup();
-        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
-                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
     }
 
     @AfterClass
