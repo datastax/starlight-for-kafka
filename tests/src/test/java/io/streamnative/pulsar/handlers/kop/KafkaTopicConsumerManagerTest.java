@@ -57,7 +57,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
-import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.TopicStats;
@@ -103,9 +102,8 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         admin.topics().createPartitionedTopic(topic, 1);
         admin.lookups().lookupPartitionedTopic(topic);
         String partitionName = TopicName.get(topic).getPartition(0).toString();
-        CompletableFuture<Topic> handle =
-                pulsar.getBrokerService().getOrCreateTopic(partitionName);
-        handle.get();
+        // trigger topic load
+        admin.topics().getPartitionedStats(topic, true);
         return partitionName;
     }
 
@@ -118,11 +116,12 @@ public class KafkaTopicConsumerManagerTest extends KopProtocolHandlerTestBase {
         assertNotNull(topicConsumerManager);
 
         // 1. verify another get with same topic will return same tcm
-        tcm = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
-        KafkaTopicConsumerManager topicConsumerManager2 = tcm.get();
+        CompletableFuture<KafkaTopicConsumerManager> tcm2 = kafkaTopicManager.getTopicConsumerManager(fullTopicName);
+        KafkaTopicConsumerManager topicConsumerManager2 = tcm2.get();
         assertNotNull(topicConsumerManager2);
+        assertSame(tcm, tcm2);
 
-        assertTrue(topicConsumerManager == topicConsumerManager2);
+        assertSame(topicConsumerManager, topicConsumerManager2);
         assertEquals(kafkaRequestHandler.getKafkaTopicManagerSharedState()
                 .getKafkaTopicConsumerManagerCache().getCount(), 1);
 

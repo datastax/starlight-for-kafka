@@ -21,6 +21,7 @@ import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -70,6 +71,8 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         super.internalSetup();
+        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
+                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
         log.info("success internal setup");
     }
 
@@ -191,6 +194,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
 
         admin.topics().createPartitionedTopic(topic, 1);
         admin.lookups().lookupTopic(topic); // trigger the creation of PersistentTopic
+        admin.topics().getPartitionedStats(topic, true);
 
         final ManagedLedgerImpl managedLedger = pulsar.getBrokerService().getTopicIfExists(partitionName).get()
                 .map(topicObject -> (ManagedLedgerImpl) ((PersistentTopic) topicObject).getManagedLedger())

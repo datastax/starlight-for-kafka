@@ -32,6 +32,8 @@ import org.apache.pulsar.common.naming.TopicName;
 @Slf4j
 public class NamespaceBundleOwnershipListenerImpl {
 
+    private static final boolean USE_TOPIC_EVENT_LISTENER = true;
+
     private final List<TopicOwnershipListener> topicOwnershipListeners = new CopyOnWriteArrayList<>();
     private final NamespaceService namespaceService;
     private final BrokerService brokerService;
@@ -53,14 +55,14 @@ public class NamespaceBundleOwnershipListenerImpl {
      * `onLoad` method should be called on each owned bundle if `test(bundle)` returns true.
      */
     public void addTopicOwnershipListener(final TopicOwnershipListener listener) {
-        brokerService.addTopicEventListener(new InnerTopicEventListener(listener));
-
-        /*
+        if (USE_TOPIC_EVENT_LISTENER) {
+            brokerService.addTopicEventListener(new InnerTopicEventListener(listener));
+        } else {
             topicOwnershipListeners.add(listener);
             namespaceService.getOwnedServiceUnits()
-                .stream()
-                .filter(bundleBasedImpl).forEach(bundleBasedImpl::onLoad);
-        */
+                    .stream()
+                    .filter(bundleBasedImpl).forEach(bundleBasedImpl::onLoad);
+        }
 
     }
 
@@ -74,7 +76,7 @@ public class NamespaceBundleOwnershipListenerImpl {
 
         @Override
         public void handleEvent(String topicName, TopicEvent event, EventStage stage, Throwable t) {
-            log.debug("handleEvent {} {} on {}", event, stage, topicName);
+            log.debug("handleEvent {} {} on {}", event, stage, topicName, new Exception().fillInStackTrace());
             if (closed) {
                 return;
             }
@@ -178,7 +180,9 @@ public class NamespaceBundleOwnershipListenerImpl {
     }
 
     public void register() {
-        //namespaceService.addNamespaceBundleOwnershipListener(bundleBasedImpl);
+        if (!USE_TOPIC_EVENT_LISTENER) {
+            namespaceService.addNamespaceBundleOwnershipListener(bundleBasedImpl);
+        }
     }
 
     public void shutdown() {

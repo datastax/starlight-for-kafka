@@ -88,6 +88,7 @@ public class KafkaTopicConsumerManagerCache {
     }
 
     public void close() {
+        log.debug("closing");
         cache.forEach((fullTopicName, internalMap) -> {
             internalMap.forEach((remoteAddress, future) -> {
                 try {

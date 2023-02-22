@@ -22,6 +22,7 @@ import static org.testng.Assert.assertTrue;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -166,6 +167,9 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         List<String> brokers =  admin.brokers().getActiveBrokers(configClusterName);
         assertEquals(2, brokers.size());
         log.info("broker1: {} broker2: {}", brokers.get(0), brokers.get(1));
+
+        this.triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(
+                TopicName.PUBLIC_TENANT, this.conf), this.conf.getOffsetsTopicNumPartitions());
     }
 
 
