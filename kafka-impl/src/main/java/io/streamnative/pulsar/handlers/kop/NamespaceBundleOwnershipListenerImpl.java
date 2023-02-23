@@ -65,11 +65,13 @@ public class NamespaceBundleOwnershipListenerImpl {
 
         @Override
         public void handleEvent(String topicName, TopicEvent event, EventStage stage, Throwable t) {
-            log.debug("handleEvent {} {} on {}", event, stage, topicName, new Exception().fillInStackTrace());
             if (closed) {
                 return;
             }
-            if (stage == EventStage.SUCCESS) {
+            if (log.isDebugEnabled()) {
+                log.debug("handleEvent {} {} on {}", event, stage, topicName);
+            }
+            if (stage == EventStage.SUCCESS || stage == EventStage.FAILURE) {
                 TopicName topicName1 = TopicName.get(topicName);
                 switch (event) {
                     case UNLOAD:
@@ -79,7 +81,9 @@ public class NamespaceBundleOwnershipListenerImpl {
                         notifyDeleteTopic(topicName1.getNamespaceObject(), topicName1);
                         break;
                     default:
-                        log.debug("Ignore event {} {} on {}", event, stage, topicName);
+                        if (log.isDebugEnabled()) {
+                            log.debug("Ignore event {} {} on {}", event, stage, topicName);
+                        }
                         break;
                 }
             }
