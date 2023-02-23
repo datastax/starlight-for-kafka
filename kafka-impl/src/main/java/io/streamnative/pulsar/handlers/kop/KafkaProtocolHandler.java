@@ -69,7 +69,6 @@ import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
-import org.apache.pulsar.broker.service.TopicEventsListener;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -269,7 +268,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             }
 
             @Override
-            public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+            public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
                 switch (event) {
                     case UNLOAD:
                     case DELETE:
@@ -382,7 +381,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+                public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
                     switch (event) {
                         case LOAD:
                         case UNLOAD:
@@ -441,7 +440,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+                public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
                     switch (event) {
                         case LOAD:
                         case UNLOAD:

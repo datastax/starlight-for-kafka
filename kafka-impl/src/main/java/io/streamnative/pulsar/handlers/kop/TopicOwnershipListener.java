@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import org.apache.pulsar.broker.service.TopicEventsListener;
 import org.apache.pulsar.common.naming.NamespaceName;
 import org.apache.pulsar.common.naming.TopicName;
 
@@ -21,6 +20,13 @@ import org.apache.pulsar.common.naming.TopicName;
  * Listener that is triggered when a topic's ownership changed via load or unload.
  */
 public interface TopicOwnershipListener  {
+
+    enum EventType {
+        LOAD,
+        UNLOAD,
+        DELETE
+    }
+
 
     /**
      * It's triggered when the topic is loaded by a broker.
@@ -49,7 +55,7 @@ public interface TopicOwnershipListener  {
     /** Returns the name of the listener. */
     String name();
 
-    default boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+    default boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
         return false;
     }
 
