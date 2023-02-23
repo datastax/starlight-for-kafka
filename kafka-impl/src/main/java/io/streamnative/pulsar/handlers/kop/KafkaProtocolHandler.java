@@ -69,6 +69,7 @@ import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
+import org.apache.pulsar.broker.service.TopicEventsListener;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.common.naming.NamespaceName;
@@ -254,15 +255,27 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         bundleListener = new NamespaceBundleOwnershipListenerImpl(brokerService);
 
         bundleListener.addTopicOwnershipListener(new TopicOwnershipListener() {
-            @Override
-            public void whenLoad(TopicName topicName) {
-                invalidateBundleCache(topicName);
-            }
 
             @Override
             public void whenUnload(TopicName topicName) {
                 invalidateBundleCache(topicName);
                 invalidatePartitionLog(topicName);
+            }
+
+            @Override
+            public void whenDelete(TopicName topicName) {
+                invalidateBundleCache(topicName);
+                invalidatePartitionLog(topicName);
+            }
+
+            @Override
+            public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+                switch (event) {
+                    case UNLOAD:
+                    case DELETE:
+                        return true;
+                }
+                return false;
             }
 
             @Override
@@ -369,8 +382,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs);
+                public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+                    switch (event) {
+                        case LOAD:
+                        case UNLOAD:
+                            return namespaceName.equals(kafkaMetaNs);
+                        default:
+                            return false;
+                    }
                 }
             });
             return transactionCoordinator;
@@ -422,9 +441,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs);
+                public boolean interestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+                    switch (event) {
+                        case LOAD:
+                        case UNLOAD:
+                            return namespaceName.equals(kafkaMetaNs);
+                        default:
+                            return false;
+                    }
                 }
+
             });
         } catch (Exception e) {
             log.error("Failed to create offset metadata", e);

@@ -73,7 +73,10 @@ public class NamespaceBundleOwnershipListenerImpl {
                 TopicName topicName1 = TopicName.get(topicName);
                 switch (event) {
                     case UNLOAD:
-                        notifyTopicUnload(topicName1.getNamespaceObject(), List.of(topicName));
+                        notifyUnloadTopic(topicName1.getNamespaceObject(), topicName1);
+                        break;
+                    case DELETE:
+                        notifyDeleteTopic(topicName1.getNamespaceObject(), topicName1);
                         break;
                     default:
                         log.debug("Ignore event {} {} on {}", event, stage, topicName);
@@ -83,14 +86,27 @@ public class NamespaceBundleOwnershipListenerImpl {
         }
     }
 
+    private boolean anyListenerInsterestedInEvent(NamespaceName namespaceName, TopicEventsListener.TopicEvent event) {
+        return topicOwnershipListeners
+                .stream()
+                .anyMatch(l->l.interestedInEvent(namespaceName, event));
+    }
+
     private class InnerNamespaceBundleOwnershipListener implements NamespaceBundleOwnershipListener  {
 
         @Override
         public void onLoad(NamespaceBundle bundle) {
-            log.info("[{}] Load bundle: {}", brokerUrl, bundle);
+
             NamespaceName namespaceObject = bundle.getNamespaceObject();
+            if (!anyListenerInsterestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.LOAD)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Load bundle: {} - NO LISTENER INTERESTED", brokerUrl, bundle);
+                }
+                return;
+            }
+            log.info("[{}] Load bundle: {}", brokerUrl, bundle);
             getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
-                notifyLoadTopic(namespaceObject, topics);
+                notifyLoadTopics(namespaceObject, topics);
             }).exceptionally(ex -> {
                 log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
                 return null;
@@ -102,10 +118,16 @@ public class NamespaceBundleOwnershipListenerImpl {
             if (USE_TOPIC_EVENT_LISTENER) {
                 return;
             }
-            log.info("[{}] Unload bundle: {}", brokerUrl, bundle);
             NamespaceName namespaceObject = bundle.getNamespaceObject();
+            if (!anyListenerInsterestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.UNLOAD)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("[{}] Unload bundle: {} - NO LISTENER INTERESTED", brokerUrl, bundle);
+                }
+                return;
+            }
+            log.info("[{}] Unload bundle: {}", brokerUrl, bundle);
             getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
-                notifyTopicUnload(namespaceObject, topics);
+                notifyUnloadTopics(namespaceObject, topics);
             }).exceptionally(ex -> {
                 log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
                 return null;
@@ -120,20 +142,22 @@ public class NamespaceBundleOwnershipListenerImpl {
         // Kafka topics are always persistent so there is no need to get owned non-persistent topics.
         // However, `NamespaceService#getOwnedTopicListForNamespaceBundle` calls `getFullListTopics`, which always calls
         // `getListOfNonPersistentTopics`. So this method is a supplement to the existing NamespaceService API.
-        private CompletableFuture<List<String>> getOwnedPersistentTopicList(final NamespaceBundle bundle) {
+        private CompletableFuture<List<TopicName>> getOwnedPersistentTopicList(final NamespaceBundle bundle) {
             final NamespaceName namespaceName = bundle.getNamespaceObject();
-            final CompletableFuture<List<String>> topicsFuture =
+            final CompletableFuture<List<TopicName>> topicsFuture =
                     namespaceService.getListOfPersistentTopics(namespaceName)
                     .thenApply(topics -> topics.stream()
-                            .filter(topic -> bundle.includes(TopicName.get(topic)))
+                            .map(TopicName::get)
+                            .filter(topic -> bundle.includes(topic))
                             .collect(Collectors.toList()));
-            final CompletableFuture<List<String>> partitionsFuture =
+            final CompletableFuture<List<TopicName>> partitionsFuture =
                     namespaceService.getPartitions(namespaceName, TopicDomain.persistent)
                             .thenApply(topics -> topics.stream()
-                                    .filter(topic -> bundle.includes(TopicName.get(topic)))
+                                    .map(TopicName::get)
+                                    .filter(topic -> bundle.includes(topic))
                                     .collect(Collectors.toList()));
             return topicsFuture.thenCombine(partitionsFuture, (topics, partitions) -> {
-                for (String partition : partitions) {
+                for (TopicName partition : partitions) {
                     if (!topics.contains(partition)) {
                         topics.add(partition);
                     }
@@ -143,30 +167,54 @@ public class NamespaceBundleOwnershipListenerImpl {
         }
     }
 
-    private void notifyTopicUnload(NamespaceName namespaceObject, List<String> topics) {
+    private void notifyUnloadTopic(NamespaceName namespaceObject, TopicName topic) {
         topicOwnershipListeners.forEach(listener -> {
-            if (!listener.test(namespaceObject)) {
+            if (!listener.interestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.UNLOAD)) {
+                return;
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("[{}][{}] Trigger unload callback for {}", brokerUrl, listener.name(), topic);
+            }
+            listener.whenUnload(topic);
+        });
+    }
+
+    private void notifyDeleteTopic(NamespaceName namespaceObject, TopicName topic) {
+        topicOwnershipListeners.forEach(listener -> {
+            if (!listener.interestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.DELETE)) {
+                return;
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("[{}][{}] Trigger delete callback for {}", brokerUrl, listener.name(), topic);
+            }
+            listener.whenDelete(topic);
+        });
+    }
+
+    private void notifyUnloadTopics(NamespaceName namespaceObject, List<TopicName> topics) {
+        topicOwnershipListeners.forEach(listener -> {
+            if (!listener.interestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.UNLOAD)) {
                 return;
             }
             topics.forEach(topic -> {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}][{}] Trigger unload callback for {}", brokerUrl, listener.name(), topic);
                 }
-                listener.whenUnload(TopicName.get(topic));
+                listener.whenUnload(topic);
             });
         });
     }
 
-    private void notifyLoadTopic(NamespaceName namespaceObject, List<String> topics) {
+    private void notifyLoadTopics(NamespaceName namespaceObject, List<TopicName> topics) {
         topicOwnershipListeners.forEach(listener -> {
-            if (!listener.test(namespaceObject)) {
+            if (!listener.interestedInEvent(namespaceObject, TopicEventsListener.TopicEvent.LOAD)) {
                 return;
             }
             topics.forEach(topic -> {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}][{}] Trigger load callback for {}", brokerUrl, listener.name(), topic);
                 }
-                listener.whenLoad(TopicName.get(topic));
+                listener.whenLoad(topic);
             });
         });
     }
