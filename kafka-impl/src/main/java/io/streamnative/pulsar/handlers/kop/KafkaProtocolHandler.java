@@ -67,7 +67,6 @@ import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarServerException;
 import org.apache.pulsar.broker.ServiceConfiguration;
-import org.apache.pulsar.broker.namespace.NamespaceService;
 import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.BrokerService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -117,6 +116,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
+    @VisibleForTesting
+    @Getter
     private NamespaceBundleOwnershipListenerImpl bundleListener;
 
     @Getter
@@ -251,20 +252,31 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             throw new IllegalStateException(ex);
         }
 
-        final NamespaceService namespaceService = brokerService.pulsar().getNamespaceService();
-        bundleListener = new NamespaceBundleOwnershipListenerImpl(namespaceService,
-                brokerService.pulsar().getBrokerServiceUrl());
         // Listener for invalidating the global Broker ownership cache
+        bundleListener = new NamespaceBundleOwnershipListenerImpl(brokerService);
+
         bundleListener.addTopicOwnershipListener(new TopicOwnershipListener() {
-            @Override
-            public void whenLoad(TopicName topicName) {
-                invalidateBundleCache(topicName);
-            }
 
             @Override
             public void whenUnload(TopicName topicName) {
                 invalidateBundleCache(topicName);
                 invalidatePartitionLog(topicName);
+            }
+
+            @Override
+            public void whenDelete(TopicName topicName) {
+                invalidateBundleCache(topicName);
+                invalidatePartitionLog(topicName);
+            }
+
+            @Override
+            public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
+                switch (event) {
+                    case UNLOAD:
+                    case DELETE:
+                        return true;
+                }
+                return false;
             }
 
             @Override
@@ -287,7 +299,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
             }
         });
-        namespaceService.addNamespaceBundleOwnershipListener(bundleListener);
+        bundleListener.register();
 
         recoveryExecutor = OrderedExecutor
                 .newBuilder()
@@ -371,8 +383,14 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs);
+                public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
+                    switch (event) {
+                        case LOAD:
+                        case UNLOAD:
+                            return namespaceName.equals(kafkaMetaNs);
+                        default:
+                            return false;
+                    }
                 }
             });
             return transactionCoordinator;
@@ -424,9 +442,16 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 }
 
                 @Override
-                public boolean test(NamespaceName namespaceName) {
-                    return namespaceName.equals(kafkaMetaNs);
+                public boolean interestedInEvent(NamespaceName namespaceName, EventType event) {
+                    switch (event) {
+                        case LOAD:
+                        case UNLOAD:
+                            return namespaceName.equals(kafkaMetaNs);
+                        default:
+                            return false;
+                    }
                 }
+
             });
         } catch (Exception e) {
             log.error("Failed to create offset metadata", e);

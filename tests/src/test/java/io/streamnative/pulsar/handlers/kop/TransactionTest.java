@@ -779,9 +779,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         producer.initTransactions();
 
-        KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
-                pulsar.getProtocolHandlers().protocol("kafka");
-
         producer.beginTransaction();
 
         producer.send(new ProducerRecord<>(topicName, 0, "deleted msg 1")).get();
@@ -813,14 +810,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         pulsar.getAdminClient().namespaces().unload(namespace);
         admin.topics().deletePartitionedTopic(topicName, true);
 
-        // unfortunately the PH is not notified of the deletion
-        // so we unload the namespace in order to clear local references/caches
-        pulsar.getAdminClient().namespaces().unload(namespace);
-
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(0).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(1).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(2).toString());
-        protocolHandler.getReplicaManager().removePartitionLog(fullTopicName.getPartition(3).toString());
+        // the PH is notified of the deletion using TopicEventListener
 
         // create the topic again, using the kafka APIs
         kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
@@ -898,7 +888,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
@@ -922,10 +912,11 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         waitForTransactionsToBeInStableState(transactionalId);
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
+
 
         if (takeSnapshotBeforeRecovery) {
             takeSnapshot(topicName);
@@ -1074,7 +1065,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         // unload and reload in order to have at least 2 ledgers in the
         // topic, this way we can drop the head ledger
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         producer.beginTransaction();
@@ -1087,7 +1078,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         waitForTransactionsToBeInStableState(transactionalId);
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
         admin.lookups().lookupTopic(fullTopicName.getPartition(0).toString());
 
         KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
@@ -1102,7 +1093,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
         trimConsumedLedgers(fullTopicName.getPartition(0).toString());
 
-        admin.namespaces().unload(namespace);
+        admin.topics().unload(fullTopicName.getPartition(0).toString());
 
         // continue writing, this triggers recovery
         producer.beginTransaction();
@@ -1471,7 +1462,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             // unload and reload in order to have at least 2 ledgers in the
             // topic, this way we can drop the head ledger
-            admin.namespaces().unload(namespacePrefix);
+            admin.topics().unload(fullTopicName);
             admin.lookups().lookupTopic(fullTopicName);
 
             assertTrue(partitionLog.isUnloaded());
