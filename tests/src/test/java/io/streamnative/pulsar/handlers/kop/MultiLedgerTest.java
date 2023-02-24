@@ -213,9 +213,9 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
         // Rollover and delete the old ledgers, wait until there is only one empty ledger
         managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
-        managedLedger.rollCurrentLedgerIfFull();
         Awaitility.await().atMost(Duration.ofSeconds(10))
                 .until(() -> {
+                    managedLedger.rollCurrentLedgerIfFull();
                     log.info("Managed ledger status: [{}], ledgers info: [{}]",
                             managedLedger.getState(), managedLedger.getLedgersInfo().toString());
                     return managedLedger.getLedgersInfo().size() == 1;

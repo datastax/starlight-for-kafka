@@ -79,7 +79,8 @@ public class TimeOutTestListener extends TestListenerAdapter {
         super.onTestFailure(tr);
 
         if (tr.getThrowable() != null
-                && tr.getThrowable() instanceof ThreadTimeoutException) {
+                && ((tr.getThrowable() instanceof ThreadTimeoutException)
+                            || ((tr.getThrowable() + "").contains("ConditionTimeoutException")))) {
             System.err.println("====> TEST TIMED OUT. PRINTING THREAD DUMP. <====");
             System.err.println();
             System.err.print(ThreadDumpUtil.buildThreadDiagnosticString());
