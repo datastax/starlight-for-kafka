@@ -27,7 +27,6 @@ public interface TopicOwnershipListener  {
         DELETE
     }
 
-
     /**
      * It's triggered when the topic is loaded by a broker.
      *

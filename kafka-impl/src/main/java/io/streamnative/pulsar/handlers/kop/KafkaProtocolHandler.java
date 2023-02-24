@@ -116,6 +116,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @Getter
     private KopEventManager kopEventManager;
     private OrderedScheduler sendResponseScheduler;
+    @VisibleForTesting
+    @Getter
     private NamespaceBundleOwnershipListenerImpl bundleListener;
 
     @Getter
@@ -593,7 +595,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         statsProvider.stop();
         sendResponseScheduler.shutdown();
         schemaManagerCache.clear();
-        bundleListener.shutdown();
 
         List<CompletableFuture<?>> closeHandles = new ArrayList<>();
         if (offsetTopicClient != null) {

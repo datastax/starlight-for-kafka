@@ -50,8 +50,6 @@ public class NamespaceBundleOwnershipListenerImpl {
     private final BrokerService brokerService;
     private final String brokerUrl;
 
-    private volatile boolean closed;
-
     private final InnerNamespaceBundleOwnershipListener bundleBasedImpl = new InnerNamespaceBundleOwnershipListener();
 
     public NamespaceBundleOwnershipListenerImpl(BrokerService brokerService) {
@@ -72,7 +70,7 @@ public class NamespaceBundleOwnershipListenerImpl {
                 .filter(bundleBasedImpl).forEach(bundleBasedImpl::onLoad);
     }
 
-    private boolean anyListenerInsterestedInEvent(NamespaceName namespaceName, TopicOwnershipListener.EventType event) {
+    private boolean anyListenerInterestedInEvent(NamespaceName namespaceName, TopicOwnershipListener.EventType event) {
         return topicOwnershipListeners
                 .stream()
                 .anyMatch(l -> l.interestedInEvent(namespaceName, event));
@@ -84,7 +82,7 @@ public class NamespaceBundleOwnershipListenerImpl {
         public void onLoad(NamespaceBundle bundle) {
 
             NamespaceName namespaceObject = bundle.getNamespaceObject();
-            if (!anyListenerInsterestedInEvent(namespaceObject, TopicOwnershipListener.EventType.LOAD)) {
+            if (!anyListenerInterestedInEvent(namespaceObject, TopicOwnershipListener.EventType.LOAD)) {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Load bundle: {} - NO LISTENER INTERESTED", brokerUrl, bundle);
                 }
@@ -92,11 +90,10 @@ public class NamespaceBundleOwnershipListenerImpl {
             }
             log.info("[{}] Load bundle: {}", brokerUrl, bundle);
 
-            // We have to eagerly list all the topics in the bundle,
-            // this usually triggers loading of topics that were not loaded
+            // We have to eagerly list all the topics in the bundle even if they are not LOADED yet,
             // this is necessary in order to eagerly bootstrap the GroupCoordinator and the TransactionCoordinator
             // services.
-            getAndLoadOwnedPersistentTopicList(bundle).thenAccept(topics -> {
+            getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
                 notifyLoadTopics(namespaceObject, topics);
             }).exceptionally(ex -> {
                 log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
@@ -110,17 +107,16 @@ public class NamespaceBundleOwnershipListenerImpl {
                 // Unload events hard dispatched in a better way using the TopicEventListener API.
                 return;
             }
-            // We have to eagerly list all the topics in the bundle,
-            // this may trigger loading of topics that were not loaded
+            // We have to eagerly list all the topics in the bundle, even if they are not LOADED yet
             NamespaceName namespaceObject = bundle.getNamespaceObject();
-            if (!anyListenerInsterestedInEvent(namespaceObject, TopicOwnershipListener.EventType.UNLOAD)) {
+            if (!anyListenerInterestedInEvent(namespaceObject, TopicOwnershipListener.EventType.UNLOAD)) {
                 if (log.isDebugEnabled()) {
                     log.debug("[{}] Unload bundle: {} - NO LISTENER INTERESTED", brokerUrl, bundle);
                 }
                 return;
             }
             log.info("[{}] Unload bundle: {}", brokerUrl, bundle);
-            getAndLoadOwnedPersistentTopicList(bundle).thenAccept(topics -> {
+            getOwnedPersistentTopicList(bundle).thenAccept(topics -> {
                 notifyUnloadTopics(namespaceObject, topics);
             }).exceptionally(ex -> {
                 log.error("[{}] Failed to get owned topic list of {}", brokerUrl, bundle, ex);
@@ -130,13 +126,13 @@ public class NamespaceBundleOwnershipListenerImpl {
 
         @Override
         public boolean test(NamespaceBundle bundle) {
-            return !closed;
+            return true;
         }
 
         // Kafka topics are always persistent so there is no need to get owned non-persistent topics.
         // However, `NamespaceService#getOwnedTopicListForNamespaceBundle` calls `getFullListTopics`, which always calls
         // `getListOfNonPersistentTopics`. So this method is a supplement to the existing NamespaceService API.
-        private CompletableFuture<List<TopicName>> getAndLoadOwnedPersistentTopicList(final NamespaceBundle bundle) {
+        private CompletableFuture<List<TopicName>> getOwnedPersistentTopicList(final NamespaceBundle bundle) {
             final NamespaceName namespaceName = bundle.getNamespaceObject();
             final CompletableFuture<List<TopicName>> topicsFuture =
                     namespaceService.getListOfPersistentTopics(namespaceName)
@@ -220,11 +216,4 @@ public class NamespaceBundleOwnershipListenerImpl {
         }
     }
 
-    public void shutdown() {
-        closed = true;
-    }
-
-    public boolean isClosed() {
-        return closed;
-    }
 }

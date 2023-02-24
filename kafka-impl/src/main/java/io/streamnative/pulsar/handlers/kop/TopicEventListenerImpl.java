@@ -38,13 +38,10 @@ class TopicEventListenerImpl implements TopicEventsListener {
 
     @Override
     public void handleEvent(String topicName, TopicEvent event, EventStage stage, Throwable t) {
-        if (parent.isClosed()) {
-            return;
-        }
-        if (log.isDebugEnabled()) {
-            log.debug("handleEvent {} {} on {}", event, stage, topicName);
-        }
         if (stage == EventStage.SUCCESS || stage == EventStage.FAILURE) {
+            if (log.isDebugEnabled()) {
+                log.debug("handleEvent {} {} on {}", event, stage, topicName);
+            }
             TopicName topicName1 = TopicName.get(topicName);
             switch (event) {
                 case UNLOAD:
