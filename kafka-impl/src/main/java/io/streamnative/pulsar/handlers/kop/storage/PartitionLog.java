@@ -452,7 +452,7 @@ public class PartitionLog {
             AppendOrigin origin) {
         Long producerId = batch.producerId();
         ProducerAppendInfo appendInfo =
-                producers.computeIfAbsent(producerId, pid -> producerStateManager.prepareUpdate(producerId, origin));
+                producers.computeIfAbsent(producerId, pid -> producerStateManager.prepareUpdate(pid, origin));
         return appendInfo.append(batch, firstOffset);
     }
 
