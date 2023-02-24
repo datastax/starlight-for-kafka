@@ -212,6 +212,7 @@ public class TransactionMarkerChannelManager {
 
             // do not cache failed futures
             handlerFuture.exceptionally(error -> {
+                log.error("getChannel failed {} {}", socketAddress, error.getMessage(), error);
                 handlerMap.remove(socketAddress, handlerFuture);
                 return null;
             });
@@ -547,14 +548,29 @@ public class TransactionMarkerChannelManager {
             txnMarkerQueue.forEachTxnTopicPartition((__, queue) -> queue.drainTo(txnIdAndMarkerEntriesForMarker));
             if (!txnIdAndMarkerEntriesForMarker.isEmpty()) {
                 getChannel(txnMarkerQueue.address).whenComplete((channelHandler, throwable) -> {
-
-                    List<TxnMarkerEntry> sendEntries = new ArrayList<>();
-                    for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntriesForMarker) {
-                        sendEntries.add(txnIdAndMarkerEntry.entry);
+                    if (throwable != null) {
+                        log.error("Get channel for {} failed, re-enqueing {} txnIdAndMarkerEntriesForMarker",
+                                txnMarkerQueue.address, txnIdAndMarkerEntriesForMarker.size());
+                        // put back
+                        txnIdAndMarkerEntriesForMarker.forEach(txnIdAndMarkerEntry -> {
+                            log.error("Re-enqueueing {}", txnIdAndMarkerEntry);
+                            addTxnMarkersToBrokerQueue(txnIdAndMarkerEntry.getTransactionalId(),
+                                    txnIdAndMarkerEntry.getEntry().producerId(),
+                                    txnIdAndMarkerEntry.getEntry().producerEpoch(),
+                                    txnIdAndMarkerEntry.getEntry().transactionResult(),
+                                    txnIdAndMarkerEntry.getEntry().coordinatorEpoch(),
+                                    new HashSet<>(txnIdAndMarkerEntry.getEntry().partitions()),
+                                    namespacePrefixForUserTopics);
+                        });
+                    } else {
+                        List<TxnMarkerEntry> sendEntries = new ArrayList<>();
+                        for (TxnIdAndMarkerEntry txnIdAndMarkerEntry : txnIdAndMarkerEntriesForMarker) {
+                            sendEntries.add(txnIdAndMarkerEntry.entry);
+                        }
+                        channelHandler.enqueueWriteTxnMarkers(sendEntries,
+                                new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
+                                        txnIdAndMarkerEntriesForMarker, namespacePrefixForUserTopics));
                     }
-                    channelHandler.enqueueWriteTxnMarkers(sendEntries,
-                            new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
-                                    txnIdAndMarkerEntriesForMarker, namespacePrefixForUserTopics));
                 });
             }
         }
