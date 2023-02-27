@@ -661,6 +661,13 @@
       <url>https://repo1.maven.org/maven2</url>
     </repository>
 
+
+    <repository>
+      <id>datastax.jfrog.io</id>
+      <url>https://datastax.jfrog.io/artifactory/datastax-public-releases-local</url>
+    </repository>
+
+<!--
     <repository>
       <id>datastax-public-releases-local</id>
       <url>https://repo.datastax.com/artifactory/datastax-public-releases-local</url>
@@ -676,7 +683,7 @@
         <enabled>false</enabled>
       </releases>
     </repository>
-
+-->
   </repositories>
 
   <distributionManagement>
