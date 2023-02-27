@@ -198,14 +198,15 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
                     .orElse(null);
             assertNotNull(managedLedger);
             managedLedger.getConfig().setMaxEntriesPerLedger(2);
-
-            @Cleanup final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
             final int numLedgers = 5;
             final int numMessages = numLedgers * managedLedger.getConfig().getMaxEntriesPerLedger();
-            for (int i = 0; i < numMessages; i++) {
-                producer.send(new ProducerRecord<>(partitionName, "msg-" + i)).get();
+
+            try (final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());) {
+                for (int i = 0; i < numMessages; i++) {
+                    producer.send(new ProducerRecord<>(partitionName, "msg-" + i)).get();
+                }
+                assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
             }
-            assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
 
             // The rollover can only happen when state is LedgerOpened since https://github.com/apache/pulsar/pull/14664
             Field stateUpdater = ManagedLedgerImpl.class.getDeclaredField("state");
@@ -242,7 +243,9 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
 
             // Verify consumer can start consuming from the correct position
             consumer.subscribe(Collections.singleton(topic));
-            producer.send(new ProducerRecord<>(topic, "hello"));
+            try (final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());) {
+                producer.send(new ProducerRecord<>(topic, "hello"));
+            }
             final List<String> receivedValues = new ArrayList<>();
             for (int i = 0; i < 5; i++) {
                 final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
