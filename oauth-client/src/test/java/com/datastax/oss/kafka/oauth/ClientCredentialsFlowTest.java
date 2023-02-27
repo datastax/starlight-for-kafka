@@ -20,12 +20,12 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.Objects;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Objects;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 

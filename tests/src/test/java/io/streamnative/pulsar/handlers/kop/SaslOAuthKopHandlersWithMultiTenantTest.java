@@ -17,8 +17,8 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import com.datastax.oss.kafka.oauth.OauthLoginCallbackHandler;
 import com.google.common.collect.Sets;
-import io.streamnative.pulsar.handlers.kop.security.oauth.OauthLoginCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.security.oauth.OauthValidatorCallbackHandler;
 import java.net.URL;
 import java.time.Duration;
