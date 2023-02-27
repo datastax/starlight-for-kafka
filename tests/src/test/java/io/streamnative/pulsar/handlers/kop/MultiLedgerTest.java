@@ -190,67 +190,71 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         final String partitionName = TopicName.get(topic).getPartition(0).toString();
 
         admin.topics().createPartitionedTopic(topic, 1);
-        admin.lookups().lookupPartitionedTopic(topic); // trigger the creation of PersistentTopic
-
-        final ManagedLedgerImpl managedLedger = pulsar.getBrokerService().getTopicIfExists(partitionName).get()
-                .map(topicObject -> (ManagedLedgerImpl) ((PersistentTopic) topicObject).getManagedLedger())
-                .orElse(null);
-        assertNotNull(managedLedger);
-        managedLedger.getConfig().setMaxEntriesPerLedger(2);
-
-        @Cleanup
-        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
-        final int numLedgers = 5;
-        final int numMessages = numLedgers * managedLedger.getConfig().getMaxEntriesPerLedger();
-        for (int i = 0; i < numMessages; i++) {
-            producer.send(new ProducerRecord<>(partitionName, "msg-" + i)).get();
-        }
-        assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
-
-        // The rollover can only happen when state is LedgerOpened since https://github.com/apache/pulsar/pull/14664
-        Field stateUpdater = ManagedLedgerImpl.class.getDeclaredField("state");
-        stateUpdater.setAccessible(true);
-        stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
-        // Rollover and delete the old ledgers, wait until there is only one empty ledger
-        managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
-        Awaitility.await().atMost(Duration.ofSeconds(10))
-                .until(() -> {
-                    Object currentState = stateUpdater.get(managedLedger);
-                    log.info("CurrentState {}", currentState);
-                    managedLedger.rollCurrentLedgerIfFull();
-                    log.info("Managed ledger status: [{}], ledgers info: [{}]",
-                            managedLedger.getState(), managedLedger.getLedgersInfo().toString());
-                    return managedLedger.getLedgersInfo().size() == 1;
-                });
-        final List<LedgerInfo> ledgerInfoList = managedLedger.getLedgersInfoAsList();
-        assertEquals(ledgerInfoList.size(), 1);
-        assertEquals(ledgerInfoList.get(0).getEntries(), 0);
-
-        // Verify listing offsets for earliest returns a correct offset
-        final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
-        final TopicPartition topicPartition = new TopicPartition(topic, 0);
         try {
-            final Map<TopicPartition, Long> partitionToOffset =
-                    consumer.beginningOffsets(Collections.singleton(topicPartition), Duration.ofSeconds(2));
-            assertTrue(partitionToOffset.containsKey(topicPartition));
-            assertEquals(partitionToOffset.get(topicPartition).intValue(), numMessages);
-        } catch (Exception e) {
-            log.error("Failed to get beginning offsets: {}", e.getMessage());
-            fail(e.getMessage());
-        }
+            admin.lookups().lookupPartitionedTopic(topic); // trigger the creation of PersistentTopic
 
-        // Verify consumer can start consuming from the correct position
-        consumer.subscribe(Collections.singleton(topic));
-        producer.send(new ProducerRecord<>(topic, "hello"));
-        final List<String> receivedValues = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
-            if (!records.isEmpty()) {
-                records.forEach(record -> receivedValues.add(record.value()));
-                break;
+            final ManagedLedgerImpl managedLedger = pulsar.getBrokerService().getTopicIfExists(partitionName).get()
+                    .map(topicObject -> (ManagedLedgerImpl) ((PersistentTopic) topicObject).getManagedLedger())
+                    .orElse(null);
+            assertNotNull(managedLedger);
+            managedLedger.getConfig().setMaxEntriesPerLedger(2);
+
+            @Cleanup final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
+            final int numLedgers = 5;
+            final int numMessages = numLedgers * managedLedger.getConfig().getMaxEntriesPerLedger();
+            for (int i = 0; i < numMessages; i++) {
+                producer.send(new ProducerRecord<>(partitionName, "msg-" + i)).get();
             }
+            assertEquals(managedLedger.getLedgersInfo().size(), numLedgers);
+
+            // The rollover can only happen when state is LedgerOpened since https://github.com/apache/pulsar/pull/14664
+            Field stateUpdater = ManagedLedgerImpl.class.getDeclaredField("state");
+            stateUpdater.setAccessible(true);
+            stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
+            // Rollover and delete the old ledgers, wait until there is only one empty ledger
+            managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
+            Awaitility.await().atMost(Duration.ofSeconds(10))
+                    .until(() -> {
+                        Object currentState = stateUpdater.get(managedLedger);
+                        log.info("CurrentState {}", currentState);
+                        stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
+                        managedLedger.rollCurrentLedgerIfFull();
+                        log.info("Managed ledger status: [{}], ledgers info: [{}]",
+                                managedLedger.getState(), managedLedger.getLedgersInfo().toString());
+                        return managedLedger.getLedgersInfo().size() == 1;
+                    });
+            final List<LedgerInfo> ledgerInfoList = managedLedger.getLedgersInfoAsList();
+            assertEquals(ledgerInfoList.size(), 1);
+            assertEquals(ledgerInfoList.get(0).getEntries(), 0);
+
+            // Verify listing offsets for earliest returns a correct offset
+            final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties());
+            final TopicPartition topicPartition = new TopicPartition(topic, 0);
+            try {
+                final Map<TopicPartition, Long> partitionToOffset =
+                        consumer.beginningOffsets(Collections.singleton(topicPartition), Duration.ofSeconds(2));
+                assertTrue(partitionToOffset.containsKey(topicPartition));
+                assertEquals(partitionToOffset.get(topicPartition).intValue(), numMessages);
+            } catch (Exception e) {
+                log.error("Failed to get beginning offsets: {}", e.getMessage());
+                fail(e.getMessage());
+            }
+
+            // Verify consumer can start consuming from the correct position
+            consumer.subscribe(Collections.singleton(topic));
+            producer.send(new ProducerRecord<>(topic, "hello"));
+            final List<String> receivedValues = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+                if (!records.isEmpty()) {
+                    records.forEach(record -> receivedValues.add(record.value()));
+                    break;
+                }
+            }
+            assertEquals(receivedValues.size(), 1);
+            assertEquals(receivedValues.get(0), "hello");
+        } finally {
+             admin.topics().deletePartitionedTopic(topic, true);
         }
-        assertEquals(receivedValues.size(), 1);
-        assertEquals(receivedValues.get(0), "hello");
     }
 }
