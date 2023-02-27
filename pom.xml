@@ -667,7 +667,7 @@
       <url>https://datastax.jfrog.io/artifactory/datastax-public-releases-local</url>
     </repository>
 
-
+<!--
     <repository>
       <id>datastax-public-releases-local</id>
       <url>https://repo.datastax.com/artifactory/datastax-public-releases-local</url>
@@ -683,7 +683,7 @@
         <enabled>false</enabled>
       </releases>
     </repository>
-
+-->
   </repositories>
 
   <distributionManagement>
