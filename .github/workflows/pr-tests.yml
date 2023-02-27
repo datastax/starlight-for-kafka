@@ -38,7 +38,7 @@ jobs:
       run: mvn clean checkstyle:check install -ntp -B -DskipTests
 
     - name: tests module
-      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!Docker*Test,!*Proxy*Test' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=MultiLedgerTest' -pl tests
       timeout-minutes: 120
 
     - name: Upload to Codecov

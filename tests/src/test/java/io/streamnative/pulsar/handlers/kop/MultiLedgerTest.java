@@ -190,7 +190,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         final String partitionName = TopicName.get(topic).getPartition(0).toString();
 
         admin.topics().createPartitionedTopic(topic, 1);
-        admin.lookups().lookupTopic(topic); // trigger the creation of PersistentTopic
+        admin.lookups().lookupPartitionedTopic(topic); // trigger the creation of PersistentTopic
 
         final ManagedLedgerImpl managedLedger = pulsar.getBrokerService().getTopicIfExists(partitionName).get()
                 .map(topicObject -> (ManagedLedgerImpl) ((PersistentTopic) topicObject).getManagedLedger())
@@ -215,6 +215,8 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
         Awaitility.await().atMost(Duration.ofSeconds(10))
                 .until(() -> {
+                    Object currentState = stateUpdater.get(managedLedger);
+                    log.info("CurrentState {}", currentState);
                     managedLedger.rollCurrentLedgerIfFull();
                     log.info("Managed ledger status: [{}], ledgers info: [{}]",
                             managedLedger.getState(), managedLedger.getLedgersInfo().toString());
