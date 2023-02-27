@@ -664,7 +664,7 @@
 
     <repository>
       <id>datastax.jfrog.io</id>
-      <url>https://datastax.jfrog.io/artifactory/</url>
+      <url>https://datastax.jfrog.io/artifactory/datastax-public-releases-local</url>
     </repository>
 
 
