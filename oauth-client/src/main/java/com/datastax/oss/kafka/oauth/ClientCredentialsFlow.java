@@ -54,12 +54,6 @@ public class ClientCredentialsFlow implements Closeable {
         this.clientConfig = clientConfig;
     }
 
-    @VisibleForTesting
-    protected ClientCredentialsFlow(ClientConfig clientConfig, AsyncHttpClient httpClient) {
-        this.clientConfig = clientConfig;
-        this.httpClient = httpClient;
-    }
-
     public OAuthBearerTokenImpl authenticate() throws IOException {
         final String tokenEndPoint = findAuthorizationServer().getTokenEndPoint();
         final ClientInfo clientInfo = loadPrivateKey();
@@ -77,7 +71,6 @@ public class ClientCredentialsFlow implements Closeable {
                 o.write(body.getBytes(StandardCharsets.UTF_8));
             }
             try (InputStream in = con.getInputStream()) {
-                return TOKEN_RESULT_READER.readValue(in);
                 OAuthBearerTokenImpl token = TOKEN_RESULT_READER.readValue(in);
                 String tenant = clientInfo.getTenant();
                 // Add tenant for multi-tenant.

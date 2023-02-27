@@ -50,6 +50,7 @@
     <log4j2.version>2.17.1</log4j2.version>
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>2.22.0</mockito.version>
+    <wiremock.version>3.0.0-beta-2</wiremock.version>
     <pulsar.group.id>com.datastax.oss</pulsar.group.id>
     <pulsar.version>2.10.3.3</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
@@ -242,6 +243,12 @@
         <groupId>org.mockito</groupId>
         <artifactId>mockito-core</artifactId>
         <version>${mockito.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.github.tomakehurst</groupId>
+        <artifactId>wiremock</artifactId>
+        <version>${wiremock.version}</version>
       </dependency>
 
       <dependency>
