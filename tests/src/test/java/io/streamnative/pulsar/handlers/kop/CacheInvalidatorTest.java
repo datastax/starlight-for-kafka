@@ -19,12 +19,14 @@ import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -82,7 +84,9 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
             assertEquals("value", record.value());
         }
 
-        assertFalse(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
+        ConcurrentHashMap<String, CompletableFuture<InetSocketAddress>> lookupCache =
+                getProtocolHandler().getKopBrokerLookupManager().getLocalBrokerTopics();
+        assertFalse(lookupCache.isEmpty());
         log.info("Before unload, ReplicaManager log size: {}", getProtocolHandler().getReplicaManager().size());
 
         BundlesData bundles = pulsar.getAdminClient().namespaces().getBundles(
@@ -95,8 +99,8 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
         }
 
         Awaitility.await().untilAsserted(() -> {
-            log.info("LOOKUP_CACHE {}", KopBrokerLookupManager.LOOKUP_CACHE);
-            assertTrue(KopBrokerLookupManager.LOOKUP_CACHE.isEmpty());
+            log.info("LOOKUP_CACHE {}", lookupCache);
+            assertTrue(lookupCache.isEmpty());
         });
 
         Awaitility.await().untilAsserted(() -> {
