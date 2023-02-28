@@ -729,7 +729,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         // Because in version 0, an empty topic list indicates "request metadata for all topics."
         if ((request.topics() == null) || (request.topics().isEmpty() && request.version() == 0)) {
             // clean all cache when get all metadata for librdkafka(<1.0.0).
-            KopBrokerLookupManager.clear();
+            kopBrokerLookupManager.clear();
          return expandAllowedNamespaces(kafkaConfig.getKopAllowedNamespaces())
                     .thenCompose(namespaces -> authorizeNamespacesAsync(namespaces, AclOperation.DESCRIBE))
                     .thenCompose(this::listAllTopicsFromNamespacesAsync)

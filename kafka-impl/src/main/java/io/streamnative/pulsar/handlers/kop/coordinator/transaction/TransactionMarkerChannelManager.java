@@ -569,6 +569,7 @@ public class TransactionMarkerChannelManager {
                         }
                         channelHandler.enqueueWriteTxnMarkers(sendEntries,
                                 new TransactionMarkerRequestCompletionHandler(txnStateManager, this,
+                                        kopBrokerLookupManager,
                                         txnIdAndMarkerEntriesForMarker, namespacePrefixForUserTopics));
                     }
                 });

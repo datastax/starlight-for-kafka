@@ -232,7 +232,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             KopVersion.getBuildTime());
 
         brokerService = service;
-        kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService);
+
         try {
             pulsarAdmin = brokerService.getPulsar().getAdminClient();
             adminManager = new AdminManager(pulsarAdmin, kafkaConfig);
@@ -251,6 +251,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
             log.error("Failed to get kopBrokerLookupManager", ex);
             throw new IllegalStateException(ex);
         }
+        kafkaTopicManagerSharedState = new KafkaTopicManagerSharedState(brokerService, kopBrokerLookupManager);
 
         // Listener for invalidating the global Broker ownership cache
         bundleListener = new NamespaceBundleOwnershipListenerImpl(brokerService);
@@ -520,7 +521,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 .timeoutTimer(SystemTimer.builder().executorName("fetch").build())
                 .build();
 
-        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService);
+        kafkaTopicLookupService = new KafkaTopicLookupService(brokerService, kopBrokerLookupManager);
 
         replicaManager = new ReplicaManager(
                 kafkaConfig,
@@ -589,7 +590,6 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         if (schemaRegistryManager != null) {
             schemaRegistryManager.close();
         }
-        KopBrokerLookupManager.clear();
         kafkaTopicManagerSharedState.close();
         kopBrokerLookupManager.close();
         statsProvider.stop();
