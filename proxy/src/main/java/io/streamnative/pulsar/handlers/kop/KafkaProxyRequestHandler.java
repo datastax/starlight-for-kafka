@@ -1850,7 +1850,21 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
                 OffsetFetchRequest.class,
                 OffsetFetchRequestData.class,
-                OffsetFetchRequestData::groupId,
+                (data -> {
+                    if (kafkaHeaderAndRequest.getRequest().version() >= 8) {
+                        if (data.groups().size() > 1) {
+                            log.warn("OffsetFetchRequest with version {} has more than one group",
+                                    kafkaHeaderAndRequest.getRequest().version());
+                        }
+                        // new clients
+                        OffsetFetchRequestData.OffsetFetchRequestGroup offsetFetchRequestGroup =
+                                data.groups().get(0);
+                        return offsetFetchRequestGroup.groupId();
+                    } else {
+                        // old clients
+                        return data.groupId();
+                    }
+                }),
                 null);
     }
 
