@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_ALLNAMESPACES_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
+import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.buildOffsetFetchResponse;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.annotations.VisibleForTesting;
@@ -126,6 +127,7 @@ import org.apache.kafka.common.message.LeaveGroupRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.message.OffsetFetchRequestData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SyncGroupRequestData;
@@ -973,19 +975,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
+        String coordinatorKey = request.data().coordinatorKeys().isEmpty()
+                ? request.data().key() : request.data().coordinatorKeys().get(0);
+
         String pulsarTopicName;
         int partition;
         CompletableFuture<Void> storeGroupIdFuture;
         if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.TRANSACTION.id()) {
             TransactionCoordinator transactionCoordinator = getTransactionCoordinator();
-            partition = transactionCoordinator.partitionFor(request.data().key());
+            partition = transactionCoordinator.partitionFor(coordinatorKey);
             pulsarTopicName = transactionCoordinator.getTopicPartitionName(partition);
             storeGroupIdFuture = CompletableFuture.completedFuture(null);
         } else if (request.data().keyType() == FindCoordinatorRequest.CoordinatorType.GROUP.id()) {
-            partition = getGroupCoordinator().partitionFor(request.data().key());
+            partition = getGroupCoordinator().partitionFor(coordinatorKey);
             pulsarTopicName = getGroupCoordinator().getTopicPartitionName(partition);
             if (kafkaConfig.isKopEnableGroupLevelConsumerMetrics()) {
-                String groupId = request.data().key();
+                String groupId = coordinatorKey;
                 String groupIdPath = GroupIdUtils.groupIdPathFormat(findCoordinator.getClientHost(),
                         findCoordinator.getHeader().clientId());
                 currentConnectedClientId.add(findCoordinator.getHeader().clientId());
@@ -1014,7 +1019,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             ctx.channel(), findCoordinator.getHeader(), throwable);
 
                                     resultFuture.complete(KafkaResponseUtils
-                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE));
+                                            .newFindCoordinator(Errors.LEADER_NOT_AVAILABLE,
+                                                    coordinatorKey, request.version()));
                                     return;
                                 }
 
@@ -1022,7 +1028,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                     log.debug("[{}] Found node {} as coordinator for key {} partition {}.",
                                             ctx.channel(), result.node, request.data().key(), partition);
                                 }
-                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node));
+                                resultFuture.complete(KafkaResponseUtils.newFindCoordinator(result.node,
+                                        coordinatorKey, request.version()));
                             });
                 });
     }
@@ -1070,6 +1077,28 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkState(getGroupCoordinator() != null,
             "Group Coordinator not started");
 
+        String groupId;
+        List<TopicPartition> partitions;
+        if (!request.data().groups().isEmpty()) {
+            if (request.data().groups().size() > 1) {
+                log.warn("OffsetFetchRequest with version {} has more than one group", request.version());
+            }
+            // new clients
+            OffsetFetchRequestData.OffsetFetchRequestGroup offsetFetchRequestGroup = request.data().groups().get(0);
+            groupId = offsetFetchRequestGroup.groupId();
+            partitions = new ArrayList<>();
+            offsetFetchRequestGroup
+                    .topics()
+                    .forEach(topic -> { topic
+                            .partitionIndexes()
+                            .forEach(partition -> partitions.add(new TopicPartition(topic.name(), partition)));
+                    });
+        } else {
+            // old clients
+            groupId = request.data().groupId();
+            partitions = request.partitions();
+        }
+
         CompletableFuture<List<TopicPartition>> authorizeFuture = new CompletableFuture<>();
 
         // replace
@@ -1081,10 +1110,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         Map<TopicPartition, OffsetFetchResponse.PartitionData> unknownPartitionData =
                 Maps.newConcurrentMap();
 
-        if (request.partitions() == null || request.partitions().isEmpty()) {
+
+
+        if (partitions == null || partitions.isEmpty()) {
             authorizeFuture.complete(null);
         } else {
-            AtomicInteger partitionCount = new AtomicInteger(request.partitions().size());
+            AtomicInteger partitionCount = new AtomicInteger(partitions.size());
 
             Runnable completeOneAuthorization = () -> {
                 if (partitionCount.decrementAndGet() == 0) {
@@ -1092,7 +1123,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 }
             };
             final String namespacePrefix = currentNamespacePrefix();
-            request.partitions().forEach(tp -> {
+            partitions.forEach(tp -> {
                 try {
                     String fullName =  new KopTopic(tp.topic(), namespacePrefix).getFullName();
                     authorize(AclOperation.DESCRIBE, Resource.of(ResourceType.TOPIC, fullName))
@@ -1125,7 +1156,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         authorizeFuture.whenComplete((partitionList, ex) -> {
             KeyValue<Errors, Map<TopicPartition, OffsetFetchResponse.PartitionData>> keyValue =
                     getGroupCoordinator().handleFetchOffsets(
-                            request.groupId(),
+                            groupId,
                             Optional.ofNullable(partitionList)
                     );
             if (log.isDebugEnabled()) {
@@ -1141,11 +1172,14 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
 
             // recover to original topic name
-            replaceTopicPartition(keyValue.getValue(), replacingIndex);
-            keyValue.getValue().putAll(unauthorizedPartitionData);
-            keyValue.getValue().putAll(unknownPartitionData);
+            Map<TopicPartition, OffsetFetchResponse.PartitionData> partitionsResponses = keyValue.getValue();
+            replaceTopicPartition(partitionsResponses, replacingIndex);
+            partitionsResponses.putAll(unauthorizedPartitionData);
+            partitionsResponses.putAll(unknownPartitionData);
 
-            resultFuture.complete(new OffsetFetchResponse(keyValue.getKey(), keyValue.getValue()));
+            Errors errors = keyValue.getKey();
+            resultFuture.complete(buildOffsetFetchResponse(partitionsResponses, errors,
+                    request.version(), groupId));
         });
     }
 

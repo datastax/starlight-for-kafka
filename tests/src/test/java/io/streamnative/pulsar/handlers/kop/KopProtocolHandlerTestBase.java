@@ -210,7 +210,8 @@ public abstract class KopProtocolHandlerTestBase {
         // kafka related settings.
         kafkaConfig.setOffsetsTopicNumPartitions(1);
 
-        kafkaConfig.setKafkaTransactionCoordinatorEnabled(false);
+        // kafka 3.1.x clients init the producerId by default, so we need to enable it.
+        kafkaConfig.setKafkaTransactionCoordinatorEnabled(true);
         kafkaConfig.setKafkaTxnLogTopicNumPartitions(1);
 
         kafkaConfig.setKafkaListeners(
@@ -341,9 +342,13 @@ public abstract class KopProtocolHandlerTestBase {
             createAdmin();
             createClient();
             MetadataUtils.createOffsetMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+            triggerTopicLookup(MetadataUtils.constructOffsetsTopicBaseName(conf.getKafkaMetadataTenant(), conf));
+
             if (conf.isKafkaTransactionCoordinatorEnabled()) {
                 MetadataUtils.createTxnMetadataIfMissing(conf.getKafkaMetadataTenant(), admin, clusterData, this.conf);
+                    triggerTopicLookup(MetadataUtils.constructTxnLogTopicBaseName(conf.getKafkaMetadataTenant(), conf));
             }
+
             // we don't want user topic to use compaction
             admin.namespaces().removeCompactionThreshold(conf.getKafkaTenant() + "/" + conf.getKafkaNamespace());
 

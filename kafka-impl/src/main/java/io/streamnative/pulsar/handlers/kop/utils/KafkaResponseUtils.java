@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop.utils;
 import io.streamnative.pulsar.handlers.kop.ApiVersion;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,7 @@ import org.apache.kafka.common.message.LeaveGroupResponseData;
 import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SaslHandshakeResponseData;
 import org.apache.kafka.common.message.SyncGroupResponseData;
@@ -185,19 +187,45 @@ public class KafkaResponseUtils {
         return new DescribeGroupsResponse(data);
     }
 
-    public static FindCoordinatorResponse newFindCoordinator(Node node) {
+    public static FindCoordinatorResponse newFindCoordinator(Node node, String key, int version) {
         FindCoordinatorResponseData data = new FindCoordinatorResponseData();
-        data.setNodeId(node.id());
-        data.setHost(node.host());
-        data.setPort(node.port());
-        data.setErrorCode(Errors.NONE.code());
+
+        if (version <= 3) {
+            // for old clients
+            data.setNodeId(node.id());
+            data.setHost(node.host());
+            data.setPort(node.port());
+            data.setErrorCode(Errors.NONE.code());
+            data.setErrorMessage(Errors.NONE.message());
+            data.setCoordinators(Collections.emptyList());
+        } else {
+
+            // for new clients
+            data.setCoordinators(Arrays.asList(new FindCoordinatorResponseData.Coordinator()
+                    .setHost(node.host())
+                    .setPort(node.port())
+                    .setNodeId(node.id())
+                    .setErrorCode(Errors.NONE.code())
+                    .setKey(key)
+                    .setErrorMessage(Errors.NONE.message())));
+        }
+
         return new FindCoordinatorResponse(data);
     }
 
-    public static FindCoordinatorResponse newFindCoordinator(Errors errors) {
+    public static FindCoordinatorResponse newFindCoordinator(Errors errors, String key, int version) {
         FindCoordinatorResponseData data = new FindCoordinatorResponseData();
-        data.setErrorCode(errors.code());
-        data.setErrorMessage(errors.message());
+        if (version <= 3) {
+            // for old clients
+            data.setErrorCode(errors.code());
+            data.setErrorMessage(errors.message());
+        } else {
+            // for new clients
+            data.setCoordinators(Arrays.asList(new FindCoordinatorResponseData.Coordinator()
+                    .setErrorCode(errors.code())
+                    .setKey(key)
+                    .setErrorMessage(errors.message())));
+        }
         return new FindCoordinatorResponse(data);
     }
 
@@ -435,5 +463,45 @@ public class KafkaResponseUtils {
         data.setProtocolName(protocolName);
         data.setAssignment(assignment);
         return new SyncGroupResponse(data);
+    }
+
+    public static OffsetFetchResponse buildOffsetFetchResponse(
+            Map<TopicPartition, OffsetFetchResponse.PartitionData> partitionsResponses,
+            Errors errors, int version, String groupId) {
+
+        if (version < 8) {
+            // old clients
+            return new OffsetFetchResponse(errors, partitionsResponses);
+        } else {
+            // new clients
+            OffsetFetchResponseData data = new OffsetFetchResponseData();
+            OffsetFetchResponseData.OffsetFetchResponseGroup offsetFetchResponseGroup =
+                    new OffsetFetchResponseData.OffsetFetchResponseGroup()
+                    .setErrorCode(errors.code())
+                    .setGroupId(groupId)
+                    .setTopics(new ArrayList<>());
+            data.groups().add(offsetFetchResponseGroup);
+            Set<String> topics = partitionsResponses.keySet().stream().map(TopicPartition::topic)
+                    .collect(Collectors.toSet());
+            topics.forEach(topic -> {
+                offsetFetchResponseGroup.topics().add(new OffsetFetchResponseData.OffsetFetchResponseTopics()
+                        .setName(topic)
+                        .setPartitions(partitionsResponses.entrySet()
+                                .stream()
+                                .filter(e -> e.getKey().topic().equals(topic))
+                                .map(entry -> {
+                                    OffsetFetchResponse.PartitionData value = entry.getValue();
+                                    return new OffsetFetchResponseData.OffsetFetchResponsePartitions()
+                                            .setErrorCode(value.error.code())
+                                            .setMetadata(value.metadata)
+                                            .setPartitionIndex(entry.getKey().partition())
+                                            .setCommittedOffset(value.offset)
+                                            .setCommittedLeaderEpoch(value.leaderEpoch.orElse(-1));
+                                })
+                                .collect(Collectors.toList())));
+            });
+            return new OffsetFetchResponse(data);
+        }
+
     }
 }
