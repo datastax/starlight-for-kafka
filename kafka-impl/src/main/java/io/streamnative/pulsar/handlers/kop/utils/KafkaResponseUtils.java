@@ -44,6 +44,7 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SaslHandshakeResponseData;
 import org.apache.kafka.common.message.SyncGroupResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -234,7 +235,7 @@ public class KafkaResponseUtils {
             data.setThrottleTimeMs(1000);
         }
 
-        return new JoinGroupResponse(data);
+        return new JoinGroupResponse(data, ApiKeys.JOIN_GROUP.latestVersion());
     }
 
     public static LeaveGroupResponse newLeaveGroup(Errors errors) {

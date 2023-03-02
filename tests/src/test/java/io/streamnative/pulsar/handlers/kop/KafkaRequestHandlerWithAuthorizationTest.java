@@ -335,9 +335,26 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final ProduceResponse response = (ProduceResponse) responseFuture.get();
 
         //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
-        assertEquals(response.responses().get(topicPartition2).error, Errors.NOT_LEADER_OR_FOLLOWER);
+        assertEquals(response
+                .data()
+                .responses()
+                .stream()
+                .filter(t -> t.name().equals(topicPartition2.topic()))
+                .flatMap(t->t.partitionResponses().stream())
+                .filter(p -> p.index() == topicPartition2.partition())
+                .findFirst()
+                .get().errorCode(), Errors.NOT_LEADER_OR_FOLLOWER.code());
+
         //Topic: `TOPIC` authorize failed.
-        assertEquals(response.responses().get(topicPartition1).error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(response
+                .data()
+                .responses()
+                .stream()
+                .filter(t -> t.name().equals(topicPartition1.topic()))
+                .flatMap(t->t.partitionResponses().stream())
+                .filter(p -> p.index() == topicPartition1.partition())
+                .findFirst()
+                .get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
     }
 
     @Test(timeOut = 20000)
@@ -378,7 +395,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // Test for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -406,7 +423,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition tp = new TopicPartition(topicName, 0);
 
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -453,10 +470,13 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.responseData().size(), 1);
+        assertEquals(offsetFetchResponse.data()
+                .topics()
+                .stream().flatMap(t->t.partitions().stream())
+                .count(), 1);
         assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData()
-                .forEach((topicPartition, partitionData) -> assertEquals(partitionData.error, Errors.NONE));
+        offsetFetchResponse.data().topics().stream().flatMap(t->t.partitions().stream())
+                .forEach((partitionData) -> assertEquals(partitionData.errorCode(), Errors.NONE.code()));
     }
 
     @Test(timeOut = 20000)
@@ -483,10 +503,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.responseData().size(), 1);
-        assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> assertEquals(partitionData.error,
-                Errors.TOPIC_AUTHORIZATION_FAILED));
+        assertEquals(offsetFetchResponse.data()
+                .topics()
+                .stream().flatMap(t->t.partitions().stream())
+                .count(), 1);
+        assertEquals(offsetFetchResponse.error(), Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
@@ -580,7 +601,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetData.put(topicPartition, KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData, false);
+                        "1", group, 1L, (short) 1, offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Handle request
@@ -612,7 +633,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData, false);
+                        "1", group, 1L, (short) 1, offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test1` authorize success.

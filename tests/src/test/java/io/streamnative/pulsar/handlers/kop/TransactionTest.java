@@ -63,8 +63,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.protocol.Errors;
-import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -867,12 +867,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         partitionLog.awaitInitialisation().get();
         assertEquals(0, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
-        List<FetchResponse.AbortedTransaction> abortedIndexList =
+        List<FetchResponseData.AbortedTransaction> abortedIndexList =
                 partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
 
         producer.beginTransaction();
         String lastMessage = "msg1b";
@@ -907,7 +907,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         abortedIndexList.forEach(tx -> {
             log.info("TX {}", tx);
         });
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
         assertEquals(1, abortedIndexList.size());
 
         waitForTransactionsToBeInStableState(transactionalId);
@@ -946,7 +946,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         });
 
         assertEquals(1, abortedIndexList.size());
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
 
         producer.beginTransaction();
         producer.send(new ProducerRecord<>(topicName, 0, "msg4")).get(); // OFFSET 8
@@ -973,8 +973,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
 
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
-        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
+        assertEquals(11, abortedIndexList.get(1).firstOffset());
         assertEquals(2, abortedIndexList.size());
 
         producer.beginTransaction();
@@ -999,8 +999,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
 
-        assertEquals(0, abortedIndexList.get(0).firstOffset);
-        assertEquals(11, abortedIndexList.get(1).firstOffset);
+        assertEquals(0, abortedIndexList.get(0).firstOffset());
+        assertEquals(11, abortedIndexList.get(1).firstOffset());
         assertEquals(2, abortedIndexList.size());
 
 
@@ -1015,7 +1015,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             log.info("TX {}", tx);
         });
         assertEquals(1, abortedIndexList.size());
-        assertEquals(11, abortedIndexList.get(0).firstOffset);
+        assertEquals(11, abortedIndexList.get(0).firstOffset());
 
         // use a new consumer group, it will read from the beginning of the topic
         assertEquals(
@@ -1448,12 +1448,12 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                     .getPartitionLog(topicPartition, namespacePrefix);
             partitionLog.awaitInitialisation().get();
 
-            List<FetchResponse.AbortedTransaction> abortedIndexList =
+            List<FetchResponseData.AbortedTransaction> abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
             assertEquals(2, abortedIndexList.size());
             assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset);
-            assertEquals(3, abortedIndexList.get(1).firstOffset);
+            assertEquals(0, abortedIndexList.get(0).firstOffset());
+            assertEquals(3, abortedIndexList.get(1).firstOffset());
 
             takeSnapshot(topicName);
 
@@ -1478,8 +1478,8 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
             assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset);
-            assertEquals(3, abortedIndexList.get(1).firstOffset);
+            assertEquals(0, abortedIndexList.get(0).firstOffset());
+            assertEquals(3, abortedIndexList.get(1).firstOffset());
 
             // force reading the minimum valid offset
             // the timer is not started by the PH because
@@ -1498,7 +1498,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             assertEquals(1, abortedIndexList.size());
             // the second TX cannot be purged because the lastOffset is 5, that is the boundary of the
             // trimmed portion of the topic
-            assertEquals(3, abortedIndexList.get(0).firstOffset);
+            assertEquals(3, abortedIndexList.get(0).firstOffset());
 
             producer1.close();
 

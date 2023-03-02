@@ -48,7 +48,7 @@ public class KafkaCommonTestUtils {
     public static FetchRequest.PartitionData newFetchRequestPartitionData(long fetchOffset,
                                                                           long logStartOffset,
                                                                           int maxBytes) {
-        return new FetchRequest.PartitionData(fetchOffset,
+        return new FetchRequest.PartitionData(null, fetchOffset,
                 logStartOffset,
                 maxBytes,
                 Optional.empty()

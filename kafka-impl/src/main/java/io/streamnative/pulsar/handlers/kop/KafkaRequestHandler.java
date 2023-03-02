@@ -61,7 +61,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -118,6 +117,8 @@ import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.EndTxnResponseData;
+import org.apache.kafka.common.message.FetchRequestData;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.InitProducerIdResponseData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -136,7 +137,6 @@ import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
-import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
@@ -1612,30 +1612,32 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
 
+        FetchRequestData data = request.data();
         if (log.isDebugEnabled()) {
             log.debug("[{}] Request {} Fetch request. Size: {}. Each item: ",
-                ctx.channel(), fetch.getHeader(), request.fetchData().size());
+                ctx.channel(), fetch.getHeader(), data.topics().size());
 
-            request.fetchData().forEach((topic, data) -> {
-                log.debug("Fetch request topic:{} data:{}.", topic, data.toString());
+            data.topics().forEach((topicData) -> {
+                log.debug("Fetch request topic: data:{}.", topicData.toString());
             });
         }
 
-        if (request.fetchData().isEmpty()) {
-            resultFuture.complete(new FetchResponse<>(
-                    Errors.NONE,
-                    new LinkedHashMap<>(),
-                    THROTTLE_TIME_MS,
-                    request.metadata().sessionId()));
+        int numPartitions = data.topics().stream().mapToInt(topic -> topic.partitions().size()).sum();
+        if (numPartitions == 0) {
+            resultFuture.complete(new FetchResponse(new FetchResponseData()
+                    .setErrorCode(Errors.NONE.code())
+                    .setSessionId(request.metadata().sessionId())
+                    .setResponses(new ArrayList<>())));
             return;
         }
 
-        ConcurrentHashMap<TopicPartition, FetchResponse.PartitionData<Records>> erroneous =
+        ConcurrentHashMap<TopicPartition, FetchResponseData.PartitionData> erroneous =
                 new ConcurrentHashMap<>();
-        ConcurrentHashMap<TopicPartition, FetchRequest.PartitionData> interesting =
+        ConcurrentHashMap<TopicPartition, FetchRequestData.FetchPartition> interesting =
                 new ConcurrentHashMap<>();
 
-        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(request.fetchData().size());
+
+        AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
         Runnable completeOne = () -> {
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                 TransactionCoordinator transactionCoordinator = null;
@@ -1648,13 +1650,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 int fetchMinBytes = Math.min(request.minBytes(), fetchMaxBytes);
                 if (interesting.isEmpty()) {
                     if (log.isDebugEnabled()) {
-                        log.debug("Fetch interesting is empty. Partitions: [{}]", request.fetchData());
+                        log.debug("Fetch interesting is empty. Partitions: [{}]", data.topics());
                     }
-                    resultFuture.complete(new FetchResponse<>(
-                            Errors.NONE,
-                            new LinkedHashMap<>(erroneous),
-                            THROTTLE_TIME_MS,
-                            request.metadata().sessionId()));
+                    resultFuture.complete(new FetchResponse(new FetchResponseData()
+                            .setErrorCode(Errors.NONE.code())
+                            .setSessionId(request.metadata().sessionId())
+                            .setResponses(buildFetchResponses(erroneous))));
                 } else {
                     MessageFetchContext context = MessageFetchContext
                             .get(this, transactionCoordinator, maxReadEntriesNum, namespacePrefix,
@@ -1667,18 +1668,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.isolationLevel(),
                             context
                     ).thenAccept(resultMap -> {
-                        LinkedHashMap<TopicPartition, FetchResponse.PartitionData<Records>> partitions =
-                                new LinkedHashMap<>();
-                        resultMap.forEach((tp, data) -> {
-                            partitions.put(tp, data.toPartitionData());
+                        Map<TopicPartition, FetchResponseData.PartitionData> all = new HashMap<>();
+                        resultMap.forEach((tp, results) -> {
+                            all.put(tp, results.toPartitionData());
                         });
-                        partitions.putAll(erroneous);
+                        all.putAll(erroneous);
                         boolean triggeredCompletion = resultFuture.complete(new ResponseCallbackWrapper(
-                                new FetchResponse<>(
-                                    Errors.NONE,
-                                    partitions,
-                                    0,
-                                    request.metadata().sessionId()),
+                                new FetchResponse(new FetchResponseData()
+                                        .setErrorCode(Errors.NONE.code())
+                                        .setThrottleTimeMs(0)
+                                        .setSessionId(request.metadata().sessionId())
+                                        .setResponses(buildFetchResponses(all))),
                                 () -> resultMap.forEach((__, readRecordsResult) -> {
                                     readRecordsResult.recycle();
                                 })
@@ -1695,36 +1695,72 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         };
 
         // Regular Kafka consumers need READ permission on each partition they are fetching.
-        request.fetchData().forEach((topicPartition, partitionData) -> {
-            final String fullTopicName = KopTopic.toString(topicPartition, this.currentNamespacePrefix());
-            authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
-                    .whenComplete((isAuthorized, ex) -> {
-                        if (ex != null) {
-                            log.error("Read topic authorize failed, topic - {}. {}",
-                                    fullTopicName, ex.getMessage());
-                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+        data.topics().forEach(topicData -> {
+            topicData.partitions().forEach((partitionData) -> {
+                TopicPartition topicPartition = new TopicPartition(topicData.topic(), partitionData.partition());
+                final String fullTopicName = KopTopic.toString(topicPartition, this.currentNamespacePrefix());
+                authorize(AclOperation.READ, Resource.of(ResourceType.TOPIC, fullTopicName))
+                        .whenComplete((isAuthorized, ex) -> {
+                            if (ex != null) {
+                                log.error("Read topic authorize failed, topic - {}. {}",
+                                        fullTopicName, ex.getMessage());
+                                erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            if (!isAuthorized) {
+                                erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
+                                completeOne.run();
+                                return;
+                            }
+                            interesting.put(topicPartition, partitionData);
                             completeOne.run();
-                            return;
-                        }
-                        if (!isAuthorized) {
-                            erroneous.put(topicPartition, errorResponse(Errors.TOPIC_AUTHORIZATION_FAILED));
-                            completeOne.run();
-                            return;
-                        }
-                        interesting.put(topicPartition, partitionData);
-                        completeOne.run();
-                    });
+                        });
+            });
         });
 
 
 
     }
 
-    private static FetchResponse.PartitionData<Records> errorResponse(Errors error) {
-        return new FetchResponse.PartitionData<>(error,
-                FetchResponse.INVALID_HIGHWATERMARK,
-                FetchResponse.INVALID_LAST_STABLE_OFFSET,
-                FetchResponse.INVALID_LOG_START_OFFSET, null, MemoryRecords.EMPTY);
+    public static List<FetchResponseData.FetchableTopicResponse> buildFetchResponses(
+            Map<TopicPartition, FetchResponseData.PartitionData> partitionData) {
+        List<FetchResponseData.FetchableTopicResponse> result = new ArrayList<>();
+        partitionData.keySet()
+                .stream()
+                .map(topicPartition -> topicPartition.topic())
+                .distinct()
+                        .forEach(topic -> {
+                            FetchResponseData.FetchableTopicResponse fetchableTopicResponse =
+                                    new FetchResponseData.FetchableTopicResponse()
+                                    .setTopic(topic)
+                                    .setPartitions(new ArrayList<>());
+                            result.add(fetchableTopicResponse);
+
+                            partitionData.forEach((tp, data) -> {
+                                if (tp.topic().equals(topic)) {
+                                    fetchableTopicResponse.partitions().add(new FetchResponseData.PartitionData()
+                                                    .setPartitionIndex(tp.partition())
+                                                    .setErrorCode(data.errorCode())
+                                                    .setHighWatermark(data.highWatermark())
+                                                    .setLastStableOffset(data.lastStableOffset())
+                                                    .setLogStartOffset(data.logStartOffset())
+                                                    .setAbortedTransactions(data.abortedTransactions())
+                                                    .setPreferredReadReplica(data.preferredReadReplica())
+                                                    .setRecords(data.records()));
+                                }
+                            });
+                        });
+        return result;
+    }
+
+    private static FetchResponseData.PartitionData errorResponse(Errors error) {
+        return new FetchResponseData.PartitionData()
+                .setErrorCode(error.code())
+                .setHighWatermark(FetchResponse.INVALID_HIGH_WATERMARK)
+                .setLastStableOffset(FetchResponse.INVALID_LAST_STABLE_OFFSET)
+                .setLogStartOffset(FetchResponse.INVALID_LOG_START_OFFSET)
+                .setRecords(MemoryRecords.EMPTY);
     }
 
     @Override
