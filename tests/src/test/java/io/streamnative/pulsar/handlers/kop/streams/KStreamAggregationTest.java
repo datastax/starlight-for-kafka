@@ -695,6 +695,9 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         consumerProperties.setProperty(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.MAX_VALUE + "");
         if (keyDeserializer instanceof TimeWindowedDeserializer
                 || keyDeserializer instanceof SessionWindowedDeserializer) {
+            consumerProperties.setProperty(StreamsConfig.WINDOWED_INNER_CLASS_SERDE,
+                    Serdes.serdeFrom(innerClass).getClass().getName());
+
             consumerProperties.setProperty(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS,
                     Serdes.serdeFrom(innerClass).getClass().getName());
         }
@@ -745,6 +748,8 @@ public class KStreamAggregationTest extends KafkaStreamsTestBase {
         final Map<String, String> configs = new HashMap<>();
         Serde<?> serde = Serdes.serdeFrom(innerClass);
         configs.put(StreamsConfig.DEFAULT_WINDOWED_KEY_SERDE_INNER_CLASS, serde.getClass().getName());
+        configs.put(StreamsConfig.WINDOWED_INNER_CLASS_SERDE, serde.getClass().getName());
+
         serde.close();
         // https://issues.apache.org/jira/browse/KAFKA-10366
         configs.put(StreamsConfig.WINDOW_SIZE_MS_CONFIG, Long.toString(Long.MAX_VALUE));
