@@ -76,7 +76,7 @@ public class BasicEndToEndKafkaTest extends BasicEndToEndTestBase {
         assertEquals(kafkaReceives, expectedMessages);
     }
 
-    @Test(timeOut = 200000000)
+    @Test(timeOut = 20000)
     public void testDeleteClosedTopics() throws Exception {
         final String topic = "test-delete-closed-topics";
         final List<String> expectedMessages = Collections.singletonList("msg");
