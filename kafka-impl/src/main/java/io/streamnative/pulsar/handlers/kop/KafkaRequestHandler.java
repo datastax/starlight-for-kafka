@@ -1079,20 +1079,26 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         String groupId;
         List<TopicPartition> partitions;
-        if (!request.data().groups().isEmpty()) {
+        if (request.version() >= 8) {
             if (request.data().groups().size() > 1) {
-                log.warn("OffsetFetchRequest with version {} has more than one group", request.version());
+                log.warn("OffsetFetchRequest with version {} has more than one group", request.version(),
+                        request.groupIds());
             }
             // new clients
-            OffsetFetchRequestData.OffsetFetchRequestGroup offsetFetchRequestGroup = request.data().groups().get(0);
+            OffsetFetchRequestData.OffsetFetchRequestGroup offsetFetchRequestGroup =
+                    request.data().groups().get(0);
             groupId = offsetFetchRequestGroup.groupId();
             partitions = new ArrayList<>();
-            offsetFetchRequestGroup
-                    .topics()
-                    .forEach(topic -> { topic
-                            .partitionIndexes()
-                            .forEach(partition -> partitions.add(new TopicPartition(topic.name(), partition)));
-                    });
+            if (offsetFetchRequestGroup
+                    .topics() != null) {
+                offsetFetchRequestGroup
+                        .topics()
+                        .forEach(topic -> {
+                            topic
+                                    .partitionIndexes()
+                                    .forEach(partition -> partitions.add(new TopicPartition(topic.name(), partition)));
+                        });
+            }
         } else {
             // old clients
             groupId = request.data().groupId();

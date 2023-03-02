@@ -45,6 +45,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -81,7 +82,6 @@ import org.apache.kafka.common.message.DescribeGroupsRequestData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.message.FetchResponseData;
-import org.apache.kafka.common.message.FindCoordinatorResponseData;
 import org.apache.kafka.common.message.HeartbeatRequestData;
 import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -124,8 +124,7 @@ import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
-import org.apache.kafka.common.requests.FindCoordinatorRequest;
-import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.JoinGroupRequest;
@@ -990,6 +989,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     return admin.namespaces().createNamespaceAsync(nameSpace);
                                 }
                             })
+                            .handle((Void v, Throwable error) -> {
+                                if (error != null) {
+                                    if (error.getCause() instanceof PulsarAdminException.ConflictException) {
+                                        // concurrent creation of namespace
+                                        return CompletableFuture.completedFuture(null);
+                                    } else {
+                                        throw new CompletionException(error);
+                                    }
+                                }
+                                return CompletableFuture.completedFuture(null);
+                            })
                             .thenCompose(___ -> {
                                 coordinatorNamespaceExists = true;
                                 return findBroker(TopicName.get(pulsarTopicName), true);
@@ -1024,12 +1034,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
                                                 CompletableFuture<AbstractResponse> resultFuture) {
         Node node = newSelfNode();
-        AbstractResponse response = new FindCoordinatorResponse(
-                new FindCoordinatorResponseData()
-                    .setErrorCode(Errors.NONE.code())
-                    .setHost(node.host())
-                    .setPort(node.port())
-                    .setNodeId(node.id()));
+        FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
+        String coordinatorKey = request.data().coordinatorKeys().isEmpty()
+                ? request.data().key() : request.data().coordinatorKeys().get(0);
+        AbstractResponse response =
+                KafkaResponseUtils.newFindCoordinator(node, coordinatorKey, request.version());
         resultFuture.complete(response);
     }
 
@@ -1870,10 +1879,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         BiFunction<K, Throwable, R> errorBuilder;
         if (customErrorBuilder == null) {
             errorBuilder = (K request, Throwable t) -> {
+                while (t instanceof CompletionException && t.getCause() != null) {
+                    t = t.getCause();
+                }
                 if (t instanceof IOException
                     || t.getCause() instanceof IOException) {
                     t = new CoordinatorNotAvailableException("Network error: " + t, t);
                 }
+                log.debug("Unexpected error", t);
                 return (R) request.getErrorResponse(t);
             };
         } else {

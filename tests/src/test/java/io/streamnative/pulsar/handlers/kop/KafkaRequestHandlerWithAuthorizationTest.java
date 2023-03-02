@@ -439,12 +439,19 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     }
 
 
-    @Test(timeOut = 20000)
-    public void testHandleOffsetFetchRequestAuthorizationSuccess()
+    @DataProvider(name = "offsetFetchVersions")
+    public static Object[][] offsetFetchVersions() {
+        return new Object[][]{
+                { (short) 7 },
+                { (short) ApiKeys.OFFSET_FETCH.latestVersion() } };
+    }
+
+    @Test(timeOut = 20000, dataProvider = "offsetFetchVersions")
+    public void testHandleOffsetFetchRequestAuthorizationSuccess(short version)
             throws PulsarAdminException, ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
         String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
-                + "testHandleOffsetFetchRequestAuthorizationSuccess";
+                + "testHandleOffsetFetchRequestAuthorizationSuccess_" + version;
         String groupId = "DemoKafkaOnPulsarConsumer";
 
         // create partitioned topic.
@@ -461,7 +468,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 new OffsetFetchRequest.Builder(groupId, false,
                         Collections.singletonList(tp), false);
 
-        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder, version);
+        assertEquals(version, request.getRequest().version());
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
         spyHandler.handleOffsetFetchRequest(request, responseFuture);
@@ -470,21 +478,35 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.data()
-                .topics()
-                .stream().flatMap(t->t.partitions().stream())
-                .count(), 1);
-        assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.data().topics().stream().flatMap(t->t.partitions().stream())
-                .forEach((partitionData) -> assertEquals(partitionData.errorCode(), Errors.NONE.code()));
+
+        if (request.getRequest().version() >= 8) {
+            assertEquals(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .count(), 1);
+            assertTrue(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .allMatch(d->d.errorCode() == Errors.NONE.code()));
+        } else {
+            assertEquals(offsetFetchResponse.data()
+                    .topics()
+                    .stream().flatMap(t->t.partitions().stream())
+                    .count(), 1);
+            assertEquals(offsetFetchResponse.error(), Errors.NONE);
+            offsetFetchResponse.data().topics().stream().flatMap(t->t.partitions().stream())
+                    .forEach((partitionData) -> assertEquals(partitionData.errorCode(), Errors.NONE.code()));
+        }
     }
 
-    @Test(timeOut = 20000)
-    public void testHandleOffsetFetchRequestAuthorizationFailed()
+    @Test(timeOut = 20000, dataProvider = "offsetFetchVersions")
+    public void testHandleOffsetFetchRequestAuthorizationFailed(short version)
             throws PulsarAdminException, ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
         String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
-                + "testHandleOffsetFetchRequestAuthorizationFailed";
+                + "testHandleOffsetFetchRequestAuthorizationFailed_" + version;
         String groupId = "DemoKafkaOnPulsarConsumer";
 
         // create partitioned topic.
@@ -494,7 +516,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchRequest.Builder builder =
                 new OffsetFetchRequest.Builder(groupId, false, Collections.singletonList(tp), false);
 
-        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder, version);
+        assertEquals(request.getRequest().version(), version);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
         spyHandler.handleOffsetFetchRequest(request, responseFuture);
@@ -503,11 +526,26 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.data()
-                .topics()
-                .stream().flatMap(t->t.partitions().stream())
-                .count(), 1);
-        assertEquals(offsetFetchResponse.error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+
+        if (request.getRequest().version() >= 8) {
+            assertEquals(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .count(), 1);
+            assertTrue(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .allMatch(d->d.errorCode() == Errors.TOPIC_AUTHORIZATION_FAILED.code()));
+        } else {
+            assertEquals(offsetFetchResponse.error(), Errors.TOPIC_AUTHORIZATION_FAILED);
+            assertEquals(offsetFetchResponse.data()
+                    .topics()
+                    .stream().flatMap(t -> t.partitions().stream())
+                    .count(), 1);
+        }
+
     }
 
     @Test(timeOut = 20000)
@@ -828,6 +866,10 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     }
     private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
         return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
+    }
+
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder, short version) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress, version);
     }
 
     private void handleGroupImmigration() {

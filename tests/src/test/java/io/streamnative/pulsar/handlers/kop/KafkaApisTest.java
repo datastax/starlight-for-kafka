@@ -1197,7 +1197,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
 
         @Cleanup
         final KafkaHeaderAndRequest request = buildRequest(FetchRequest.Builder
-                .forConsumer(ApiKeys.FETCH.latestVersion(),
+                .forConsumer(ApiKeys.FETCH.oldestVersion(),
                 maxWaitMs, minBytes,
                 Collections.singletonMap(topicPartition, new FetchRequest.PartitionData(null,
                         0L, -1L, 1024 * 1024, Optional.empty()
