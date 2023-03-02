@@ -125,7 +125,7 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
         }
 
         Assert.assertEquals(getApiKeysSet(), new TreeSet<>(
-                Arrays.asList(ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE)));
+                Arrays.asList(ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE, ApiKeys.INIT_PRODUCER_ID)));
 
         // 2. consume messages with Kafka consumer
         @Cleanup
@@ -152,14 +152,14 @@ public class MetricsProviderTest extends KopProtocolHandlerTestBase {
 
         Assert.assertEquals(getApiKeysSet(), new TreeSet<>(Arrays.asList(
                 ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE, ApiKeys.FIND_COORDINATOR, ApiKeys.LIST_OFFSETS,
-                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH
+                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH, ApiKeys.INIT_PRODUCER_ID
         )));
 
         // commit offsets
         kConsumer.getConsumer().commitSync(Duration.ofSeconds(5));
         Assert.assertEquals(getApiKeysSet(), new TreeSet<>(Arrays.asList(
                 ApiKeys.API_VERSIONS, ApiKeys.METADATA, ApiKeys.PRODUCE, ApiKeys.FIND_COORDINATOR, ApiKeys.LIST_OFFSETS,
-                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH, ApiKeys.OFFSET_COMMIT
+                ApiKeys.OFFSET_FETCH, ApiKeys.FETCH, ApiKeys.OFFSET_COMMIT, ApiKeys.INIT_PRODUCER_ID
         )));
 
         try {

@@ -16,6 +16,7 @@ package io.streamnative.pulsar.handlers.kop;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.Test;
 
 /**
  * Unit test for {@link KafkaRequestHandler} but via Proxy.
@@ -39,5 +40,10 @@ public class KafkaRequestHandlerProxyTest extends KafkaRequestHandlerTest {
 
     protected int getClientPort() {
         return getKafkaProxyPort();
+    }
+
+    @Test(timeOut = 20000000)
+    public void testDescribeConsumerGroups() throws Exception {
+        super.testDescribeConsumerGroups();
     }
 }

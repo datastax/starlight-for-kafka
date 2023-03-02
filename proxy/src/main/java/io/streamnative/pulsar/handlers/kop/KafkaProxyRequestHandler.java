@@ -45,6 +45,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -79,7 +80,8 @@ import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeGroupsRequestData;
 import org.apache.kafka.common.message.EndTxnRequestData;
-import org.apache.kafka.common.message.FindCoordinatorResponseData;
+import org.apache.kafka.common.message.FetchRequestData;
+import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.message.HeartbeatRequestData;
 import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -91,6 +93,7 @@ import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.OffsetFetchRequestData;
+import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
@@ -122,8 +125,7 @@ import org.apache.kafka.common.requests.DescribeGroupsRequest;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
-import org.apache.kafka.common.requests.FindCoordinatorRequest;
-import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;;
 import org.apache.kafka.common.requests.HeartbeatRequest;
 import org.apache.kafka.common.requests.InitProducerIdRequest;
 import org.apache.kafka.common.requests.JoinGroupRequest;
@@ -137,6 +139,7 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
@@ -152,6 +155,7 @@ import org.apache.pulsar.client.admin.PulsarAdminException;
 import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * This class contains all the request handling methods.
@@ -569,8 +573,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
                 resultFuture.complete(new ProduceResponse(responseMap));
             };
-            BiConsumer<TopicPartition, PartitionResponse> addPartitionResponse = (topicPartition, response) -> {
-
+            BiConsumer<TopicPartition, ProduceResponseData.PartitionProduceResponse> addPartitionResponse =
+                    (topicPartition, partitionProduceResponse) -> {
+                PartitionResponse response = new PartitionResponse(
+                        Errors.forCode(partitionProduceResponse.errorCode()),
+                        partitionProduceResponse.baseOffset(),
+                        partitionProduceResponse.logAppendTimeMs(),
+                        partitionProduceResponse.logStartOffset(),
+                        partitionProduceResponse.recordErrors().stream().map(b->
+                                new ProduceResponse.RecordError(b.batchIndex(), b.batchIndexErrorMessage()))
+                                .collect(Collectors.toList()),
+                        partitionProduceResponse.errorMessage());
                 responseMap.put(topicPartition, response);
                 // reset topicPartitionNum
                 int restTopicPartitionNum = topicPartitionNum.decrementAndGet();
@@ -640,16 +653,22 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         .forwardRequest(singlePartitionRequest)
                         .thenAccept(response -> {
                             ProduceResponse resp = (ProduceResponse) response;
-                            resp.responses().forEach((topicPartition, partitionResponse) -> {
-                                if (partitionResponse.error == Errors.NONE) {
-                                    log.debug("result produce for {} to {} {}", topicPartition,
-                                            kopBroker, partitionResponse);
-                                    addPartitionResponse.accept(topicPartition, partitionResponse);
-                                } else {
-                                    invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition,
-                                            partitionResponse.error);
-                                    addPartitionResponse.accept(topicPartition, partitionResponse);
-                                }
+                            ProduceResponseData produceRespData = resp.data();
+                            produceRespData.responses().forEach(topicProduceResponse -> {
+                                topicProduceResponse.partitionResponses().forEach(partitionResponse -> {
+                                    TopicPartition topicPartition = new TopicPartition(topicProduceResponse.name(),
+                                            partitionResponse.index());
+                                    if (partitionResponse.errorCode() == Errors.NONE.code()) {
+                                        log.debug("result produce for {} to {} {}", topicPartition,
+                                                kopBroker, partitionResponse);
+                                        addPartitionResponse.accept(topicPartition, partitionResponse);
+                                    } else {
+                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition,
+                                                partitionResponse.errorCode());
+                                        addPartitionResponse.accept(topicPartition, partitionResponse);
+                                    }
+                                });
+
                             });
                         }).exceptionally(badError -> {
                             log.error("bad error during split produce for {}",
@@ -660,7 +679,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 topic.partitionData().forEach(partitionProduceData -> {
                                     addPartitionResponse.accept(
                                             new TopicPartition(topic.name(), partitionProduceData.index()),
-                                            new PartitionResponse(Errors.REQUEST_TIMED_OUT));
+                                            new ProduceResponseData.PartitionProduceResponse()
+                                                    .setErrorCode(Errors.REQUEST_TIMED_OUT.code())
+                                                    .setErrorMessage(Errors.REQUEST_TIMED_OUT.message()));
                                 });
                             });
                             return null;
@@ -671,10 +692,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         }
     }
 
-    private void invalidateLeaderIfNeeded(String namespacePrefix, Node kopBroker, TopicPartition topicPartition,
-                                          Errors error) {
-        invalidateLeaderIfNeeded(namespacePrefix, kopBroker, topicPartition, error.code());
-    }
     private void invalidateLeaderIfNeeded(String namespacePrefix, Node kopBroker, TopicPartition topicPartition,
                                           short error) {
         if (error == Errors.NOT_LEADER_OR_FOLLOWER.code()) {
@@ -696,20 +713,28 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest fetchRequest = (FetchRequest) fetch.getRequest();
-        Map<TopicPartition, FetchRequest.PartitionData> fetchData = fetchRequest.fetchData();
+        FetchRequestData data = fetchRequest.data();
 
-        final int numPartitions = fetchData.size();
+        int numPartitions = data.topics().stream().mapToInt(topic -> topic.partitions().size()).sum();
         if (numPartitions == 0) {
-            resultFuture.complete(new FetchResponse(Errors.NONE, new LinkedHashMap<>(), 0,
-                    fetchRequest.metadata().sessionId()));
+            resultFuture.complete(new FetchResponse(new FetchResponseData()
+                    .setErrorCode(Errors.NONE.code())
+                    .setSessionId(fetchRequest.metadata().sessionId())
+                    .setResponses(new ArrayList<>())));
             return;
         }
 
         String namespacePrefix = currentNamespacePrefix();
-        Map<TopicPartition, FetchResponse.PartitionData<?>> responseMap = new ConcurrentHashMap<>();
-        final AtomicInteger topicPartitionNum = new AtomicInteger(fetchData.size());
+        Map<TopicPartition, FetchResponseData.PartitionData> responseMap = new ConcurrentHashMap<>();
+        final AtomicInteger topicPartitionNum = new AtomicInteger(numPartitions);
         final String metadataNamespace = kafkaConfig.getKafkaMetadataNamespace();
-
+        Map<TopicPartition, FetchRequestData.FetchPartition> fetchData = new HashMap<>();
+        data.topics().forEach(fetchTopic -> {
+            fetchTopic.partitions().forEach(fetchPartition -> {
+                TopicPartition topicPartition = new TopicPartition(fetchTopic.topic(), fetchPartition.partition());
+                fetchData.put(topicPartition, fetchPartition);
+            });
+        });
         // validate system topics
         for (TopicPartition topicPartition : fetchData.keySet()) {
             final String fullPartitionName = KopTopic.toString(topicPartition, namespacePrefix);
@@ -717,16 +742,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             if (KopTopic.isInternalTopic(metadataNamespace, fullPartitionName)) {
                 log.error("[{}] Request {}: not support fetch message to inner topic. topic: {}",
                         ctx.channel(), fetch.getHeader(), topicPartition);
-                Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
-                        fetchData
-                                .keySet()
-                                .stream()
-                                .collect(Collectors.toMap(Function.identity(),
-                                        p -> new FetchResponse.PartitionData(Errors.INVALID_TOPIC_EXCEPTION,
-                                                0, 0, 0,
-                                                null, MemoryRecords.EMPTY)));
-                resultFuture.complete(new FetchResponse(Errors.INVALID_TOPIC_EXCEPTION,
-                        new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
+                FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
+                        fetchData, Errors.INVALID_TOPIC_EXCEPTION);
+                resultFuture.complete(fetchResponse);
                 return;
             }
         }
@@ -746,16 +764,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 .whenComplete((result, error) -> {
                     // TODO: report errors for specific partitions and continue for non failed lookups
                     if (error != null) {
-                        Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
-                                fetchData
-                                        .keySet()
-                                        .stream()
-                                        .collect(Collectors.toMap(Function.identity(),
-                                                p -> new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
-                                                        0, 0, 0,
-                                                        null, MemoryRecords.EMPTY)));
-                        resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
-                                new LinkedHashMap<>(errorsMap), 0, fetchRequest.metadata().sessionId()));
+                        FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
+                                fetchData, Errors.UNKNOWN_SERVER_ERROR);
+                        resultFuture.complete(fetchResponse);
                     } else {
                         boolean multipleBrokers = false;
 
@@ -781,18 +792,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         resultFuture.complete(response);
                                     }).exceptionally(badError -> {
                                         log.error("bad error for FULL fetch", badError);
-                                        Map<TopicPartition, FetchResponse.PartitionData<?>> errorsMap =
-                                                fetchData
-                                                        .keySet()
-                                                        .stream()
-                                                        .collect(Collectors.toMap(Function.identity(),
-                                                                p -> new FetchResponse.PartitionData(
-                                                                        Errors.UNKNOWN_SERVER_ERROR,
-                                                                        0, 0, 0,
-                                                                        null, MemoryRecords.EMPTY)));
-                                        resultFuture.complete(new FetchResponse(Errors.UNKNOWN_SERVER_ERROR,
-                                                new LinkedHashMap<>(errorsMap), 0,
-                                                fetchRequest.metadata().sessionId()));
+                                        FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
+                                                fetchData, Errors.UNKNOWN_SERVER_ERROR);
+                                        resultFuture.complete(fetchResponse);
                                         return null;
                                     });
                         } else {
@@ -812,21 +814,22 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 fetchData.keySet().forEach(topicPartition -> {
                                     if (!responseMap.containsKey(topicPartition)) {
                                         responseMap.put(topicPartition,
-                                                new FetchResponse.PartitionData(Errors.UNKNOWN_SERVER_ERROR,
-                                                        0, 0, 0,
-                                                        null, MemoryRecords.EMPTY));
+                                                getFetchPartitionDataWithError(Errors.UNKNOWN_SERVER_ERROR));
                                     }
                                 });
                                 if (log.isDebugEnabled()) {
                                     log.debug("[{}] Request {}: Complete handle fetch.", ctx.channel(),
                                             fetch.toString());
                                 }
-                                final LinkedHashMap<TopicPartition, FetchResponse.PartitionData<?>> responseMapRaw =
+                                final LinkedHashMap<TopicPartition, FetchResponseData.PartitionData> responseMapRaw =
                                         new LinkedHashMap<>(responseMap);
-                                resultFuture.complete(new FetchResponse(Errors.NONE,
-                                        responseMapRaw, 0, fetchRequest.metadata().sessionId()));
+                                resultFuture.complete(new FetchResponse(new FetchResponseData()
+                                        .setResponses(KafkaRequestHandler.buildFetchResponses(responseMapRaw))
+                                        .setErrorCode(Errors.NONE.code())
+                                        .setSessionId(fetchRequest.metadata().sessionId())
+                                        .setThrottleTimeMs(0)));
                             };
-                            BiConsumer<TopicPartition, FetchResponse.PartitionData> addFetchPartitionResponse =
+                            BiConsumer<TopicPartition, FetchResponseData.PartitionData> addFetchPartitionResponse =
                                     (topicPartition, response) -> {
 
                                 responseMap.put(topicPartition, response);
@@ -843,15 +846,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 }
                             };
 
-                            final BiConsumer<TopicPartition, FetchResponse.PartitionData> resultConsumer =
-                                    (topicPartition, data) -> addFetchPartitionResponse.accept(
-                                            topicPartition, data);
+                            final BiConsumer<TopicPartition, FetchResponseData.PartitionData> resultConsumer =
+                                    (topicPartition, pdata) -> addFetchPartitionResponse.accept(
+                                            topicPartition, pdata);
                             final BiConsumer<TopicPartition, Errors> errorsConsumer =
                                     (topicPartition, errors) -> addFetchPartitionResponse.accept(topicPartition,
-                                            new FetchResponse.PartitionData(errors, 0, 0, 0,
-                                                    null, MemoryRecords.EMPTY));
+                                            getFetchPartitionDataWithError(errors));
 
-                            Map<Node, Map<TopicPartition, FetchRequest.PartitionData>> requestsByBroker =
+                            Map<Node, Map<TopicPartition, FetchRequestData.FetchPartition>> requestsByBroker =
                                                                                                 new HashMap<>();
 
                             fetchData.forEach((topicPartition, partitionData) -> {
@@ -859,7 +861,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     KafkaResponseUtils.BrokerLookupResult topicMetadata =
                                             brokers.get(fullPartitionName);
                                     Node kopBroker = topicMetadata.node;
-                                    Map<TopicPartition, FetchRequest.PartitionData> requestForSinglePartition =
+                                    Map<TopicPartition, FetchRequestData.FetchPartition> requestForSinglePartition =
                                             requestsByBroker.computeIfAbsent(kopBroker, ___ -> new HashMap<>());
                                     requestForSinglePartition.put(topicPartition, partitionData);
                             });
@@ -872,10 +874,23 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                         fetch.getHeader().clientId(),
                                         dummyCorrelationId
                                 );
+                                Map<TopicPartition, FetchRequest.PartitionData> partitionDataMap =
+                                        requestsForBroker.entrySet().stream()
+                                                .collect(Collectors.toMap(
+                                                        Map.Entry::getKey,
+                                                        entry -> new FetchRequest.PartitionData(
+                                                                null,
+                                                                entry.getValue().fetchOffset(),
+                                                                entry.getValue().logStartOffset(),
+                                                                entry.getValue().partitionMaxBytes(),
+                                                                Optional.empty()
+                                                        )
+                                                ));
                                 FetchRequest requestForSingleBroker = FetchRequest.Builder
-                                        .forConsumer(((FetchRequest) fetch.getRequest()).maxWait(),
+                                        .forConsumer(fetch.getRequest().version(),
+                                                ((FetchRequest) fetch.getRequest()).maxWait(),
                                                 ((FetchRequest) fetch.getRequest()).minBytes(),
-                                                requestsForBroker)
+                                                partitionDataMap)
                                         .build();
                                 ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
                                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
@@ -887,32 +902,36 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 buffer.release();
 
                                 if (log.isDebugEnabled()) {
-                                    log.debug("forward fetch for {} to {}", requestForSingleBroker.fetchData().keySet(),
+                                    log.debug("forward fetch for {} to {}", requestForSingleBroker.data().topics(),
                                             kopBroker);
                                 }
                                 grabConnectionToBroker(kopBroker.host(), kopBroker.port())
                                         .forwardRequest(singlePartitionRequest)
                                         .thenAccept(response -> {
-                                            FetchResponse<?> resp = (FetchResponse) response;
-                                            resp.responseData()
-                                                    .forEach((topicPartition, partitionResponse) -> {
-                                                        invalidateLeaderIfNeeded(namespacePrefix, kopBroker,
-                                                                topicPartition, partitionResponse.error());
-                                                        if (log.isDebugEnabled()) {
-                                                            final String fullPartitionName =
-                                                                    KopTopic.toString(topicPartition,
-                                                                            namespacePrefix);
-                                                            log.debug("result fetch for {} to {} {}", fullPartitionName,
-                                                                    kopBroker,
-                                                                    partitionResponse);
-                                                        }
-                                                        addFetchPartitionResponse.accept(topicPartition,
+                                            FetchResponse resp = (FetchResponse) response;
+                                            resp.data().responses().stream().forEach(fetchableTopicResponse -> {
+                                                fetchableTopicResponse.partitions().forEach(partitionResponse -> {
+                                                    TopicPartition topicPartition = new TopicPartition(
+                                                            fetchableTopicResponse.topic(),
+                                                            partitionResponse.partitionIndex());
+                                                    invalidateLeaderIfNeeded(namespacePrefix, kopBroker,
+                                                            topicPartition, partitionResponse.errorCode());
+                                                    if (log.isDebugEnabled()) {
+                                                        final String fullPartitionName =
+                                                                KopTopic.toString(topicPartition,
+                                                                        namespacePrefix);
+                                                        log.debug("result fetch for {} to {} {}", fullPartitionName,
+                                                                kopBroker,
                                                                 partitionResponse);
-                                                    });
+                                                    }
+                                                    addFetchPartitionResponse.accept(topicPartition,
+                                                            partitionResponse);
+                                                });
+                                            });
                                         }).exceptionally(badError -> {
                                             log.error("bad error while fetching for {} from {}",
-                                                    requestForSingleBroker.fetchData().keySet(), badError, kopBroker);
-                                            requestForSingleBroker.fetchData().keySet().forEach(topicPartition ->
+                                                    fetchData.keySet(), badError, kopBroker);
+                                            fetchData.keySet().forEach(topicPartition ->
                                                     errorsConsumer.accept(topicPartition, Errors.UNKNOWN_SERVER_ERROR)
                                             );
                                             return null;
@@ -923,6 +942,32 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         }
                     }
                 });
+    }
+
+    @NotNull
+    private static FetchResponse buildFetchErrorResponse(FetchRequest fetchRequest,
+                                                         Map<TopicPartition, FetchRequestData.FetchPartition> fetchData,
+                                                         Errors finalError) {
+        Map<TopicPartition, FetchResponseData.PartitionData> errorsMap =
+                fetchData
+                        .keySet()
+                        .stream()
+                        .collect(Collectors.toMap(Function.identity(),
+                                p -> getFetchPartitionDataWithError(finalError)));
+        FetchResponse fetchResponse = new FetchResponse(new FetchResponseData()
+                .setErrorCode(finalError.code())
+                .setResponses(KafkaRequestHandler.buildFetchResponses(errorsMap))
+                .setSessionId(fetchRequest.metadata().sessionId()));
+        return fetchResponse;
+    }
+
+    private static FetchResponseData.PartitionData getFetchPartitionDataWithError(Errors finalError) {
+        return new FetchResponseData.PartitionData()
+                .setErrorCode(finalError.code())
+                .setHighWatermark(FetchResponse.INVALID_HIGH_WATERMARK)
+                .setLastStableOffset(FetchResponse.INVALID_LAST_STABLE_OFFSET)
+                .setLogStartOffset(FetchResponse.INVALID_LOG_START_OFFSET)
+                .setRecords(MemoryRecords.EMPTY);
     }
 
     private CompletableFuture<KafkaResponseUtils.BrokerLookupResult> findCoordinator(
@@ -945,6 +990,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             key, pulsarTopicName, nameSpace);
                                     return admin.namespaces().createNamespaceAsync(nameSpace);
                                 }
+                            })
+                            .handle((Void v, Throwable error) -> {
+                                if (error != null) {
+                                    if (error.getCause() instanceof PulsarAdminException.ConflictException) {
+                                        // concurrent creation of namespace
+                                        return CompletableFuture.completedFuture(null);
+                                    } else {
+                                        throw new CompletionException(error);
+                                    }
+                                }
+                                return CompletableFuture.completedFuture(null);
                             })
                             .thenCompose(___ -> {
                                 coordinatorNamespaceExists = true;
@@ -980,12 +1036,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     protected void handleFindCoordinatorRequest(KafkaHeaderAndRequest findCoordinator,
                                                 CompletableFuture<AbstractResponse> resultFuture) {
         Node node = newSelfNode();
-        AbstractResponse response = new FindCoordinatorResponse(
-                new FindCoordinatorResponseData()
-                    .setErrorCode(Errors.NONE.code())
-                    .setHost(node.host())
-                    .setPort(node.port())
-                    .setNodeId(node.id()));
+        FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
+        List<String> coordinatorKeys = request.version() < FindCoordinatorRequest.MIN_BATCHED_VERSION
+                ? Collections.singletonList(request.data().key()) : request.data().coordinatorKeys();
+        AbstractResponse response =
+                KafkaResponseUtils.newFindCoordinator(coordinatorKeys, node, request.version());
         resultFuture.complete(response);
     }
 
@@ -1297,9 +1352,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 }
                             };
 
-                            final BiConsumer<TopicPartition, Errors> resultConsumer =
-                                    (topicPartition, data2) -> addDeletePartitionResponse.accept(
-                                            topicPartition, data2);
                             final BiConsumer<TopicPartition, Errors> errorsConsumer =
                                     (topicPartition, errors) -> addDeletePartitionResponse.accept(topicPartition,
                                             errors);
@@ -1756,8 +1808,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     .setCurrentLeaderEpoch(listOffsetsPartition.currentLeaderEpoch())
                     .setMaxNumOffsets(listOffsetsPartition.maxNumOffsets()));
 
+            // see "forConsumer" implementation
+            boolean requireMaxTimestamp = request.version() >= 7;
             ListOffsetsRequest requestForSinglePartition = ListOffsetsRequest.Builder
-                    .forConsumer(false, request.isolationLevel())
+                    .forConsumer(false, request.isolationLevel(), requireMaxTimestamp)
                     .setTargetTimes(Collections.singletonList(tsData))
                     .build(request.version());
 
@@ -1795,11 +1849,93 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
-                OffsetFetchRequest.class,
-                OffsetFetchRequestData.class,
-                OffsetFetchRequestData::groupId,
-                null);
+        String singleGroupId;
+        OffsetFetchRequest offsetFetchRequest = (OffsetFetchRequest) kafkaHeaderAndRequest.getRequest();
+        if (kafkaHeaderAndRequest.getRequest().version() < 8) {
+            // old version
+            singleGroupId = offsetFetchRequest.groupId();
+        } else if (offsetFetchRequest.groupIds().size() == 1) {
+            // common case, when can simply forward the request to the coordinator
+            singleGroupId = offsetFetchRequest.groupIds().get(0);
+        } else {
+            // KIP-709 https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=173084258
+            singleGroupId = null;
+        }
+
+        if (singleGroupId != null) {
+            // most common case (non KIP-709) or single group
+            handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                    FindCoordinatorRequest.CoordinatorType.GROUP,
+                    OffsetFetchRequest.class,
+                    OffsetFetchRequestData.class,
+                    data -> singleGroupId,
+                    null);
+        } else {
+            List<CompletableFuture<AbstractResponse>> responses = new ArrayList<>();
+            for (OffsetFetchRequestData.OffsetFetchRequestGroup group : offsetFetchRequest.data().groups()) {
+
+                Map<String, List<TopicPartition>> map = new HashMap<>();
+                List<TopicPartition> partitions = new ArrayList<>();
+                if (group.topics() != null) {
+                    group.topics().forEach(t -> {
+                        if (t.partitionIndexes() != null) {
+                            List<TopicPartition> topicPartitions = t.partitionIndexes().stream()
+                                    .map(p -> new TopicPartition(t.name(), p))
+                                    .collect(Collectors.toList());
+                            partitions.addAll(topicPartitions);
+                        }
+                    });
+                }
+                // null means "all partitions"
+                map.put(group.groupId(), partitions.isEmpty() ? null : partitions);
+                OffsetFetchRequest singleGroupRequest = new OffsetFetchRequest.Builder(map,
+                        offsetFetchRequest.requireStable(),
+                        false)
+                        .build(offsetFetchRequest.version());
+                int dummyCorrelationId = getDummyCorrelationId();
+                RequestHeader header = new RequestHeader(
+                        kafkaHeaderAndRequest.getHeader().apiKey(),
+                        kafkaHeaderAndRequest.getHeader().apiVersion(),
+                        kafkaHeaderAndRequest.getHeader().clientId(),
+                        dummyCorrelationId
+                );
+                ByteBuf buffer = KopResponseUtils.serializeRequest(header, singleGroupRequest);
+                KafkaHeaderAndRequest requestWithNewHeader = new KafkaHeaderAndRequest(
+                        header,
+                        singleGroupRequest,
+                        buffer,
+                        null
+                );
+                CompletableFuture<AbstractResponse> singleResultFuture = new CompletableFuture<>();
+                responses.add(singleResultFuture);
+                handleRequestWithCoordinator(requestWithNewHeader, singleResultFuture,
+                        FindCoordinatorRequest.CoordinatorType.GROUP,
+                        OffsetFetchRequest.class,
+                        OffsetFetchRequestData.class,
+                        data1 -> group.groupId(),
+                        null);
+            }
+            FutureUtil.waitForAll(responses).whenComplete((ignore, ex) -> {
+                kafkaHeaderAndRequest.close();
+                if (ex != null) {
+                    log.error("Internal error when handling offset fetch request", ex);
+                    resultFuture.completeExceptionally(ex);
+                } else {
+                    OffsetFetchResponseData responseData = new OffsetFetchResponseData()
+                            .setGroups(new ArrayList<>())
+                            .setTopics(new ArrayList<>())
+                            .setErrorCode(Errors.NONE.code());
+                    responses.forEach(future -> {
+                        OffsetFetchResponse response = (OffsetFetchResponse) future.join();
+                        log.info("adding response {}", response.data());
+                        // here we have only request.version >= 8
+                        responseData.groups().addAll(response.data().groups());
+
+                    });
+                    resultFuture.complete(new OffsetFetchResponse(responseData));
+                }
+            });
+        }
     }
 
     @Override
@@ -1827,10 +1963,14 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         BiFunction<K, Throwable, R> errorBuilder;
         if (customErrorBuilder == null) {
             errorBuilder = (K request, Throwable t) -> {
+                while (t instanceof CompletionException && t.getCause() != null) {
+                    t = t.getCause();
+                }
                 if (t instanceof IOException
                     || t.getCause() instanceof IOException) {
                     t = new CoordinatorNotAvailableException("Network error: " + t, t);
                 }
+                log.debug("Unexpected error", t);
                 return (R) request.getErrorResponse(t);
             };
         } else {

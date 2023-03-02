@@ -335,9 +335,26 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         final ProduceResponse response = (ProduceResponse) responseFuture.get();
 
         //Topic: "topic2" authorize success. Error is not TOPIC_AUTHORIZATION_FAILED
-        assertEquals(response.responses().get(topicPartition2).error, Errors.NOT_LEADER_OR_FOLLOWER);
+        assertEquals(response
+                .data()
+                .responses()
+                .stream()
+                .filter(t -> t.name().equals(topicPartition2.topic()))
+                .flatMap(t->t.partitionResponses().stream())
+                .filter(p -> p.index() == topicPartition2.partition())
+                .findFirst()
+                .get().errorCode(), Errors.NOT_LEADER_OR_FOLLOWER.code());
+
         //Topic: `TOPIC` authorize failed.
-        assertEquals(response.responses().get(topicPartition1).error, Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(response
+                .data()
+                .responses()
+                .stream()
+                .filter(t -> t.name().equals(topicPartition1.topic()))
+                .flatMap(t->t.partitionResponses().stream())
+                .filter(p -> p.index() == topicPartition1.partition())
+                .findFirst()
+                .get().errorCode(), Errors.TOPIC_AUTHORIZATION_FAILED.code());
     }
 
     @Test(timeOut = 20000)
@@ -378,7 +395,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // Test for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -406,7 +423,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition tp = new TopicPartition(topicName, 0);
 
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -422,12 +439,19 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     }
 
 
-    @Test(timeOut = 20000)
-    public void testHandleOffsetFetchRequestAuthorizationSuccess()
+    @DataProvider(name = "offsetFetchVersions")
+    public static Object[][] offsetFetchVersions() {
+        return new Object[][]{
+                { (short) 7 },
+                { (short) ApiKeys.OFFSET_FETCH.latestVersion() } };
+    }
+
+    @Test(timeOut = 20000, dataProvider = "offsetFetchVersions")
+    public void testHandleOffsetFetchRequestAuthorizationSuccess(short version)
             throws PulsarAdminException, ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
         String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
-                + "testHandleOffsetFetchRequestAuthorizationSuccess";
+                + "testHandleOffsetFetchRequestAuthorizationSuccess_" + version;
         String groupId = "DemoKafkaOnPulsarConsumer";
 
         // create partitioned topic.
@@ -444,7 +468,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                 new OffsetFetchRequest.Builder(groupId, false,
                         Collections.singletonList(tp), false);
 
-        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder, version);
+        assertEquals(version, request.getRequest().version());
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
         spyHandler.handleOffsetFetchRequest(request, responseFuture);
@@ -453,18 +478,35 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.responseData().size(), 1);
-        assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData()
-                .forEach((topicPartition, partitionData) -> assertEquals(partitionData.error, Errors.NONE));
+
+        if (request.getRequest().version() >= 8) {
+            assertEquals(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .count(), 1);
+            assertTrue(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .allMatch(d->d.errorCode() == Errors.NONE.code()));
+        } else {
+            assertEquals(offsetFetchResponse.data()
+                    .topics()
+                    .stream().flatMap(t->t.partitions().stream())
+                    .count(), 1);
+            assertEquals(offsetFetchResponse.error(), Errors.NONE);
+            offsetFetchResponse.data().topics().stream().flatMap(t->t.partitions().stream())
+                    .forEach((partitionData) -> assertEquals(partitionData.errorCode(), Errors.NONE.code()));
+        }
     }
 
-    @Test(timeOut = 20000)
-    public void testHandleOffsetFetchRequestAuthorizationFailed()
+    @Test(timeOut = 20000, dataProvider = "offsetFetchVersions")
+    public void testHandleOffsetFetchRequestAuthorizationFailed(short version)
             throws PulsarAdminException, ExecutionException, InterruptedException {
         KafkaRequestHandler spyHandler = spy(handler);
         String topicName = "persistent://" + TENANT + "/" + NAMESPACE + "/"
-                + "testHandleOffsetFetchRequestAuthorizationFailed";
+                + "testHandleOffsetFetchRequestAuthorizationFailed_" + version;
         String groupId = "DemoKafkaOnPulsarConsumer";
 
         // create partitioned topic.
@@ -474,7 +516,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         OffsetFetchRequest.Builder builder =
                 new OffsetFetchRequest.Builder(groupId, false, Collections.singletonList(tp), false);
 
-        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder);
+        KafkaCommandDecoder.KafkaHeaderAndRequest request = buildRequest(builder, version);
+        assertEquals(request.getRequest().version(), version);
         CompletableFuture<AbstractResponse> responseFuture = new CompletableFuture<>();
 
         spyHandler.handleOffsetFetchRequest(request, responseFuture);
@@ -483,10 +526,27 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertTrue(response instanceof OffsetFetchResponse);
         OffsetFetchResponse offsetFetchResponse = (OffsetFetchResponse) response;
-        assertEquals(offsetFetchResponse.responseData().size(), 1);
-        assertEquals(offsetFetchResponse.error(), Errors.NONE);
-        offsetFetchResponse.responseData().forEach((topicPartition, partitionData) -> assertEquals(partitionData.error,
-                Errors.TOPIC_AUTHORIZATION_FAILED));
+
+        if (request.getRequest().version() >= 8) {
+            assertEquals(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .count(), 1);
+            assertTrue(offsetFetchResponse.data()
+                    .groups()
+                    .stream().flatMap(g -> g.topics().stream())
+                    .flatMap(t -> t.partitions().stream())
+                    .allMatch(d->d.errorCode() == Errors.TOPIC_AUTHORIZATION_FAILED.code()));
+        } else {
+            assertTrue(offsetFetchResponse.data()
+                    .topics()
+                    .stream().flatMap(t -> t.partitions().stream())
+                    .allMatch(d->d.errorCode() == Errors.TOPIC_AUTHORIZATION_FAILED.code()));
+
+            assertEquals(offsetFetchResponse.error(), Errors.NONE);
+        }
+
     }
 
     @Test(timeOut = 20000)
@@ -580,7 +640,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         offsetData.put(topicPartition, KafkaCommonTestUtils.newTxnOffsetCommitRequestCommittedOffset(1L, ""));
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData, false);
+                        "1", group, 1L, (short) 1, offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Handle request
@@ -612,7 +672,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         TxnOffsetCommitRequest.Builder builder =
                 new TxnOffsetCommitRequest.Builder(
-                        "1", group, 1, (short) 1, offsetData, false);
+                        "1", group, 1L, (short) 1, offsetData);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
         // Topic: `test1` authorize success.
@@ -807,6 +867,10 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     }
     private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder) {
         return KafkaCommonTestUtils.buildRequest(builder, serviceAddress);
+    }
+
+    private KafkaCommandDecoder.KafkaHeaderAndRequest buildRequest(AbstractRequest.Builder builder, short version) {
+        return KafkaCommonTestUtils.buildRequest(builder, serviceAddress, version);
     }
 
     private void handleGroupImmigration() {
