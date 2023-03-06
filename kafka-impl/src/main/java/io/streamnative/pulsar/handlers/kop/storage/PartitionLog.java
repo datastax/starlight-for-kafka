@@ -1124,7 +1124,15 @@ public class PartitionLog {
         // look for the first entry with data
         PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
 
-        managedLedger.asyncReadEntry(nextValidPosition, new AsyncCallbacks.ReadEntryCallback() {
+        fetchOldestAvailableIndexFromTopicReadNext(future, managedLedger, nextValidPosition);
+
+        return future;
+
+    }
+
+    private void fetchOldestAvailableIndexFromTopicReadNext(CompletableFuture<Long> future,
+                                                            ManagedLedgerImpl managedLedger, PositionImpl position) {
+        managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
             public void readEntryComplete(Entry entry, Object ctx) {
                 try {
@@ -1132,6 +1140,13 @@ public class PartitionLog {
                     log.info("First offset for topic {} is {} - position {}", fullPartitionName,
                             startOffset, entry.getPosition());
                     future.complete(startOffset);
+                } catch (MetadataCorruptedException.NoBrokerEntryMetadata noBrokerEntryMetadata) {
+                    long currentOffset = MessageMetadataUtils.getCurrentOffset(managedLedger);
+                    log.info("Legacy entry for topic {} - position {} - returning current offset {}",
+                            fullPartitionName,
+                            entry.getPosition(),
+                            currentOffset);
+                    future.complete(currentOffset);
                 } catch (Exception err) {
                     future.completeExceptionally(err);
                 } finally {
@@ -1144,9 +1159,6 @@ public class PartitionLog {
                 future.completeExceptionally(exception);
             }
         }, null);
-
-        return future;
-
     }
 
     @VisibleForTesting
@@ -1179,7 +1191,8 @@ public class PartitionLog {
     public CompletableFuture<Long> recoverTxEntries(
                                              long offset,
                                              Executor executor) {
-        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
+        if (!kafkaConfig.isKafkaTransactionCoordinatorEnabled()
+                || !MessageMetadataUtils.isInterceptorConfigured(persistentTopic.getManagedLedger())) {
             // no need to scan the topic, because transactions are disabled
             return CompletableFuture.completedFuture(Long.valueOf(0));
         }

@@ -13,19 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.streamnative.kafka.client.api.KafkaClientFactoryImpl;
-import io.streamnative.kafka.client.api.KafkaVersion;
-import io.streamnative.kafka.client.api.Producer;
-import io.streamnative.kafka.client.api.ProducerConfiguration;
-import io.streamnative.kafka.client.api.RecordMetadata;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Cleanup;
@@ -35,6 +28,8 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.client.api.Consumer;
 import org.apache.pulsar.client.api.Message;
@@ -118,23 +113,18 @@ public class UpgradeTest extends KopProtocolHandlerTestBase {
 
     private List<Long> sendMessages(final String topic, final int start, final int end) throws Exception {
         final List<Long> offsets = Lists.newArrayList();
-        // use an old client the doesn't require transactions
-        KafkaClientFactoryImpl kafkaClientFactory = new KafkaClientFactoryImpl(KafkaVersion.KAFKA_2_8_0);
-        ProducerConfiguration producerConfiguration = ProducerConfiguration.builder()
-                .bootstrapServers("localhost:" + getClientPort())
-                .valueSerializer(org.apache.kafka280.common.serialization.StringSerializer.class.getName())
-                .keySerializer(org.apache.kafka280.common.serialization.StringSerializer.class.getName())
-                .build();
         @Cleanup
-        final Producer<String, String> producer = kafkaClientFactory.createProducer(producerConfiguration);
-        List<Future<RecordMetadata>> futures = new ArrayList<>();
+        final KafkaProducer<String, String> producer = new KafkaProducer<>(newKafkaProducerProperties());
         for (int i = start; i < end; i++) {
             final String value = "msg-" + i;
-            futures.add(producer.sendAsync(producer.newContextBuilder(topic, value)
-                    .build()));
-        }
-        for (Future<RecordMetadata> future : futures) {
-            offsets.add(future.get().getOffset());
+            producer.send(new ProducerRecord<>(topic, value), (metadata, e) -> {
+                if (e == null) {
+                    offsets.add(metadata.offset());
+                    log.info("Send {} to {}-{}@{}", value, metadata.topic(), metadata.partition(), metadata.offset());
+                } else {
+                    log.error("Failed to send {} to {}: {}", value, topic, e.getMessage());
+                }
+            }).get();
         }
         return offsets;
     }
