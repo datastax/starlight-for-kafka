@@ -539,11 +539,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
                     .flatMap(t -> t.partitions().stream())
                     .allMatch(d->d.errorCode() == Errors.TOPIC_AUTHORIZATION_FAILED.code()));
         } else {
-            assertEquals(offsetFetchResponse.error(), Errors.TOPIC_AUTHORIZATION_FAILED);
-            assertEquals(offsetFetchResponse.data()
+            assertTrue(offsetFetchResponse.data()
                     .topics()
                     .stream().flatMap(t -> t.partitions().stream())
-                    .count(), 1);
+                    .allMatch(d->d.errorCode() == Errors.TOPIC_AUTHORIZATION_FAILED.code()));
+
+            assertEquals(offsetFetchResponse.error(), Errors.NONE);
         }
 
     }

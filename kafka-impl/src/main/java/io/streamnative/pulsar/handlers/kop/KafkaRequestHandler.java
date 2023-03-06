@@ -1129,7 +1129,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
 
         if (partitions == null || partitions.isEmpty()) {
-            authorizeFuture.complete(null);
+            authorizeFuture.complete(authorizedPartitions);
         } else {
             AtomicInteger partitionCount = new AtomicInteger(partitions.size());
 
