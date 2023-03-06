@@ -831,8 +831,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             disableCnxAutoRead();
             autoReadDisabledPublishBufferLimiting = true;
-            pulsarService.getBrokerService().pausedConnections(1);
+            setPausedConnections(pulsarService, 1);
         }
+    }
+
+    @VisibleForTesting
+    public static void setPausedConnections(PulsarService pulsarService, int numConnections) {
+        pulsarService.getBrokerService().pausedConnections(numConnections);
     }
 
     private void completeSendOperationForThrottling(long msgSize) {
@@ -844,8 +849,13 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             autoReadDisabledPublishBufferLimiting = false;
             enableCnxAutoRead();
-            pulsarService.getBrokerService().resumedConnections(1);
+            resumePausedConnections(pulsarService, 1);
         }
+    }
+
+    @VisibleForTesting
+    public static void resumePausedConnections(PulsarService pulsarService, int numConnections) {
+        pulsarService.getBrokerService().resumedConnections(numConnections);
     }
 
     @Override
