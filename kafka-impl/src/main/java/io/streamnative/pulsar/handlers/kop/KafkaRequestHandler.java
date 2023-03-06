@@ -33,6 +33,7 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
+import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
 import io.streamnative.pulsar.handlers.kop.security.auth.Authorizer;
@@ -985,9 +986,19 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkArgument(findCoordinator.getRequest() instanceof FindCoordinatorRequest);
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
 
-        String coordinatorKey = request.data().coordinatorKeys().isEmpty()
-                ? request.data().key() : request.data().coordinatorKeys().get(0);
+        List<String> coordinatorKeys = request.version() < FindCoordinatorRequest.MIN_BATCHED_VERSION ?
+                Collections.singletonList(request.data().key()) : request.data().coordinatorKeys();
 
+        List<CompletableFuture<Either<Node, Errors>>> futures
+                = new ArrayList<>(coordinatorKeys.size());
+        for (String coordinatorKey : coordinatorKeys) {
+            CompletableFuture<Either<Node, Errors>> future = findSingleCoordinator(coordinatorKey, request);
+            futures.add(future);
+        }
+
+    }
+    private CompletableFuture<Either<Node, Errors>> findSingleCoordinator(String coordinatorKey, FindCoordinatorRequest request) {
+        CompletableFuture<Either<Node, Errors>> result = new CompletableFuture<>();
         String pulsarTopicName;
         int partition;
         CompletableFuture<Void> storeGroupIdFuture;

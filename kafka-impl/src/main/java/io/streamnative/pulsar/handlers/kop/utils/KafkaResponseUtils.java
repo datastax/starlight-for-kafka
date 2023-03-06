@@ -57,6 +57,7 @@ import org.apache.kafka.common.requests.DeleteGroupsResponse;
 import org.apache.kafka.common.requests.DeleteRecordsResponse;
 import org.apache.kafka.common.requests.DeleteTopicsResponse;
 import org.apache.kafka.common.requests.DescribeGroupsResponse;
+import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
 import org.apache.kafka.common.requests.HeartbeatResponse;
 import org.apache.kafka.common.requests.JoinGroupResponse;
@@ -190,7 +191,7 @@ public class KafkaResponseUtils {
     public static FindCoordinatorResponse newFindCoordinator(Node node, String key, int version) {
         FindCoordinatorResponseData data = new FindCoordinatorResponseData();
 
-        if (version <= 3) {
+        if (version < FindCoordinatorRequest.MIN_BATCHED_VERSION) {
             // for old clients
             data.setNodeId(node.id());
             data.setHost(node.host());
@@ -215,7 +216,7 @@ public class KafkaResponseUtils {
 
     public static FindCoordinatorResponse newFindCoordinator(Errors errors, String key, int version) {
         FindCoordinatorResponseData data = new FindCoordinatorResponseData();
-        if (version <= 3) {
+        if (version < FindCoordinatorRequest.MIN_BATCHED_VERSION) {
             // for old clients
             data.setErrorCode(errors.code());
             data.setErrorMessage(errors.message());
