@@ -17,7 +17,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
@@ -1887,10 +1886,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         offsetFetchRequest.requireStable(),
                         false)
                         .build(offsetFetchRequest.version());
+                int dummyCorrelationId = getDummyCorrelationId();
+                RequestHeader header = new RequestHeader(
+                        kafkaHeaderAndRequest.getHeader().apiKey(),
+                        kafkaHeaderAndRequest.getHeader().apiVersion(),
+                        kafkaHeaderAndRequest.getHeader().clientId(),
+                        dummyCorrelationId
+                );
+                ByteBuf buffer = KopResponseUtils.serializeRequest(header, singleGroupRequest);
                 KafkaHeaderAndRequest requestWithNewHeader = new KafkaHeaderAndRequest(
-                        kafkaHeaderAndRequest.getHeader(),
+                        header,
                         singleGroupRequest,
-                        Unpooled.buffer(),
+                        buffer,
                         null
                 );
                 CompletableFuture<AbstractResponse> singleResultFuture = new CompletableFuture<>();
@@ -1910,10 +1917,16 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     resultFuture.completeExceptionally(ex);
                 } else {
                     OffsetFetchResponseData responseData = new OffsetFetchResponseData()
-                            .setGroups(new ArrayList<>());
+                            .setGroups(new ArrayList<>())
+                            .setTopics(new ArrayList<>());
                     responses.forEach(future -> {
                         OffsetFetchResponse response = (OffsetFetchResponse) future.join();
-                        responseData.groups().addAll(response.data().groups());
+                        log.info("adding response {}", response.data());
+                        if (offsetFetchRequest.version() >= 8) {
+                            responseData.groups().addAll(response.data().groups());
+                        } else {
+                            responseData.topics().addAll(response.data().topics());
+                        }
                     });
                     resultFuture.complete(new OffsetFetchResponse(responseData));
                 }
