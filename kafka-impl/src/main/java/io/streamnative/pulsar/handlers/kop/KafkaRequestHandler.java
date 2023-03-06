@@ -1126,9 +1126,6 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         checkState(getGroupCoordinator() != null,
             "Group Coordinator not started");
 
-        log.info("handleOffsetFetchRequest grouId {} groups {} version {}", request.data().groupId(),
-                request.data().groups(), offsetFetch.getRequest().version());
-
         List<CompletableFuture<KafkaResponseUtils.OffsetFetchResponseGroupData>> futures = new ArrayList<>();
         if (request.version() >= 8) {
             request.data().groups().forEach(group -> {
