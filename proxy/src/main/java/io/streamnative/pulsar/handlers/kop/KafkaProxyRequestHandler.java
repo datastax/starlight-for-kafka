@@ -17,6 +17,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadataManager;
@@ -93,6 +94,7 @@ import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.OffsetFetchRequestData;
+import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
@@ -138,6 +140,7 @@ import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
+import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse;
@@ -1035,10 +1038,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                 CompletableFuture<AbstractResponse> resultFuture) {
         Node node = newSelfNode();
         FindCoordinatorRequest request = (FindCoordinatorRequest) findCoordinator.getRequest();
-        String coordinatorKey = request.data().coordinatorKeys().isEmpty()
-                ? request.data().key() : request.data().coordinatorKeys().get(0);
+        List<String> coordinatorKeys = request.version() < FindCoordinatorRequest.MIN_BATCHED_VERSION
+                ? Collections.singletonList(request.data().key()) : request.data().coordinatorKeys();
         AbstractResponse response =
-                KafkaResponseUtils.newFindCoordinator(node, coordinatorKey, request.version());
+                KafkaResponseUtils.newFindCoordinator(coordinatorKeys, node, request.version());
         resultFuture.complete(response);
     }
 
@@ -1847,25 +1850,75 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void handleOffsetFetchRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                             CompletableFuture<AbstractResponse> resultFuture) {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
-                OffsetFetchRequest.class,
-                OffsetFetchRequestData.class,
-                (data -> {
-                    if (kafkaHeaderAndRequest.getRequest().version() >= 8) {
-                        if (data.groups().size() > 1) {
-                            log.warn("OffsetFetchRequest with version {} has more than one group",
-                                    kafkaHeaderAndRequest.getRequest().version());
-                        }
-                        // new clients
-                        OffsetFetchRequestData.OffsetFetchRequestGroup offsetFetchRequestGroup =
-                                data.groups().get(0);
-                        return offsetFetchRequestGroup.groupId();
+        String singleGroupId;
+        OffsetFetchRequest offsetFetchRequest = (OffsetFetchRequest) kafkaHeaderAndRequest.getRequest();
+        if (kafkaHeaderAndRequest.getRequest().version() < 8) {
+            singleGroupId = offsetFetchRequest.groupId();
+        } else if (kafkaHeaderAndRequest.getRequest().version() > 8 && offsetFetchRequest.groupIds().size() == 1) {
+            singleGroupId = offsetFetchRequest.groupIds().get(0);
+        } else {
+            singleGroupId = null;
+        }
+
+        // most common case
+        if (singleGroupId != null) {
+            handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
+                    FindCoordinatorRequest.CoordinatorType.GROUP,
+                    OffsetFetchRequest.class,
+                    OffsetFetchRequestData.class,
+                    data -> singleGroupId,
+                    null);
+        } else {
+            List<CompletableFuture<AbstractResponse>> responses = new ArrayList<>();
+            for (OffsetFetchRequestData.OffsetFetchRequestGroup group : offsetFetchRequest.data().groups()) {
+
+                Map<String, List<TopicPartition>> map = new HashMap<>();
+                group.topics().forEach(t -> {
+                    if (t.partitionIndexes() != null) {
+                        List<TopicPartition> partitions = t.partitionIndexes().stream()
+                                .map(p -> new TopicPartition(t.name(), p))
+                                .collect(Collectors.toList());
+                        map.put(t.name(), partitions);
                     } else {
-                        // old clients
-                        return data.groupId();
+                        map.put(t.name(), null);
                     }
-                }),
-                null);
+                });
+                OffsetFetchRequest singleGroupRequest = new OffsetFetchRequest.Builder(map,
+                        offsetFetchRequest.requireStable(),
+                        false)
+                        .build(offsetFetchRequest.version());
+                KafkaHeaderAndRequest requestWithNewHeader = new KafkaHeaderAndRequest(
+                        kafkaHeaderAndRequest.getHeader(),
+                        singleGroupRequest,
+                        Unpooled.buffer(),
+                        null
+                );
+                CompletableFuture<AbstractResponse> singleResultFuture = new CompletableFuture<>();
+                responses.add(singleResultFuture);
+                handleRequestWithCoordinator(requestWithNewHeader, singleResultFuture,
+                        FindCoordinatorRequest.CoordinatorType.GROUP,
+                        OffsetFetchRequest.class,
+                        OffsetFetchRequestData.class,
+                        data1 -> group.groupId(),
+                        null);
+            }
+            FutureUtil.waitForAll(responses).whenComplete((ignore, ex) -> {
+
+                kafkaHeaderAndRequest.close();
+
+                if (ex != null) {
+                    resultFuture.completeExceptionally(ex);
+                } else {
+                    OffsetFetchResponseData responseData = new OffsetFetchResponseData()
+                            .setGroups(new ArrayList<>());
+                    responses.forEach(future -> {
+                        OffsetFetchResponse response = (OffsetFetchResponse) future.join();
+                        responseData.groups().addAll(response.data().groups());
+                    });
+                    resultFuture.complete(new OffsetFetchResponse(responseData));
+                }
+            });
+        }
     }
 
     @Override

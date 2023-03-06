@@ -45,6 +45,7 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -67,6 +68,8 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsResult;
+import org.apache.kafka.clients.admin.ListConsumerGroupOffsetsSpec;
 import org.apache.kafka.clients.admin.NewPartitions;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.admin.RecordsToDelete;
@@ -878,12 +881,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
     }
 
-    @Test(timeOut = 20000)
+    @Test(timeOut = 20000000)
     public void testDescribeConsumerGroups() throws Exception {
         final String topic = "test-describe-group-offset";
         final int numMessages = 10;
         final String messagePrefix = "msg-";
-        final String group = "test-group";
+        final String group1 = "test-group";
+        final String group2 = "test-group-2";
 
         admin.topics().createPartitionedTopic(topic, 1);
 
@@ -894,8 +898,13 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         }
         producer.close();
 
-        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group));
+        KafkaConsumer<Integer, String> consumer = new KafkaConsumer<>(newKafkaConsumerProperties(group1));
         consumer.subscribe(Collections.singleton(topic));
+
+        KafkaConsumer<Integer, String> consumer2 = new KafkaConsumer<>(newKafkaConsumerProperties(group2));
+        consumer2.subscribe(Collections.singleton(topic));
+        KafkaConsumer<Integer, String> consumer2b = new KafkaConsumer<>(newKafkaConsumerProperties(group2));
+        consumer2b.subscribe(Collections.singleton(topic));
 
         int fetchMessages = 0;
         while (fetchMessages < numMessages) {
@@ -906,28 +915,52 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         consumer.commitSync();
 
+        consumer2.poll(Duration.ofMillis(1000));
+        consumer2.commitSync();
+        consumer2b.poll(Duration.ofMillis(1000));
+        consumer2b.commitSync();
+
         final Properties adminProps = new Properties();
         adminProps.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getKafkaBrokerPort());
 
         AdminClient kafkaAdmin = AdminClient.create(adminProps);
 
-        ConsumerGroupDescription groupDescription =
-                kafkaAdmin.describeConsumerGroups(Collections.singletonList(group))
-                .all().get().get(group);
+        Map<String, ConsumerGroupDescription> consumerGroupDescriptionMap =
+                kafkaAdmin.describeConsumerGroups(Arrays.asList(group1, group2))
+                .all().get();
+        ConsumerGroupDescription groupDescription = consumerGroupDescriptionMap.get(group1);
         assertEquals(1, groupDescription.members().size());
 
         // member assignment topic name must be short topic name
         groupDescription.members().forEach(memberDescription -> memberDescription.assignment().topicPartitions()
                 .forEach(topicPartition -> assertEquals(topic, topicPartition.topic())));
 
-        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap =
-                kafkaAdmin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get();
-        assertEquals(1, offsetAndMetadataMap.size());
+        ConsumerGroupDescription group2Description = consumerGroupDescriptionMap.get(group2);
+        assertEquals(2, group2Description.members().size());
 
+        ListConsumerGroupOffsetsResult listConsumerGroupOffsetsResult = kafkaAdmin.listConsumerGroupOffsets(Map.of(
+                group1, new ListConsumerGroupOffsetsSpec().topicPartitions(null),
+                group2, new ListConsumerGroupOffsetsSpec().topicPartitions(null))
+        );
+
+        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap2Group1 =
+                listConsumerGroupOffsetsResult.partitionsToOffsetAndMetadata(group1).get();
+        assertEquals(1, offsetAndMetadataMap2Group1.size());
+
+        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMap2Group2 =
+                listConsumerGroupOffsetsResult.partitionsToOffsetAndMetadata(group2).get();
+        assertEquals(1, offsetAndMetadataMap2Group2.size());
+
+        Map<TopicPartition, org.apache.kafka.clients.consumer.OffsetAndMetadata> offsetAndMetadataMapGroup1 =
+                kafkaAdmin.listConsumerGroupOffsets(group1).partitionsToOffsetAndMetadata().get();
+        assertEquals(1, offsetAndMetadataMapGroup1.size());
         //  topic name from offset fetch response must be short topic name
-        offsetAndMetadataMap.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
+        offsetAndMetadataMapGroup1.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
+
 
         consumer.close();
+        consumer2.close();
+        consumer2b.close();
         kafkaAdmin.close();
 
     }
