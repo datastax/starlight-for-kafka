@@ -1915,7 +1915,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 joinGroupResult.getProtocolType(),
                 joinGroupResult.getMemberId(),
                 joinGroupResult.getLeaderId(),
-                members
+                members,
+                request.version()
             );
             if (log.isTraceEnabled()) {
                 log.trace("Sending join group response {} for correlation id {} to client {}.",

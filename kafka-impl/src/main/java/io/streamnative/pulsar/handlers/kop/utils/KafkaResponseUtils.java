@@ -247,7 +247,8 @@ public class KafkaResponseUtils {
                                                  String groupProtocolType,
                                                  String memberId,
                                                  String leaderId,
-                                                 Map<String, byte[]> groupMembers) {
+                                                 Map<String, byte[]> groupMembers,
+                                                 short requestVersion) {
         JoinGroupResponseData data = new JoinGroupResponseData()
                 .setErrorCode(errors.code())
                 .setLeader(leaderId)
@@ -269,7 +270,7 @@ public class KafkaResponseUtils {
             data.setThrottleTimeMs(1000);
         }
 
-        return new JoinGroupResponse(data, ApiKeys.JOIN_GROUP.latestVersion());
+        return new JoinGroupResponse(data, requestVersion);
     }
 
     public static LeaveGroupResponse newLeaveGroup(Errors errors) {
