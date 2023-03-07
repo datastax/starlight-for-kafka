@@ -1,4 +1,4 @@
-FROM datastax/lunastreaming-all:2.10_3.3
+FROM datastax/lunastreaming-all:2.10_3.4
 USER root
 RUN apt-get update && apt-get -y install openjdk-11-dbg
 RUN rm /pulsar/protocols/*.nar /pulsar/proxyextensions/*.nar
