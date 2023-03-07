@@ -938,6 +938,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ConsumerGroupDescription group2Description = consumerGroupDescriptionMap.get(group2);
         assertEquals(2, group2Description.members().size());
 
+        // KIP-709 https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=173084258
         ListConsumerGroupOffsetsResult listConsumerGroupOffsetsResult = kafkaAdmin.listConsumerGroupOffsets(Map.of(
                 group1, new ListConsumerGroupOffsetsSpec().topicPartitions(null),
                 group2, new ListConsumerGroupOffsetsSpec().topicPartitions(null))
