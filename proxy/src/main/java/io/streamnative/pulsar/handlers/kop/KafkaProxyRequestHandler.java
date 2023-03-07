@@ -1853,7 +1853,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         OffsetFetchRequest offsetFetchRequest = (OffsetFetchRequest) kafkaHeaderAndRequest.getRequest();
         if (kafkaHeaderAndRequest.getRequest().version() < 8) {
             singleGroupId = offsetFetchRequest.groupId();
-        } else if (kafkaHeaderAndRequest.getRequest().version() > 8 && offsetFetchRequest.groupIds().size() == 1) {
+        } else if (kafkaHeaderAndRequest.getRequest().version() >= 8
+                && offsetFetchRequest.groupIds().size() == 1) {
             singleGroupId = offsetFetchRequest.groupIds().get(0);
         } else {
             singleGroupId = null;
