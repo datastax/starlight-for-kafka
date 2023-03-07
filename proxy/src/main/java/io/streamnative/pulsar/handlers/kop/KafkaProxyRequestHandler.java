@@ -1852,16 +1852,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         String singleGroupId;
         OffsetFetchRequest offsetFetchRequest = (OffsetFetchRequest) kafkaHeaderAndRequest.getRequest();
         if (kafkaHeaderAndRequest.getRequest().version() < 8) {
+            // old version
             singleGroupId = offsetFetchRequest.groupId();
-        } else if (kafkaHeaderAndRequest.getRequest().version() >= 8
-                && offsetFetchRequest.groupIds().size() == 1) {
+        } else if (offsetFetchRequest.groupIds().size() == 1) {
+            // common case, when can simply forward the request to the coordinator
             singleGroupId = offsetFetchRequest.groupIds().get(0);
         } else {
+            // KIP-709 https://cwiki.apache.org/confluence/pages/viewpage.action?pageId=173084258
             singleGroupId = null;
         }
 
-        // most common case
         if (singleGroupId != null) {
+            // most common case (non KIP-709) or single group
             handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture,
                     FindCoordinatorRequest.CoordinatorType.GROUP,
                     OffsetFetchRequest.class,
@@ -1873,16 +1875,19 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             for (OffsetFetchRequestData.OffsetFetchRequestGroup group : offsetFetchRequest.data().groups()) {
 
                 Map<String, List<TopicPartition>> map = new HashMap<>();
-                group.topics().forEach(t -> {
-                    if (t.partitionIndexes() != null) {
-                        List<TopicPartition> partitions = t.partitionIndexes().stream()
-                                .map(p -> new TopicPartition(t.name(), p))
-                                .collect(Collectors.toList());
-                        map.put(t.name(), partitions);
-                    } else {
-                        map.put(t.name(), null);
-                    }
-                });
+                List<TopicPartition> partitions = new ArrayList<>();
+                if (group.topics() != null) {
+                    group.topics().forEach(t -> {
+                        if (t.partitionIndexes() != null) {
+                            List<TopicPartition> topicPartitions = t.partitionIndexes().stream()
+                                    .map(p -> new TopicPartition(t.name(), p))
+                                    .collect(Collectors.toList());
+                            partitions.addAll(topicPartitions);
+                        }
+                    });
+                }
+                // null means "all partitions"
+                map.put(group.groupId(), partitions.isEmpty() ? null : partitions);
                 OffsetFetchRequest singleGroupRequest = new OffsetFetchRequest.Builder(map,
                         offsetFetchRequest.requireStable(),
                         false)
@@ -1911,23 +1916,21 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         null);
             }
             FutureUtil.waitForAll(responses).whenComplete((ignore, ex) -> {
-
                 kafkaHeaderAndRequest.close();
-
                 if (ex != null) {
+                    log.error("Internal error when handling offset fetch request", ex);
                     resultFuture.completeExceptionally(ex);
                 } else {
                     OffsetFetchResponseData responseData = new OffsetFetchResponseData()
                             .setGroups(new ArrayList<>())
-                            .setTopics(new ArrayList<>());
+                            .setTopics(new ArrayList<>())
+                            .setErrorCode(Errors.NONE.code());
                     responses.forEach(future -> {
                         OffsetFetchResponse response = (OffsetFetchResponse) future.join();
                         log.info("adding response {}", response.data());
-                        if (offsetFetchRequest.version() >= 8) {
-                            responseData.groups().addAll(response.data().groups());
-                        } else {
-                            responseData.topics().addAll(response.data().topics());
-                        }
+                        // here we have only request.version >= 8
+                        responseData.groups().addAll(response.data().groups());
+
                     });
                     resultFuture.complete(new OffsetFetchResponse(responseData));
                 }
