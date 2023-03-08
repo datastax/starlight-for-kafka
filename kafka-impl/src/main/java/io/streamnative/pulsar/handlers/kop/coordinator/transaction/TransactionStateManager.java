@@ -248,7 +248,7 @@ public class TransactionStateManager {
     }
 
     private static boolean shouldInclude(TransactionMetadata txnMetadata,
-                          List<Long> filterProducerIds, List<String> filterStateNames) {
+                          List<Long> filterProducerIds, Set<String> filterStateNames) {
         if (txnMetadata.getState() == TransactionState.DEAD) {
             // We filter the `Dead` state since it is a transient state which
             // indicates that the transactionalId and its metadata are in the
@@ -271,11 +271,11 @@ public class TransactionStateManager {
             if (!loadingPartitions.isEmpty()) {
                 response.setErrorCode(Errors.COORDINATOR_LOAD_IN_PROGRESS.code());
             } else {
-                Set<TransactionState> filterStates = new HashSet<>();
+                Set<String> filterStates = new HashSet<>();
                 for (TransactionState stateName : TransactionState.values()) {
                     String nameForTheClient = stateName.toAdminState().toString();
                     if (filteredStates.contains(nameForTheClient)) {
-                        filterStates.add(stateName);
+                        filterStates.add(nameForTheClient);
                     } else {
                         response.unknownStateFilters().add(nameForTheClient);
                     }
@@ -291,7 +291,7 @@ public class TransactionStateManager {
                                     .setProducerId(txnMetadata.getProducerId())
                                     .setTransactionState(txnMetadata.getState().toAdminState().toString());
 
-                            if (shouldInclude(txnMetadata, filteredProducerIds, filteredStates)) {
+                            if (shouldInclude(txnMetadata, filteredProducerIds, filterStates)) {
                                 if (log.isDebugEnabled()) {
                                      log.debug("add transaction state: {}", transactionState);
                                 }
