@@ -89,6 +89,7 @@ import org.apache.kafka.common.message.LeaveGroupRequestData;
 import org.apache.kafka.common.message.ListGroupsRequestData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
+import org.apache.kafka.common.message.ListTransactionsRequestData;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
@@ -135,6 +136,7 @@ import org.apache.kafka.common.requests.ListGroupsRequest;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
+import org.apache.kafka.common.requests.ListTransactionsRequest;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
@@ -1089,6 +1091,17 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 DescribeGroupsRequest.class,
                 DescribeGroupsRequestData.class,
                 (DescribeGroupsRequestData r) -> r.groups().get(0),
+                null);
+    }
+
+    @Override
+    protected void handleListTransactionsRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                                 CompletableFuture<AbstractResponse> response) {
+        handleRequestWithCoordinator(kafkaHeaderAndRequest, response,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION,
+                ListTransactionsRequest.class,
+                ListTransactionsRequestData.class,
+                (metadataRequest) -> "system",
                 null);
     }
 
