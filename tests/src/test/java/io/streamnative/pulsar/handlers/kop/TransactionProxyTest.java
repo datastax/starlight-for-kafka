@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import lombok.extern.slf4j.Slf4j;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Test;
 
 /**
  * Transaction test.
@@ -42,10 +41,4 @@ public class TransactionProxyTest extends TransactionTest {
         return getKafkaProxyPort();
     }
 
-
-    @Override
-    @Test
-    public void testListTransactions() throws Exception {
-        super.testListTransactions();
-    }
 }

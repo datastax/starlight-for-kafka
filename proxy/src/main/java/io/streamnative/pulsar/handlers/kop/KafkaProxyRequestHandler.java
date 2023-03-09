@@ -90,6 +90,7 @@ import org.apache.kafka.common.message.InitProducerIdRequestData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
 import org.apache.kafka.common.message.LeaveGroupRequestData;
 import org.apache.kafka.common.message.ListGroupsRequestData;
+import org.apache.kafka.common.message.ListGroupsResponseData;
 import org.apache.kafka.common.message.ListOffsetsRequestData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.ListTransactionsRequestData;
@@ -137,6 +138,7 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.LeaveGroupRequest;
 import org.apache.kafka.common.requests.ListGroupsRequest;
+import org.apache.kafka.common.requests.ListGroupsResponse;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
 import org.apache.kafka.common.requests.ListOffsetsRequest;
 import org.apache.kafka.common.requests.ListOffsetsResponse;
@@ -1129,7 +1131,6 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                     return new ListTransactionsRequest.Builder(data).build(listTransactionsRequest.version());
                 },
                 (allResponses) -> {
-                    log.info("Collecting ListTransactionsResponse from all coordinators: {}", allResponses);
                     short error = Errors.NONE.code();
                     // first the first non-zero error code
                     for (ListTransactionsResponse r : allResponses) {
@@ -1156,12 +1157,35 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     @Override
     protected void handleListGroupsRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                           CompletableFuture<AbstractResponse> resultFuture) {
-        handleRequestWithCoordinator(kafkaHeaderAndRequest, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,
+                                           CompletableFuture<AbstractResponse> response) {
+        this.<ListGroupsRequest, ListGroupsRequestData, ListGroupsResponse>
+                sendRequestToAllCoordinators(kafkaHeaderAndRequest, response,
+                FindCoordinatorRequest.CoordinatorType.GROUP,
                 ListGroupsRequest.class,
                 ListGroupsRequestData.class,
-                (metadataRequest) -> "system",
+                (listGroupsRequest) -> {
+                    ListGroupsRequestData data = listGroupsRequest.data();
+                    return new ListGroupsRequest.Builder(data).build(listGroupsRequest.version());
+                },
+                (allResponses) -> {
+                    short error = Errors.NONE.code();
+                    // first the first non-zero error code
+                    for (ListGroupsResponse r : allResponses) {
+                        if (r.data().errorCode() != Errors.NONE.code()) {
+                            error = r.data().errorCode();
+                            break;
+                        }
+                    }
+                    ListGroupsResponseData responseData = new ListGroupsResponseData()
+                            .setErrorCode(error)
+                            .setGroups(allResponses.stream()
+                                    .map(ListGroupsResponse::data)
+                                    .flatMap(r -> r.groups().stream())
+                                    .collect(Collectors.toList()));
+                    return new ListGroupsResponse(responseData);
+                },
                 null);
+
     }
 
     @Override
