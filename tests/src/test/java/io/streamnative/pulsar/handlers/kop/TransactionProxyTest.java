@@ -40,4 +40,5 @@ public class TransactionProxyTest extends TransactionTest {
     protected int getClientPort() {
         return getKafkaProxyPort();
     }
+
 }
