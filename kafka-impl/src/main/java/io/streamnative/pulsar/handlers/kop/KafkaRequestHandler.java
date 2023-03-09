@@ -2030,29 +2030,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                  CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listTransactions.getRequest() instanceof ListTransactionsRequest);
         ListTransactionsRequest request = (ListTransactionsRequest) listTransactions.getRequest();
-        authorize(AclOperation.ANY, Resource.of(ResourceType.TENANT, getCurrentTenant()))
-                .whenComplete((isAuthorized, ex) -> {
-                    if (ex != null) {
-                        resultFuture.complete(request.getErrorResponse(0, ex));
-                        return;
-                    }
-                    if (!isAuthorized) {
-                        resultFuture.complete(new ListTransactionsResponse(new ListTransactionsResponseData()
-                                .setErrorCode(Errors.TRANSACTIONAL_ID_AUTHORIZATION_FAILED.code())));
-                        return;
-                    }
-                    List<String> stateFilters = request.data().stateFilters();
-                    if (stateFilters == null) {
-                        stateFilters = Collections.emptyList();
-                    }
-                    List<Long> producerIdFilters = request.data().producerIdFilters();
-                    if (producerIdFilters == null) {
-                        producerIdFilters = Collections.emptyList();
-                    }
-                    ListTransactionsResponseData listResult = getTransactionCoordinator()
-                            .handleListTransactions(stateFilters, producerIdFilters);
-                    resultFuture.complete(new ListTransactionsResponse(listResult));
-                });
+        List<String> stateFilters = request.data().stateFilters();
+        if (stateFilters == null) {
+            stateFilters = Collections.emptyList();
+        }
+        List<Long> producerIdFilters = request.data().producerIdFilters();
+        if (producerIdFilters == null) {
+            producerIdFilters = Collections.emptyList();
+        }
+        ListTransactionsResponseData listResult = getTransactionCoordinator()
+                .handleListTransactions(stateFilters, producerIdFilters);
+        resultFuture.complete(new ListTransactionsResponse(listResult));
     }
 
     @Override
