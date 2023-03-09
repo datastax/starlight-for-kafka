@@ -2125,6 +2125,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             Function<List<R>, R> responseCollector,
             BiFunction<K, Throwable, R> customErrorBuilder
     ) {
+        resultFuture.whenComplete((response, ex) -> {
+            // in any case we need to close the request and release the buffer
+            // the original request is never sent on the wire
+            kafkaHeaderAndRequest.close();
+        });
         BiFunction<K, Throwable, R> errorBuilder;
         if (customErrorBuilder == null) {
             errorBuilder = (K request, Throwable t) -> {
