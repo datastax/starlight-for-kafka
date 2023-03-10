@@ -82,6 +82,8 @@ import org.apache.kafka.common.message.DeleteTopicsResponseData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeGroupsRequestData;
+import org.apache.kafka.common.message.DescribeTransactionsRequestData;
+import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
 import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.message.FetchResponseData;
@@ -128,6 +130,8 @@ import org.apache.kafka.common.requests.DescribeClusterRequest;
 import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
 import org.apache.kafka.common.requests.DescribeGroupsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsRequest;
+import org.apache.kafka.common.requests.DescribeTransactionsResponse;
 import org.apache.kafka.common.requests.EndTxnRequest;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
@@ -1124,9 +1128,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         this.<ListTransactionsRequest, ListTransactionsRequestData, ListTransactionsResponse>
                 sendRequestToAllCoordinators(kafkaHeaderAndRequest, response,
                 FindCoordinatorRequest.CoordinatorType.TRANSACTION,
+                null, // all the keys
                 ListTransactionsRequest.class,
                 ListTransactionsRequestData.class,
-                (listTransactionsRequest) -> {
+                (ListTransactionsRequest listTransactionsRequest, List<String> keys) -> {
                     ListTransactionsRequestData data = listTransactionsRequest.data();
                     return new ListTransactionsRequest.Builder(data).build(listTransactionsRequest.version());
                 },
@@ -1156,14 +1161,41 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
+    protected void handleDescribeTransactionsRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                                 CompletableFuture<AbstractResponse> response) {
+        this.<DescribeTransactionsRequest, DescribeTransactionsRequestData, DescribeTransactionsResponse>
+                sendRequestToAllCoordinators(kafkaHeaderAndRequest, response,
+                FindCoordinatorRequest.CoordinatorType.TRANSACTION,
+                (DescribeTransactionsRequestData data) -> data.transactionalIds(),
+                DescribeTransactionsRequest.class,
+                DescribeTransactionsRequestData.class,
+                (DescribeTransactionsRequest describeTransactionsRequest, List<String> keys) -> {
+                    DescribeTransactionsRequestData data = new DescribeTransactionsRequestData()
+                            .setTransactionalIds(keys);
+                    return new DescribeTransactionsRequest
+                            .Builder(data)
+                            .build(describeTransactionsRequest.version());
+                },
+                (allResponses) -> {
+                    DescribeTransactionsResponseData responseData = new DescribeTransactionsResponseData();
+                    for (DescribeTransactionsResponse r : allResponses) {
+                        responseData.transactionStates().addAll(r.data().transactionStates());
+                    }
+                    return new DescribeTransactionsResponse(responseData);
+                },
+                null);
+    }
+
+    @Override
     protected void handleListGroupsRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
                                            CompletableFuture<AbstractResponse> response) {
         this.<ListGroupsRequest, ListGroupsRequestData, ListGroupsResponse>
                 sendRequestToAllCoordinators(kafkaHeaderAndRequest, response,
                 FindCoordinatorRequest.CoordinatorType.GROUP,
+                null,
                 ListGroupsRequest.class,
                 ListGroupsRequestData.class,
-                (listGroupsRequest) -> {
+                (listGroupsRequest, ___) -> {
                     ListGroupsRequestData data = listGroupsRequest.data();
                     return new ListGroupsRequest.Builder(data).build(listGroupsRequest.version());
                 },
@@ -2119,9 +2151,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             KafkaHeaderAndRequest kafkaHeaderAndRequest,
             CompletableFuture<AbstractResponse> resultFuture,
             FindCoordinatorRequest.CoordinatorType coordinatorType,
+            Function<V, List<String>> keysExtractor,
             Class<K> requestClass,
             Class<V> requestDataClass,
-            Function<K, K> cloneRequest,
+            BiFunction<K, List<String>, K> cloneRequest,
             Function<List<R>, R> responseCollector,
             BiFunction<K, Throwable, R> customErrorBuilder
     ) {
@@ -2150,29 +2183,50 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             checkArgument(requestClass.isInstance(kafkaHeaderAndRequest.getRequest()));
             K request = (K) kafkaHeaderAndRequest.getRequest();
             checkArgument(requestDataClass.isInstance(request.data()));
-            int numPartitions;
-            switch (coordinatorType) {
-                case GROUP:
-                    numPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
-                    break;
-                case TRANSACTION:
-                    numPartitions = kafkaConfig.getKafkaTxnLogTopicNumPartitions();
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unknown coordinator type " + coordinatorType);
-            }
 
-            if (!isNoisyRequest(request)) {
-                log.info("sendRequestToAllCoordinators {} {} {} np={}", request.getClass().getSimpleName(),
-                        request, numPartitions);
-            }
-
+            Map<Node, List<String>> keysByBroker = new ConcurrentHashMap<>();
             List<CompletableFuture<Node>> findBrokers = new ArrayList<>();
-            for (int i = 0; i < numPartitions; i++) {
-                String pulsarTopicName = computePulsarTopicNameForPartition(coordinatorType, i);
+            if (keysExtractor == null) {
 
-                findBrokers.add(findBroker(TopicName.get(pulsarTopicName), true)
-                        .thenApply(m -> m.node));
+                int numPartitions;
+                switch (coordinatorType) {
+                    case GROUP:
+                        numPartitions = kafkaConfig.getOffsetsTopicNumPartitions();
+                        break;
+                    case TRANSACTION:
+                        numPartitions = kafkaConfig.getKafkaTxnLogTopicNumPartitions();
+                        break;
+                    default:
+                        throw new IllegalArgumentException("Unknown coordinator type " + coordinatorType);
+                }
+                if (!isNoisyRequest(request)) {
+                    log.info("sendRequestToAllCoordinators {} {} {} np={}", request.getClass().getSimpleName(),
+                            request, numPartitions);
+                }
+                for (int i = 0; i < numPartitions; i++) {
+                    String pulsarTopicName = computePulsarTopicNameForPartition(coordinatorType, i);
+
+                    findBrokers.add(findBroker(TopicName.get(pulsarTopicName), true)
+                            .thenApply(m -> m.node));
+                }
+            } else {
+                List<String> keys = keysExtractor.apply((V) request.data());
+                Map<String, String> topicNames = new HashMap<>();
+                for (String key : keys) {
+                    String pulsarTopicName = computePulsarTopicName(coordinatorType, key);
+                    topicNames.put(key, pulsarTopicName);
+                    findBrokers.add(findBroker(TopicName.get(pulsarTopicName), true)
+                            .thenApply(m -> {
+                                keysByBroker.compute(m.node, (k, currentList) -> {
+                                    if (currentList == null) {
+                                        currentList = new CopyOnWriteArrayList<>();
+                                    }
+                                    currentList.add(key);
+                                    return currentList;
+                                });
+                                return m.node;
+                            }));
+                }
             }
 
             CompletableFuture<Set<Node>> cc = FutureUtil.waitForAll(findBrokers)
@@ -2188,10 +2242,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             CompletableFuture<R> finalResult = cc.thenCompose(coordinators -> {
                         List<CompletableFuture<R>> futures = new CopyOnWriteArrayList<>();
                         for (Node node : coordinators) {
+                            List<String> keysForBroker = keysByBroker.get(node);
                             CompletableFuture<R> responseFromBroker = new CompletableFuture<>();
                             futures.add(responseFromBroker);
                             KafkaHeaderAndRequest requestWithNewHeader =
-                                    executeCloneRequest(kafkaHeaderAndRequest, cloneRequest);
+                                    executeCloneRequest(kafkaHeaderAndRequest, cloneRequest, keysForBroker);
                             grabConnectionToBroker(node.host(), node.port())
                                     .forwardRequest(requestWithNewHeader)
                                     .thenAccept(serverResponse -> {
@@ -2246,7 +2301,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
     }
 
     private <K extends AbstractRequest> KafkaHeaderAndRequest executeCloneRequest(
-            KafkaHeaderAndRequest kafkaHeaderAndRequest, Function<K, K> cloneRequest) {
+            KafkaHeaderAndRequest kafkaHeaderAndRequest, BiFunction<K, List<String>, K> cloneRequest,
+            List<String> keys) {
         int dummyCorrelationId = getDummyCorrelationId();
         RequestHeader header = new RequestHeader(
                 kafkaHeaderAndRequest.getHeader().apiKey(),
@@ -2254,7 +2310,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 kafkaHeaderAndRequest.getHeader().clientId(),
                 dummyCorrelationId
         );
-        K requestForSingleBroker = cloneRequest.apply((K) kafkaHeaderAndRequest.getRequest());
+        K requestForSingleBroker = cloneRequest.apply((K) kafkaHeaderAndRequest.getRequest(), keys);
         ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
         KafkaHeaderAndRequest requestWithNewHeader = new KafkaHeaderAndRequest(
                 header,

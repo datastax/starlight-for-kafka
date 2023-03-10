@@ -56,6 +56,7 @@ import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.ListTransactionsOptions;
 import org.apache.kafka.clients.admin.ListTransactionsResult;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TransactionDescription;
 import org.apache.kafka.clients.admin.TransactionListing;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -87,6 +88,8 @@ import org.testng.annotations.Test;
  */
 @Slf4j
 public class TransactionTest extends KopProtocolHandlerTestBase {
+
+    private static final int TRANSACTION_TIMEOUT_CONFIG_VALUE = 600 * 1000;
 
     protected void setupTransactions() {
         this.conf.setDefaultNumberOfNamespaceBundles(4);
@@ -1182,7 +1185,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, txTimeout);
         } else {
             // very long time-out
-            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, 600 * 1000);
+            producerProps.put(ProducerConfig.TRANSACTION_TIMEOUT_CONFIG, TRANSACTION_TIMEOUT_CONFIG_VALUE);
         }
         producerProps.put(CLIENT_ID_CONFIG, "dummy_client_" + UUID.randomUUID());
         addCustomizeProps(producerProps);
@@ -1511,10 +1514,10 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Test(timeOut = 100000 * 30)
-    public void testListTransactions() throws Exception {
+    @Test(timeOut = 1000 * 30)
+    public void testListAndDescribeTransactions() throws Exception {
 
-        String topicName = "testListTransactions";
+        String topicName = "testListAndDescribeTransactions";
         String transactionalId = "myProducer_" + UUID.randomUUID();
 
         @Cleanup
@@ -1619,6 +1622,33 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 .findFirst()
                 .get();
         assertEquals(transactionState, transactionListing.state());
+
+        Map<String, TransactionDescription> map =
+                kafkaAdmin.describeTransactions(Collections.singleton(transactionalId))
+                .all().get();
+        assertEquals(1, map.size());
+        TransactionDescription transactionDescription = map.get(transactionalId);
+        log.info("transactionDescription {}", transactionDescription);
+        assertNotNull(transactionDescription);
+        assertEquals(transactionDescription.state(), transactionState);
+        assertTrue(transactionDescription.producerEpoch() >= 0);
+        assertEquals(TRANSACTION_TIMEOUT_CONFIG_VALUE, transactionDescription.transactionTimeoutMs());
+        assertTrue(transactionDescription.transactionStartTimeMs().isPresent());
+        assertTrue(transactionDescription.coordinatorId() >= 0);
+
+        switch (transactionState) {
+            case EMPTY:
+            case COMPLETE_COMMIT:
+            case COMPLETE_ABORT:
+                assertEquals(0, transactionDescription.topicPartitions().size());
+                break;
+            case ONGOING:
+                assertEquals(1, transactionDescription.topicPartitions().size());
+                break;
+            default:
+                fail("unhandled " + transactionState);
+        }
+
     }
 
     /**
