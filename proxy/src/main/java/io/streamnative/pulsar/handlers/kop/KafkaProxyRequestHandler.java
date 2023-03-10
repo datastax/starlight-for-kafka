@@ -2211,10 +2211,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 }
             } else {
                 List<String> keys = keysExtractor.apply((V) request.data());
-                Map<String, String> topicNames = new HashMap<>();
                 for (String key : keys) {
                     String pulsarTopicName = computePulsarTopicName(coordinatorType, key);
-                    topicNames.put(key, pulsarTopicName);
                     findBrokers.add(findBroker(TopicName.get(pulsarTopicName), true)
                             .thenApply(m -> {
                                 keysByBroker.compute(m.node, (k, currentList) -> {
