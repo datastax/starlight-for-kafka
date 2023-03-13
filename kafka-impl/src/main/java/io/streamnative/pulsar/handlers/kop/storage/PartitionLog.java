@@ -78,6 +78,7 @@ import org.apache.kafka.common.errors.KafkaStorageException;
 import org.apache.kafka.common.errors.NotLeaderOrFollowerException;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.UnknownServerException;
+import org.apache.kafka.common.message.DescribeProducersResponseData;
 import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.protocol.Errors;
@@ -153,7 +154,7 @@ public class PartitionLog {
 
     private volatile EntryFormatter entryFormatter;
 
-    private volatile AtomicBoolean unloaded = new AtomicBoolean();
+    private final AtomicBoolean unloaded = new AtomicBoolean();
 
     public PartitionLog(KafkaServiceConfiguration kafkaConfig,
                         RequestStats requestStats,
@@ -1185,6 +1186,29 @@ public class PartitionLog {
                 return getProducerStateManager().executePurgeAbortedTx();
             }, executorService);
         });
+    }
+
+    public DescribeProducersResponseData.PartitionResponse activeProducerState() {
+        DescribeProducersResponseData.PartitionResponse producerState =
+                new DescribeProducersResponseData.PartitionResponse()
+                .setPartitionIndex(topicPartition.partition())
+                .setErrorCode(Errors.NONE.code())
+                .setActiveProducers(new ArrayList<>());
+
+        // this utility is only for monitoring, it is fine to access this structure directly from any thread
+        Map<Long, ProducerStateEntry> producers = producerStateManager.getProducers();
+        producers.values().forEach(producerStateEntry -> {
+            producerState.activeProducers().add(new DescribeProducersResponseData.ProducerState()
+                    .setProducerId(producerStateEntry.producerId())
+                    .setLastSequence(-1)
+                    .setProducerEpoch(producerStateEntry.producerEpoch() != null
+                            ? producerStateEntry.producerEpoch().intValue() : -1)
+                    .setLastTimestamp(producerStateEntry.lastTimestamp() != null
+                            ? producerStateEntry.lastTimestamp().longValue() : -1)
+                    .setCoordinatorEpoch(producerStateEntry.coordinatorEpoch())
+                    .setCurrentTxnStartOffset(producerStateEntry.currentTxnFirstOffset().orElse(-1L)));
+            });
+        return producerState;
     }
 
 
