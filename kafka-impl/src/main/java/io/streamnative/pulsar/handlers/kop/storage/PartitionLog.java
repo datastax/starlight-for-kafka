@@ -1200,7 +1200,7 @@ public class PartitionLog {
         producers.values().forEach(producerStateEntry -> {
             producerState.activeProducers().add(new DescribeProducersResponseData.ProducerState()
                     .setProducerId(producerStateEntry.producerId())
-                    .setLastSequence(-1)
+                    .setLastSequence(-1) // NOT HANDLED YET
                     .setProducerEpoch(producerStateEntry.producerEpoch() != null
                             ? producerStateEntry.producerEpoch().intValue() : -1)
                     .setLastTimestamp(producerStateEntry.lastTimestamp() != null
