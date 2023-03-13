@@ -2021,6 +2021,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     @Override
+    protected void handleDescribeProducersRequest(KafkaHeaderAndRequest describeGroup,
+                                                  CompletableFuture<AbstractResponse> response) {
+        response.complete(describeGroup.getRequest().getErrorResponse(new NotImplementedException()));
+    }
+
+    @Override
     protected void handleListGroupsRequest(KafkaHeaderAndRequest listGroups,
                                            CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(listGroups.getRequest() instanceof ListGroupsRequest);
