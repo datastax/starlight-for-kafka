@@ -389,4 +389,8 @@ public class ProducerStateManager {
             mapEndOffset = -1;
         }
     }
+
+    public Map<Long, ProducerStateEntry> getProducers() {
+        return producers;
+    }
 }

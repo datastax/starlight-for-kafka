@@ -320,6 +320,9 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_GROUPS:
                         handleDescribeGroupRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DESCRIBE_PRODUCERS:
+                        handleDescribeProducersRequest(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     case LIST_GROUPS:
                         handleListGroupsRequest(kafkaHeaderAndRequest, responseFuture);
                         break;
@@ -572,7 +575,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     handleLeaveGroupRequest(KafkaHeaderAndRequest leaveGroup, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
-    handleDescribeGroupRequest(KafkaHeaderAndRequest describeGroup, CompletableFuture<AbstractResponse> response);
+    handleDescribeGroupRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                               CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeProducersRequest(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                   CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleListGroupsRequest(KafkaHeaderAndRequest listGroups, CompletableFuture<AbstractResponse> response);
