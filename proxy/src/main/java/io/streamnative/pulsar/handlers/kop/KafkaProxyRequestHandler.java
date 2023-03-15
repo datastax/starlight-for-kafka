@@ -113,6 +113,8 @@ import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SaslHandshakeResponseData;
 import org.apache.kafka.common.message.SyncGroupRequestData;
 import org.apache.kafka.common.message.TxnOffsetCommitRequestData;
+import org.apache.kafka.common.message.WriteTxnMarkersRequestData;
+import org.apache.kafka.common.message.WriteTxnMarkersResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
@@ -169,6 +171,8 @@ import org.apache.kafka.common.requests.SaslAuthenticateResponse;
 import org.apache.kafka.common.requests.SaslHandshakeResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
+import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
+import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
 import org.apache.pulsar.broker.authentication.AuthenticationService;
 import org.apache.pulsar.broker.authorization.AuthorizationService;
 import org.apache.pulsar.client.admin.PulsarAdmin;
@@ -2587,8 +2591,107 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     @Override
     protected void handleWriteTxnMarkers(KafkaHeaderAndRequest kafkaHeaderAndRequest,
-                                         CompletableFuture<AbstractResponse> resultFuture) {
-        resultFuture.completeExceptionally(new UnsupportedOperationException("not a proxy operation"));
+                                         CompletableFuture<AbstractResponse> response) {
+        WriteTxnMarkersRequest request = (WriteTxnMarkersRequest) kafkaHeaderAndRequest.getRequest();
+
+        if (request.data().markers().size() > 1 || request.data().markers().isEmpty()) {
+            // on the proxy according to KIP-664 we can see only a single "ABORT" transaction for one topic partition
+            response.completeExceptionally(
+                    new UnsupportedOperationException("not a proxy operation (commit tx marker)"));
+            return;
+        }
+
+        boolean someCommits = request.data().markers().stream().anyMatch(t -> t.transactionResult());
+        if (someCommits) {
+            // on the proxy according to KIP-664 we can see only "ABORT" transactions from clients
+            response.completeExceptionally(
+                    new UnsupportedOperationException("not a proxy operation (multiple markers)"));
+            return;
+        }
+
+        if (request.data().markers().get(0).topics().isEmpty() || request.data().markers().get(0).topics().size() > 1) {
+            // on the proxy according to KIP-664 we can see only a single "ABORT" transaction for one topic partition
+            response.completeExceptionally(
+                    new UnsupportedOperationException("not a proxy operation (multiple topics)"));
+            return;
+        }
+
+        if (request.data().markers().get(0).topics().get(0).partitionIndexes().size() > 1) {
+            // on the proxy according to KIP-664 we can see only a single "ABORT" transaction for one topic partition
+            response.completeExceptionally(
+                    new UnsupportedOperationException("not a proxy operation (multiple partitions)"));
+            return;
+        }
+
+        this.<WriteTxnMarkersRequest, WriteTxnMarkersRequestData, WriteTxnMarkersResponse>
+                sendRequestToAllTopicOwners(kafkaHeaderAndRequest, response,
+                (WriteTxnMarkersRequestData data) -> {
+
+                    // as we have only 1 TopicPartition this code maybe simplified
+
+                    List<TopicPartition> topics = new ArrayList<>();
+                    data.markers().forEach(tm-> {
+                        tm.topics().forEach(t -> {
+                           t.partitionIndexes().forEach(index -> {
+                               topics.add(new TopicPartition(t.name(), index));
+                           });
+                        });
+                    });
+                    return topics;
+                },
+                WriteTxnMarkersRequest.class,
+                WriteTxnMarkersRequestData.class,
+                (WriteTxnMarkersRequest describeProducersRequest, List<TopicPartition> keys) -> {
+
+                    // as we have only 1 TopicPartition this code maybe simplified
+
+                    // keep only the Markers for the partitions owner by one broker
+                    WriteTxnMarkersRequestData data = new WriteTxnMarkersRequestData()
+                            .setMarkers(new ArrayList<>());
+
+                    // one marker may go to multiple partitions owned by different brokers, so we need to split it
+                    describeProducersRequest.data()
+                            .markers().forEach((WriteTxnMarkersRequestData.WritableTxnMarker tm) -> {
+                        WriteTxnMarkersRequestData.WritableTxnMarker singlePartitionMarker =
+                                new WriteTxnMarkersRequestData.WritableTxnMarker()
+                                        .setCoordinatorEpoch(tm.coordinatorEpoch())
+                                        .setTopics(new ArrayList<>())
+                                        .setProducerId(tm.producerId())
+                                        .setTransactionResult(tm.transactionResult())
+                                        .setProducerEpoch(tm.producerEpoch());
+                        tm.topics().forEach((WriteTxnMarkersRequestData.WritableTxnMarkerTopic t) -> {
+                            WriteTxnMarkersRequestData.WritableTxnMarkerTopic topicCopy =
+                                    new WriteTxnMarkersRequestData.WritableTxnMarkerTopic()
+                                            .setName(t.name())
+                                            .setPartitionIndexes(new ArrayList<>());
+                            // keep only the partitions owned by the broker
+                            t.partitionIndexes().forEach(index -> {
+                                if (keys.contains(new TopicPartition(t.name(), index))) {
+                                    topicCopy.partitionIndexes().add(index);
+                                }
+                            });
+                            // add the topic only if it has partitions
+                            if (!topicCopy.partitionIndexes().isEmpty()) {
+                                singlePartitionMarker.topics().add(topicCopy);
+                            }
+                        });
+                        // add the marker only if it has topics
+                        if (!singlePartitionMarker.topics().isEmpty()) {
+                            data.markers().add(singlePartitionMarker);
+                        }
+                    });
+                    return new WriteTxnMarkersRequest.Builder(data).build(describeProducersRequest.version());
+                },
+                (allResponses) -> {
+                    // merging is simple, as we expect only 1 topic partition
+                    WriteTxnMarkersResponseData responseData = new WriteTxnMarkersResponseData();
+                    responseData.setMarkers(allResponses
+                            .stream()
+                            .flatMap(d->d.data().markers().stream())
+                            .collect(Collectors.toList()));
+                    return new WriteTxnMarkersResponse(responseData);
+                },
+                null);
     }
 
     private ConnectionToBroker grabConnectionToBroker(String brokerHost, int brokerPort) {
