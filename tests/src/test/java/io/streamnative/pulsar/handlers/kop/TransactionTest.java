@@ -53,6 +53,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.admin.AbortTransactionSpec;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeProducersResult;
 import org.apache.kafka.clients.admin.ListTransactionsOptions;
@@ -783,7 +784,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // use Kafka API, this way we assign a topic UUID
         @Cleanup
         AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
-        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1))).all().get();
 
         KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId, 1000);
 
@@ -823,7 +824,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         // the PH is notified of the deletion using TopicEventListener
 
         // create the topic again, using the kafka APIs
-        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1)));
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 4, (short) 1))).all().get();
 
         // the snapshot now points to a offset that doesn't make sense in the new topic
         // because the new topic is empty
@@ -1369,7 +1370,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             @Cleanup
             AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
-            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)));
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1))).all().get();
 
             // no snapshot initially
             assertNull(protocolHandler.getTransactionCoordinator(tenant)
@@ -1436,7 +1437,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             @Cleanup
             AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
-            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)));
+            kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1))).all().get();
 
             final KafkaProducer<Integer, String> producer1 = buildTransactionProducer(transactionalId);
 
@@ -1662,6 +1663,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 assertEquals(0, transactionDescription.topicPartitions().size());
                 break;
             case ONGOING:
+            case PREPARE_ABORT:
                 assertTrue(transactionDescription.transactionStartTimeMs().orElseThrow() > 0);
                 assertEquals(1, transactionDescription.topicPartitions().size());
                 break;
@@ -1683,6 +1685,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
                 assertEquals(0, topicPartitionPartitionProducerStateMap.size());
                 break;
             case ONGOING:
+            case PREPARE_ABORT:
                 assertEquals(1, topicPartitionPartitionProducerStateMap.size());
                 TopicPartition tp = transactionDescription.topicPartitions().iterator().next();
                 DescribeProducersResult.PartitionProducerState partitionProducerState =
@@ -1700,6 +1703,58 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
 
 
+    }
+
+    @Test(timeOut = 1000 * 30)
+    public void testAbortTransactinsFromAdmin() throws Exception {
+
+        String topicName = "testAbortTransactinsFromAdmin";
+        String transactionalId = "myProducer_" + UUID.randomUUID();
+
+        @Cleanup
+        KafkaProducer<Integer, String> producer = buildTransactionProducer(transactionalId);
+        @Cleanup
+        AdminClient kafkaAdmin = AdminClient.create(newKafkaAdminClientProperties());
+        kafkaAdmin.createTopics(Arrays.asList(new NewTopic(topicName, 1, (short) 1)))
+                .all().get();
+
+        producer.initTransactions();
+        producer.beginTransaction();
+        producer.send(new ProducerRecord<>(topicName, 1, "bar")).get();
+        producer.flush();
+
+        // the transaction is in ONGOING state
+        assertTransactionState(kafkaAdmin, transactionalId,
+                org.apache.kafka.clients.admin.TransactionState.ONGOING,
+                (stateOnBroker, stateOnCoodinator) -> {
+                });
+
+        TopicPartition topicPartition = new TopicPartition(topicName, 0);
+
+        DescribeProducersResult.PartitionProducerState partitionProducerState =
+                kafkaAdmin.describeProducers(Collections.singletonList(topicPartition))
+                .partitionResult(topicPartition).get();
+        ProducerState producerState = partitionProducerState.activeProducers().get(0);
+
+        // we send the ABORT transaction marker to the broker
+        kafkaAdmin.abortTransaction(new AbortTransactionSpec(topicPartition,
+                producerState.producerId(),
+                (short) producerState.producerEpoch(),
+                producerState.coordinatorEpoch().orElse(-1))).all().get();
+
+        // the coordinator isn't aware of the operation sent to the brokers
+        // so it allows to abort the transaction
+        producer.commitTransaction();
+
+        producer.close();
+
+        // the transaction is eventually committed
+        Awaitility.await().untilAsserted(() -> {
+            assertTransactionState(kafkaAdmin, transactionalId,
+                    org.apache.kafka.clients.admin.TransactionState.COMPLETE_COMMIT,
+                    (stateOnBroker, stateOnCoodinator) -> {
+                    });
+        });
     }
 
     /**
