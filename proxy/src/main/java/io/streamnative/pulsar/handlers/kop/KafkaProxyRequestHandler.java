@@ -630,7 +630,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 Node kopBroker = topicMetadata.node;
 
                 ProduceRequestData produceRequestPerBroker = requestsPerBroker.computeIfAbsent(kopBroker,
-                        a -> new ProduceRequestData());
+                        a -> new ProduceRequestData()
+                                .setTimeoutMs(data.timeoutMs())
+                                .setAcks(data.acks())
+                                .setTransactionalId(data.transactionalId()));
+
                 ProduceRequestData.TopicProduceData topicProduceData = produceRequestPerBroker
                         .topicData()
                         .stream().filter(topic -> topic.name().equals(topicPartition.topic()))
