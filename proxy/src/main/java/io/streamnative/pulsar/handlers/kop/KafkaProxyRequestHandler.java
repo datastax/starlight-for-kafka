@@ -917,6 +917,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                 ((FetchRequest) fetch.getRequest()).maxWait(),
                                                 ((FetchRequest) fetch.getRequest()).minBytes(),
                                                 partitionDataMap)
+                                        .isolationLevel(fetchRequest.isolationLevel())
+                                        .metadata(fetchRequest.metadata())
+                                        .rackId(fetchRequest.rackId())
                                         .build();
                                 ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
                                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
