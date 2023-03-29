@@ -23,10 +23,12 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -179,6 +181,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
     protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
         int i = 0;
+        List<Future> futures = new ArrayList<>();
         for (; i < numMessages; i++) {
             String messageStr = messageStrPrefix + i;
             ProducerRecord record = new ProducerRecord<>(
@@ -186,13 +189,16 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
                 i,
                 messageStr);
 
-            kProducer.getProducer()
-                .send(record)
-                .get();
+            Future send = kProducer.getProducer()
+                    .send(record);
+            futures.add(send);
             if (log.isDebugEnabled()) {
                 log.debug("Kafka Producer {} Sent message with header: ({}, {})",
                     kProducer.getTopic(), i, messageStr);
             }
+        }
+        for (Future future : futures) {
+            future.get();
         }
         return i;
     }

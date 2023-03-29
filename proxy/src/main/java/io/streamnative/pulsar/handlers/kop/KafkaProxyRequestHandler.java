@@ -630,7 +630,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 Node kopBroker = topicMetadata.node;
 
                 ProduceRequestData produceRequestPerBroker = requestsPerBroker.computeIfAbsent(kopBroker,
-                        a -> new ProduceRequestData());
+                        a -> new ProduceRequestData()
+                                .setTimeoutMs(data.timeoutMs())
+                                .setAcks(data.acks())
+                                .setTransactionalId(data.transactionalId()));
+
                 ProduceRequestData.TopicProduceData topicProduceData = produceRequestPerBroker
                         .topicData()
                         .stream().filter(topic -> topic.name().equals(topicPartition.topic()))
@@ -913,6 +917,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                 ((FetchRequest) fetch.getRequest()).maxWait(),
                                                 ((FetchRequest) fetch.getRequest()).minBytes(),
                                                 partitionDataMap)
+                                        .isolationLevel(fetchRequest.isolationLevel())
+                                        .metadata(fetchRequest.metadata())
+                                        .rackId(fetchRequest.rackId())
                                         .build();
                                 ByteBuf buffer = KopResponseUtils.serializeRequest(header, requestForSingleBroker);
                                 KafkaHeaderAndRequest singlePartitionRequest = new KafkaHeaderAndRequest(
