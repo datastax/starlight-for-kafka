@@ -857,7 +857,6 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
     }
 
     private KafkaConsumer<Integer, Object> createAvroConsumer(boolean withTokenPrefix) {
-
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:" + getClientPort());
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "avroGroup");
@@ -877,8 +876,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         props.put("security.protocol", "SASL_PLAINTEXT");
         props.put("sasl.mechanism", "PLAIN");
         props.put(KafkaAvroSerializerConfig.USER_INFO_CONFIG,
-                               username + ":" + (withTokenPrefix ? password : userToken));
-
+                username + ":" + (withTokenPrefix ? password : userToken));
         return new KafkaConsumer<>(props);
     }
 
