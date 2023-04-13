@@ -14,15 +14,22 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
+import io.confluent.kafka.serializers.AbstractKafkaAvroSerDe;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import io.confluent.kafka.serializers.KafkaAvroSerializerConfig;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -273,5 +280,24 @@ public class SchemaRegistryTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(numMessages, i);
+    }
+
+    @Test
+    public void testGetLatestSchemaMetadata() throws Throwable {
+        final String topic = "SchemaRegistryTest-testGetLatestSchemaMetadata";
+        @Cleanup final KafkaAvroSerializer serializer = new KafkaAvroSerializer();
+        final Map<String, String> configs = new HashMap<>();
+        configs.put(KafkaAvroSerializerConfig.SCHEMA_REGISTRY_URL_CONFIG, restConnect);
+        serializer.configure(configs, false);
+
+        final Field field = AbstractKafkaAvroSerDe.class.getDeclaredField("schemaRegistry");
+        field.setAccessible(true);
+        final SchemaRegistryClient client = (SchemaRegistryClient) field.get(serializer);
+        try {
+            client.getLatestSchemaMetadata(topic);
+        } catch (RestClientException e) {
+            assertEquals(e.getErrorCode(), 404);
+            assertTrue(e.getMessage().contains("Not found"));
+        }
     }
 }

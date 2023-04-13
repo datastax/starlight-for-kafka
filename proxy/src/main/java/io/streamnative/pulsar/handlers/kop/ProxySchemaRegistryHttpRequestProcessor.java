@@ -83,7 +83,7 @@ public class ProxySchemaRegistryHttpRequestProcessor extends HttpRequestProcesso
                 String currentTenant = schemaRegistryRequestAuthenticator.authenticate(request);
                 if (currentTenant == null) {
                     throw new SchemaStorageException("Missing or failed authentication",
-                            HttpResponseStatus.UNAUTHORIZED.code());
+                            HttpResponseStatus.UNAUTHORIZED);
                 }
             } catch (SchemaStorageException err) {
                 return CompletableFuture.completedFuture(buildJsonErrorResponse(err));
