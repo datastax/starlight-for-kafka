@@ -41,6 +41,8 @@ import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -106,8 +108,10 @@ public class SchemaRegistryManager {
                 throw new SchemaStorageException("Pulsar is not configured for Token auth");
             }
             try {
+                AuthData authData = AuthData.of(password.getBytes(StandardCharsets.UTF_8));
                 final AuthenticationState authState = authenticationProvider
-                        .newAuthState(AuthData.of(password.getBytes(StandardCharsets.UTF_8)), null, null);
+                        .newAuthState(authData, null, null);
+                authState.authenticateAsync(authData).get(kafkaConfig.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
                 final String role = authState.getAuthRole();
 
                 final String tenant;
