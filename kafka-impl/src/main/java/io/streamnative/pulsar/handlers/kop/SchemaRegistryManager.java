@@ -66,8 +66,6 @@ public class SchemaRegistryManager {
     @Getter
     @VisibleForTesting
     private volatile SchemaStorageAccessor schemaStorage;
-    @VisibleForTesting
-    private SchemaStorageAccessor schemaStorage;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
                                  PulsarService pulsar,
