@@ -47,6 +47,8 @@ public class OauthValidatorCallbackHandlerTest {
 
         doReturn(state).when(mockAuthProvider).newAuthState(any(), any(), any());
 
+        doReturn(null).when(state).authenticate(any());
+
         KopOAuthBearerValidatorCallback callbackWithTenant =
                 new KopOAuthBearerValidatorCallback("my-tenant" + OAuthTokenDecoder.DELIMITER + "my-token");
 
