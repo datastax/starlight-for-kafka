@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import io.netty.channel.ChannelPipeline;
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;
@@ -63,7 +64,10 @@ public class SchemaRegistryManager {
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
     private final PulsarClient pulsarClient;
     @Getter
+    @VisibleForTesting
     private volatile SchemaStorageAccessor schemaStorage;
+    @VisibleForTesting
+    private SchemaStorageAccessor schemaStorage;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
                                  PulsarService pulsar,
