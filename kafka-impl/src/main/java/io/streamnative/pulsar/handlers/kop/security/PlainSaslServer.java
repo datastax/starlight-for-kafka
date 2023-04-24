@@ -79,8 +79,9 @@ public class PlainSaslServer implements SaslServer {
         }
 
         try {
-            final AuthenticationState authState = authenticationProvider.newAuthState(
-                    AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8)), null, null);
+            final AuthData authData = AuthData.of(saslAuth.getAuthData().getBytes(StandardCharsets.UTF_8));
+            final AuthenticationState authState = authenticationProvider.newAuthState(authData, null, null);
+            authState.authenticate(authData);
             final String role = authState.getAuthRole();
             if (StringUtils.isEmpty(role)) {
                 throw new AuthenticationException("Role cannot be empty.");

@@ -106,8 +106,10 @@ public class SchemaRegistryManager {
                 throw new SchemaStorageException("Pulsar is not configured for Token auth");
             }
             try {
+                AuthData authData = AuthData.of(password.getBytes(StandardCharsets.UTF_8));
                 final AuthenticationState authState = authenticationProvider
-                        .newAuthState(AuthData.of(password.getBytes(StandardCharsets.UTF_8)), null, null);
+                        .newAuthState(authData, null, null);
+                authState.authenticate(authData);
                 final String role = authState.getAuthRole();
 
                 final String tenant;
