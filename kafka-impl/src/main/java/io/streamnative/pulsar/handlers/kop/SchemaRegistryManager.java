@@ -131,7 +131,7 @@ public class SchemaRegistryManager {
 
                 performAuthorizationValidation(username, role, tenant);
                 return tenant;
-            } catch (AuthenticationException err) {
+            } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException err) {
                 throw new SchemaStorageException(err);
             }
 
