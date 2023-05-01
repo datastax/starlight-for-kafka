@@ -119,7 +119,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     @VisibleForTesting
     @Getter
     private NamespaceBundleOwnershipListenerImpl bundleListener;
-
+    @VisibleForTesting
     @Getter
     private SchemaRegistryManager schemaRegistryManager;
     private final ConcurrentHashMap<String, SchemaManager> schemaManagerCache = new ConcurrentHashMap<>();

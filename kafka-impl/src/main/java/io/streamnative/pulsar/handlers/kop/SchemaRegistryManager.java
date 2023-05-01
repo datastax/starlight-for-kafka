@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
+import com.google.common.annotations.VisibleForTesting;
 import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
@@ -65,6 +66,7 @@ public class SchemaRegistryManager {
     private final SchemaRegistryRequestAuthenticator schemaRegistryRequestAuthenticator;
     private final PulsarClient pulsarClient;
     @Getter
+    @VisibleForTesting
     private volatile SchemaStorageAccessor schemaStorage;
 
     public SchemaRegistryManager(KafkaServiceConfiguration kafkaConfig,
@@ -149,7 +151,7 @@ public class SchemaRegistryManager {
                                 username, role, tenant, topicName);
                         throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName + " "
                                 + "tenant " + tenant + " does not exist (wrong username?)",
-                                HttpResponseStatus.FORBIDDEN.code());
+                                HttpResponseStatus.FORBIDDEN);
                     }
                     Boolean hasPermission = authorizer
                             .canProduceAsync(kafkaPrincipal, Resource.of(ResourceType.TOPIC, topicName))
@@ -158,7 +160,7 @@ public class SchemaRegistryManager {
                         log.debug("SchemaRegistry username {} role {} tenant {} cannot access topic {}",
                                 username, role, tenant, topicName);
                         throw new SchemaStorageException("Role " + role + " cannot access topic " + topicName,
-                                HttpResponseStatus.FORBIDDEN.code());
+                                HttpResponseStatus.FORBIDDEN);
                     }
                 } catch (ExecutionException err) {
                     throw new SchemaStorageException(err.getCause());
@@ -173,12 +175,12 @@ public class SchemaRegistryManager {
             if (authenticationHeader.isEmpty()) {
                 // no auth
                 throw new SchemaStorageException("Missing AUTHORIZATION header",
-                        HttpResponseStatus.UNAUTHORIZED.code());
+                        HttpResponseStatus.UNAUTHORIZED);
             }
 
             if (!authenticationHeader.startsWith("Basic ")) {
                 throw new SchemaStorageException("Bad authentication scheme, only Basic is supported",
-                        HttpResponseStatus.UNAUTHORIZED.code());
+                        HttpResponseStatus.UNAUTHORIZED);
             }
             String strippedAuthenticationHeader = authenticationHeader.substring("Basic ".length());
 
@@ -186,18 +188,15 @@ public class SchemaRegistryManager {
                     .decode(strippedAuthenticationHeader), StandardCharsets.UTF_8);
             int colon = usernamePassword.indexOf(":");
             if (colon <= 0) {
-                throw new SchemaStorageException("Bad authentication header", HttpResponseStatus.BAD_REQUEST.code());
+                throw new SchemaStorageException("Bad authentication header", HttpResponseStatus.BAD_REQUEST);
             }
             String rawUsername = usernamePassword.substring(0, colon);
             String rawPassword = usernamePassword.substring(colon + 1);
-            if (!rawPassword.startsWith("token:")) {
-                throw new SchemaStorageException("Password must start with 'token:'",
-                        HttpResponseStatus.UNAUTHORIZED.code());
+            if (rawPassword.startsWith("token:")) {
+                return new UsernamePasswordPair(rawUsername, rawPassword.substring("token:".length()));
+            } else {
+                return new UsernamePasswordPair(rawUsername, rawPassword);
             }
-            String token = rawPassword.substring("token:".length());
-
-            UsernamePasswordPair usernamePasswordPair = new UsernamePasswordPair(rawUsername, token);
-            return usernamePasswordPair;
         }
     }
 
