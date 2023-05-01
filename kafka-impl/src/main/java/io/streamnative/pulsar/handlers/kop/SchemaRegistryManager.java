@@ -13,8 +13,8 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-import io.netty.channel.ChannelPipeline;
 import com.google.common.annotations.VisibleForTesting;
+import io.netty.channel.ChannelPipeline;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpResponseStatus;

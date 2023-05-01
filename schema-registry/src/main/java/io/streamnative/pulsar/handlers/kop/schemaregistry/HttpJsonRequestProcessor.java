@@ -93,7 +93,7 @@ public abstract class HttpJsonRequestProcessor<K, R> extends HttpRequestProcesso
                     throwable = throwable.getCause();
                 }
                 if (throwable instanceof SchemaStorageException) {
-                    SchemaStorageException e = (SchemaStorageException) throwable; 
+                    SchemaStorageException e = (SchemaStorageException) throwable;
                     return buildErrorResponse(e.getHttpStatusCode(), e.getMessage());
                 } else {
                     log.error("Error while processing request", err);
