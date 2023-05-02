@@ -199,6 +199,7 @@ public class SaslAuthenticator {
                 ? createOAuth2CallbackHandler(config) : null;
         this.enableKafkaSaslAuthenticateHeaders = false;
         this.defaultKafkaMetadataTenant = config.getKafkaMetadataTenant();
+        this.config = config;
     }
 
     public void authenticate(ChannelHandlerContext ctx,
