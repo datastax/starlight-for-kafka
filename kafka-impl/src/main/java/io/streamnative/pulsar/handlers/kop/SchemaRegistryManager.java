@@ -41,6 +41,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import javax.naming.AuthenticationException;
 import lombok.AllArgsConstructor;
@@ -111,7 +113,7 @@ public class SchemaRegistryManager {
                 AuthData authData = AuthData.of(password.getBytes(StandardCharsets.UTF_8));
                 final AuthenticationState authState = authenticationProvider
                         .newAuthState(authData, null, null);
-                authState.authenticate(authData);
+                authState.authenticateAsync(authData).get(kafkaConfig.getRequestTimeoutMs(), TimeUnit.MILLISECONDS);
                 final String role = authState.getAuthRole();
 
                 final String tenant;
@@ -129,7 +131,7 @@ public class SchemaRegistryManager {
 
                 performAuthorizationValidation(username, role, tenant);
                 return tenant;
-            } catch (AuthenticationException err) {
+            } catch (AuthenticationException | InterruptedException | ExecutionException | TimeoutException err) {
                 throw new SchemaStorageException(err);
             }
 
