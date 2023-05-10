@@ -833,7 +833,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final String topic = "test-topic";
 
         // 1. original tp
-        final TopicPartition tp0 = new TopicPartition(topic, 0);
+        final TopicPartition tp0 = new TopicPartition(namespace + "/" + topic, 0);
 
         // 2. full topic and tp
         final String fullNameTopic = "persistent://" + namespace + "/" + topic;
@@ -851,7 +851,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(topicPartition, tp0)));
     }
 
     @Test
@@ -860,7 +860,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final String topic = "test-topic";
 
         // 1. original tp
-        final TopicPartition tp0 = new TopicPartition(topic, 0);
+        final TopicPartition tp0 = new TopicPartition(namespace + "/" + topic, 0);
 
         // 2. full topic and tp
         final String fullNameTopic = "persistent://" + namespace + "/" + topic;
@@ -879,7 +879,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         assertEquals(1, replacedMap.size());
 
         // 5. after replace, replacedMap has a short topic name
-        replacedMap.forEach(((topicPartition, s) -> assertEquals(tp0, topicPartition)));
+        replacedMap.forEach(((topicPartition, s) -> assertEquals(topicPartition, tp0)));
     }
 
     @Test(timeOut = 20000000)
@@ -959,12 +959,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         //  topic name from offset fetch response must be short topic name
         offsetAndMetadataMapGroup1.keySet().forEach(topicPartition -> assertEquals(topic, topicPartition.topic()));
 
-
         consumer.close();
         consumer2.close();
         consumer2b.close();
         kafkaAdmin.close();
-
     }
 
     @Test(timeOut = 20000)
