@@ -37,6 +37,9 @@ jobs:
     - name: Build with Maven skipTests
       run: mvn clean checkstyle:check install -ntp -B -DskipTests
 
+    - name: schema registry test after build
+      run: mvn test -ntp -B -DfailIfNoTests=false -pl schema-registry
+
     - name: tests module
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!Docker*Test,!*Proxy*Test' -pl tests
       timeout-minutes: 120
