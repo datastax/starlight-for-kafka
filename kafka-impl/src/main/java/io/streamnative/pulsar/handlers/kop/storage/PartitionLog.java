@@ -348,6 +348,19 @@ public class PartitionLog {
             return readRecordsResult;
         }
 
+        public static ReadRecordsResult empty(long highWatermark,
+                                            long lastStableOffset,
+                                            Position lastPosition,
+                                            PartitionLog partitionLog) {
+            return ReadRecordsResult.get(
+                    DecodeResult.get(MemoryRecords.EMPTY),
+                    Collections.emptyList(),
+                    highWatermark,
+                    lastStableOffset,
+                    lastPosition,
+                    partitionLog);
+        }
+
         public static ReadRecordsResult error(Errors errors, PartitionLog partitionLog) {
             return ReadRecordsResult.error(PositionImpl.EARLIEST, errors, partitionLog);
         }
@@ -587,6 +600,21 @@ public class PartitionLog {
                 requestStats.getPrepareMetadataStats().registerSuccessfulEvent(
                         MathUtils.elapsedNanos(startPrepareMetadataNanos), TimeUnit.NANOSECONDS);
                 long adjustedMaxBytes = Math.min(partitionData.partitionMaxBytes(), limitBytes.get());
+                if (readCommitted) {
+                    long firstUndecidedOffset = producerStateManager.firstUndecidedOffset().orElse(-1L);
+                    if (firstUndecidedOffset >= 0 && firstUndecidedOffset <= offset) {
+                        long highWaterMark = MessageMetadataUtils.getHighWatermark(cursor.getManagedLedger());
+                        future.complete(
+                                ReadRecordsResult.empty(
+                                        highWaterMark,
+                                        firstUndecidedOffset,
+                                        tcm.getManagedLedger().getLastConfirmedEntry(),
+                                        this
+                                )
+                        );
+                        return;
+                    }
+                }
                 readEntries(cursor, topicPartition, cursorOffset, maxReadEntriesNum, adjustedMaxBytes,
                         fullPartitionName -> {
                     topicManager.invalidateCacheForFencedManagerLedgerOnTopic(fullPartitionName);
@@ -743,7 +771,7 @@ public class PartitionLog {
         committedEntries = new ArrayList<>();
         for (Entry entry : entries) {
             try {
-                if (lso >= MessageMetadataUtils.peekBaseOffsetFromEntry(entry)) {
+                if (lso > MessageMetadataUtils.peekBaseOffsetFromEntry(entry)) {
                     committedEntries.add(entry);
                 } else {
                     break;
