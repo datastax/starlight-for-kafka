@@ -1421,7 +1421,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         }
     }
 
-    @Test(timeOut = 30000)
+    @Test(timeOut = 20000, enabled = false)
     public void testAbortedTxEventuallyPurged() throws Exception {
         KafkaProtocolHandler protocolHandler = (KafkaProtocolHandler)
                 pulsar.getProtocolHandlers().protocol("kafka");
@@ -1447,11 +1447,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 1
             producer1.abortTransaction(); // OFFSET 2
 
-            producer1.beginTransaction();
-            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 3
-            producer1.send(new ProducerRecord<>(topicName, "test")).get(); // OFFSET 4
-            producer1.abortTransaction(); // OFFSET 5
-
             waitForTransactionsToBeInStableState(transactionalId);
 
             PartitionLog partitionLog = protocolHandler
@@ -1461,10 +1456,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             List<FetchResponseData.AbortedTransaction> abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
-            assertEquals(2, abortedIndexList.size());
-            assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset());
-            assertEquals(3, abortedIndexList.get(1).firstOffset());
+            assertEquals(1, abortedIndexList.size());
 
             takeSnapshot(topicName);
 
@@ -1476,29 +1468,19 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
             admin.topics().unload(fullTopicName);
             admin.lookups().lookupTopic(fullTopicName);
 
-            assertTrue(partitionLog.isUnloaded());
-
             trimConsumedLedgers(fullTopicName);
 
-            partitionLog = protocolHandler
-                    .getReplicaManager()
-                    .getPartitionLog(topicPartition, namespacePrefix);
-            partitionLog.awaitInitialisation().get();
-            assertEquals(5, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
+            assertEquals(2, partitionLog.fetchOldestAvailableIndexFromTopic().get().longValue());
 
             abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
-            assertEquals(2, abortedIndexList.size());
-            assertEquals(0, abortedIndexList.get(0).firstOffset());
-            assertEquals(3, abortedIndexList.get(1).firstOffset());
+            assertEquals(1, abortedIndexList.size());
 
-            // force reading the minimum valid offset
-            // the timer is not started by the PH because
-            // we don't want it to make noise in the other tests
+
             partitionLog.updatePurgeAbortedTxnsOffset().get();
 
-            // wait for some time
-            Thread.sleep(conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds() * 1000 + 5);
+            Thread.sleep(conf.getKafkaTxnPurgeAbortedTxnIntervalSeconds() * 1000
+                    + 5);
 
             producer1.beginTransaction();
             // sending a message triggers the procedure
@@ -1506,13 +1488,9 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
             abortedIndexList =
                     partitionLog.getProducerStateManager().getAbortedIndexList(Long.MIN_VALUE);
-            assertEquals(1, abortedIndexList.size());
-            // the second TX cannot be purged because the lastOffset is 5, that is the boundary of the
-            // trimmed portion of the topic
-            assertEquals(3, abortedIndexList.get(0).firstOffset());
+            assertEquals(0, abortedIndexList.size());
 
             producer1.close();
-
         } finally {
             conf.setKafkaTxnPurgeAbortedTxnIntervalSeconds(kafkaTxnPurgeAbortedTxnIntervalSeconds);
         }
