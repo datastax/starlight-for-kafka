@@ -331,7 +331,7 @@ public class TransactionMarkerChannelManager {
                                     TransactionMetadata txnMetadata =
                                             epochAndTxnMetadata.get().getTransactionMetadata();
                                     txnMetadata.inLock(() -> {
-                                        txnMetadata.removePartitions(topicPartitions);
+                                        topicPartitions.forEach(txnMetadata::removePartition);
                                         return null;
                                     });
                                     maybeWriteTxnCompletion(transactionalId);
