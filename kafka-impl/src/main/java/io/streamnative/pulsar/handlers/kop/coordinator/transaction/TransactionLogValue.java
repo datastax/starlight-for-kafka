@@ -14,10 +14,10 @@
 package io.streamnative.pulsar.handlers.kop.coordinator.transaction;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
@@ -159,7 +159,7 @@ public class TransactionLogValue {
                 .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                 .txnTimeoutMs(value.getTransactionTimeoutMs())
                 .state(TransactionState.byteToState(value.getTransactionStatus()))
-                .topicPartitions(Collections.emptySet())
+                .topicPartitions(Sets.newHashSet())
                 .txnStartTimestamp(value.getTransactionStartTimestampMs())
                 .txnLastUpdateTimestamp(value.getTransactionLastUpdateTimestampMs())
                 .build();

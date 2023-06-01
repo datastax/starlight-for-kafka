@@ -22,6 +22,7 @@ import static org.apache.pulsar.common.naming.TopicName.PARTITIONED_TOPIC_SUFFIX
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KopBrokerLookupManager;
 import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
@@ -32,7 +33,6 @@ import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotB
 import io.streamnative.pulsar.handlers.kop.storage.PulsarPartitionedTopicProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import io.streamnative.pulsar.handlers.kop.utils.ProducerIdAndEpoch;
-import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -365,7 +365,7 @@ public class TransactionCoordinator {
                                 .producerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                                 .lastProducerEpoch(RecordBatch.NO_PRODUCER_EPOCH)
                                 .state(TransactionState.EMPTY)
-                                .topicPartitions(Collections.emptySet())
+                                .topicPartitions(Sets.newHashSet())
                                 .txnLastUpdateTimestamp(time.milliseconds())
                                 .build();
                         epochAndTxnMetaFuture.complete(txnManager.putTransactionStateIfNotExists(newMetadata));
