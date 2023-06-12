@@ -53,6 +53,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -106,7 +107,7 @@ import org.apache.kafka.common.serialization.IntegerSerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.admin.PulsarAdminException;
-import org.apache.pulsar.client.api.PulsarClientException;
+import org.apache.pulsar.client.api.Producer;
 import org.apache.pulsar.common.allocator.PulsarByteBufAllocator;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.AutoTopicCreationOverride;
@@ -143,7 +144,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             admin.namespaces().createNamespace("public/__kafka");
             admin.namespaces().setNamespaceReplicationClusters("public/__kafka", Sets.newHashSet("test"));
             admin.namespaces().setRetention("public/__kafka",
-                    new RetentionPolicies(-1, -1));
+                new RetentionPolicies(-1, -1));
         }
 
         admin.tenants().createTenant("my-tenant",
@@ -175,10 +176,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
         ApiVersionsRequest apiVersionsRequest = new ApiVersionsRequest.Builder().build();
         RequestHeader header = new RequestHeader(
-                ApiKeys.API_VERSIONS,
-                ApiKeys.API_VERSIONS.latestVersion(),
-                clientId,
-                correlationId);
+            ApiKeys.API_VERSIONS,
+            ApiKeys.API_VERSIONS.latestVersion(),
+            clientId,
+            correlationId);
 
         // 1. serialize request into ByteBuf
         ByteBuf serializedRequest = KopResponseUtils.serializeRequest(header, apiVersionsRequest);
@@ -1071,14 +1072,19 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 records.forEach(record -> {
                     consumer.commitSync();
                     if (flag.get()) {
-                        handler.getGroupCoordinator().getOffsetsProducers().values()
-                                .forEach(producerCompletableFuture -> {
-                                    try {
-                                        producerCompletableFuture.get().close();
-                                    } catch (PulsarClientException | InterruptedException | ExecutionException e) {
-                                        log.error("Close offset producer failed.");
-                                    }
-                                });
+                        var compactedTopic = handler.getGroupCoordinator().getGroupManager().getOffsetTopic();
+                        try {
+                            var field = compactedTopic.getClass().getDeclaredField("producers");
+                            field.setAccessible(true);
+                            @SuppressWarnings("unchecked")
+                            var producers = (ConcurrentHashMap<String, Future<Producer<ByteBuffer>>>)
+                                    field.get(compactedTopic);
+                            for (var offsetProducer : producers.values()) {
+                                offsetProducer.get().close();
+                            }
+                        } catch (Throwable e) {
+                            throw new RuntimeException(e);
+                        }
                         flag.set(false);
                     }
                 });
