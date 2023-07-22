@@ -34,7 +34,6 @@ import io.streamnative.pulsar.handlers.kop.storage.CompletedTxn;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshot;
-import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.TxnMetadata;
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -85,7 +84,6 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
-import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -1042,7 +1040,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     }
 
     @Test(timeOut = 10_000)
-    public void testAbortedPurgeIntervalConfiguration() throws Exception {
+    public void testAbortedTxnIndexPurgeIntervalConfiguration() throws Exception {
         Class<ProducerStateManager> clazz = ProducerStateManager.class;
         Method maybePurgeMethod = clazz.getDeclaredMethod("maybePurgeAbortedTx");
         maybePurgeMethod.setAccessible(true);
@@ -1069,7 +1067,7 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         ProducerStateManager producerStateManager = new ProducerStateManager(
                 "aborted-txn-index-purge-interval-test-" + RandomStringUtils.randomAlphanumeric(5),
                 UUID.randomUUID().toString(),
-                Mockito.mock(ProducerStateManagerSnapshotBuffer.class),
+                null,
                 1000 * 30,
                 purgeAbortedTxnIntervalSec);
         producerStateManager.updateMapEndOffset(100L);
