@@ -16,6 +16,10 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.apache.kafka.clients.CommonClientConfigs.CLIENT_ID_CONFIG;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
@@ -30,9 +34,15 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionState;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionStateManager;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
+import io.streamnative.pulsar.handlers.kop.storage.CompletedTxn;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshot;
+import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.TxnMetadata;
+
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -51,6 +61,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+
+import io.streamnative.pulsar.handlers.kop.utils.ReflectionUtils;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -81,6 +93,7 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
+import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
@@ -1036,8 +1049,42 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
 
     }
 
+    @Test(timeOut = 10_000)
+    public void testAbortedPurgeIntervalConfiguration() throws Exception {
+        Class<ProducerStateManager> clazz = ProducerStateManager.class;
+        Method maybePurgeMethod = clazz.getDeclaredMethod("maybePurgeAbortedTx");
+        maybePurgeMethod.setAccessible(true);
+        Method updateAbortedTxnsPurgeOffsetMethod =
+                clazz.getDeclaredMethod("updateAbortedTxnsPurgeOffset", long.class);
+        updateAbortedTxnsPurgeOffsetMethod.setAccessible(true);
 
+        ProducerStateManager producerStateManager = buildProducerStateManager(
+                updateAbortedTxnsPurgeOffsetMethod, Integer.MAX_VALUE);
+        for (int i = 0; i < 10; i++) {
+            // the purge interval is Integer.MAX_VALUE, the purge operation should not be triggered
+            assertEquals(maybePurgeMethod.invoke(producerStateManager), 0L);
+            Thread.sleep(500);
+        }
 
+        producerStateManager = buildProducerStateManager(updateAbortedTxnsPurgeOffsetMethod, 1);
+        assertEquals(maybePurgeMethod.invoke(producerStateManager), 0L);
+        Thread.sleep(1500);
+        assertEquals(maybePurgeMethod.invoke(producerStateManager), 1L);
+    }
+
+    private ProducerStateManager buildProducerStateManager(Method updateAbortedTxnsPurgeOffsetMethod,
+                                                           int purgeAbortedTxnIntervalSec) throws Exception {
+        ProducerStateManager producerStateManager = new ProducerStateManager(
+                "aborted-txn-index-purge-interval-test-" + RandomStringUtils.randomAlphanumeric(5),
+                UUID.randomUUID().toString(),
+                Mockito.mock(ProducerStateManagerSnapshotBuffer.class),
+                1000 * 30,
+                purgeAbortedTxnIntervalSec);
+        producerStateManager.updateMapEndOffset(100L);
+        updateAbortedTxnsPurgeOffsetMethod.invoke(producerStateManager, 10L);
+        producerStateManager.updateTxnIndex(new CompletedTxn(1L, 5L, 6L, true), 6L);
+        return producerStateManager;
+    }
 
     @Test(timeOut = 60000)
     public void testRecoverFromInvalidSnapshotAfterTrim() throws Exception {
