@@ -168,7 +168,7 @@ public class ProducerStateManager {
             log.debug("maybePurgeAbortedTx deltaFromLast {} vs kafkaTxnPurgeAbortedTxnIntervalSeconds {} ",
                     deltaFromLast, kafkaTxnPurgeAbortedTxnIntervalSeconds);
         }
-        if (deltaFromLast > kafkaTxnPurgeAbortedTxnIntervalSeconds) {
+        if (deltaFromLast < kafkaTxnPurgeAbortedTxnIntervalSeconds) {
             return 0;
         }
         lastPurgeAbortedTxnTime = now;
