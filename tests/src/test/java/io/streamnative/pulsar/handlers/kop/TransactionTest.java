@@ -16,10 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static org.apache.kafka.clients.CommonClientConfigs.CLIENT_ID_CONFIG;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
@@ -40,8 +36,6 @@ import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManager;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshot;
 import io.streamnative.pulsar.handlers.kop.storage.ProducerStateManagerSnapshotBuffer;
 import io.streamnative.pulsar.handlers.kop.storage.TxnMetadata;
-
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
@@ -61,8 +55,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
-
-import io.streamnative.pulsar.handlers.kop.utils.ReflectionUtils;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.RandomStringUtils;
