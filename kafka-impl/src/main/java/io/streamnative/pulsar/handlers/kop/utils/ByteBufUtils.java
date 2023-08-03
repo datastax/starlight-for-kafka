@@ -208,8 +208,8 @@ public class ByteBufUtils {
                 final ByteBuf singleMessagePayload = Commands.deSerializeSingleMessageInBatch(
                         uncompressedPayload, singleMessageMetadata, i, numMessages);
 
-                final long timestamp = (metadata.getEventTime() > 0)
-                        ? metadata.getEventTime()
+                final long timestamp = (singleMessageMetadata.getEventTime() > 0)
+                        ? singleMessageMetadata.getEventTime()
                         : metadata.getPublishTime();
                 ByteBuffer value = singleMessageMetadata.isNullValue()
                         ? null
