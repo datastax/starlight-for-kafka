@@ -27,14 +27,14 @@
 
   <groupId>com.datastax.oss</groupId>
   <artifactId>pulsar-protocol-handler-kafka-parent</artifactId>
-  <version>2.10.3.11-SNAPSHOT</version>
+  <version>3.1.2</version>
   <name>StreamNative :: Pulsar Protocol Handler :: KoP Parent</name>
   <description>Parent for Kafka on Pulsar implemented using Pulsar Protocol Handler.</description>
 
   <properties>
-    <javac.target>11</javac.target>
+    <javac.target>17</javac.target>
     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-    <!-- required for running tests on JDK11+ -->
+    <!-- required for running tests on JDK17+ -->
     <test.additional.args>
       --add-opens java.base/jdk.internal.loader=ALL-UNNAMED
       --add-opens java.base/java.lang=ALL-UNNAMED <!--Mockito-->
@@ -51,8 +51,8 @@
     <lombok.version>1.18.24</lombok.version>
     <mockito.version>3.4.0</mockito.version>
     <wiremock.version>3.0.0-beta-2</wiremock.version>
-    <pulsar.group.id>com.datastax.oss</pulsar.group.id>
-    <pulsar.version>2.10.4.3</pulsar.version>
+    <pulsar.group.id>org.apache.pulsar</pulsar.group.id>
+    <pulsar.version>3.1.2</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <spotbugs-annotations.version>3.1.12</spotbugs-annotations.version>
@@ -193,6 +193,12 @@
         <artifactId>managed-ledger</artifactId>
         <type>test-jar</type>
         <version>${pulsar.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>io.grpc</groupId>
+            <artifactId>*</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
 
       <dependency>
@@ -369,6 +375,12 @@
       <artifactId>pulsar-broker-common</artifactId>
       <version>${pulsar.version}</version>
       <scope>provided</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>io.grpc</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <dependency>
@@ -474,6 +486,12 @@
       <version>${pulsar.version}</version>
       <type>test-jar</type>
       <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>io.grpc</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <dependency>
@@ -490,7 +508,7 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-  
+
   <build>
     <pluginManagement>
       <plugins>
@@ -539,7 +557,7 @@
         <artifactId>maven-javadoc-plugin</artifactId>
         <version>${maven-javadoc-plugin.version}</version>
         <configuration>
-          <source>11</source>
+          <source>17</source>
           <doclint>none</doclint>
         </configuration>
       </plugin>
@@ -706,7 +724,7 @@
       </plugin>
     </plugins>
   </build>
-  
+
   <repositories>
     <repository>
       <id>central</id>

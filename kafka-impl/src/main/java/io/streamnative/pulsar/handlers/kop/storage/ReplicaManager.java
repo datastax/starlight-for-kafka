@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 import io.streamnative.pulsar.handlers.kop.DelayedFetch;
 import io.streamnative.pulsar.handlers.kop.DelayedProduceAndFetch;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
@@ -51,7 +50,7 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.BrokerServiceException;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.client.api.PulsarClientException;
 
 /**
@@ -68,13 +67,13 @@ public class ReplicaManager {
     public ReplicaManager(KafkaServiceConfiguration kafkaConfig,
                           RequestStats requestStats,
                           Time time,
-                          ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                          List<EntryFilter> entryFilters,
                           DelayedOperationPurgatory<DelayedOperation> producePurgatory,
                           DelayedOperationPurgatory<DelayedOperation> fetchPurgatory,
                           KafkaTopicLookupService kafkaTopicLookupService,
                           Function<String, ProducerStateManagerSnapshotBuffer> producerStateManagerSnapshotBuffer,
                           OrderedExecutor recoveryExecutor) {
-        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryfilterMap,
+        this.logManager = new PartitionLogManager(kafkaConfig, requestStats, entryFilters,
                 time, kafkaTopicLookupService, producerStateManagerSnapshotBuffer, recoveryExecutor);
         this.producePurgatory = producePurgatory;
         this.fetchPurgatory = fetchPurgatory;

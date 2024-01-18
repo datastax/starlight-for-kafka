@@ -527,7 +527,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaConfig,
                 requestStats,
                 Time.SYSTEM,
-                brokerService.getEntryFilters(),
+                brokerService.getEntryFilterProvider().getBrokerEntryFilters(),
                 producePurgatory,
                 fetchPurgatory,
                 kafkaTopicLookupService,
