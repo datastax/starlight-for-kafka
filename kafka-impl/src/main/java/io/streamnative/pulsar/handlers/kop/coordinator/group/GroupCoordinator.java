@@ -88,8 +88,8 @@ public class GroupCoordinator {
             offsetConfig,
             client,
             coordinatorExecutor,
-            time,
-            namespacePrefixForMetadata
+            namespacePrefixForMetadata,
+            time
         );
 
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
