@@ -241,6 +241,7 @@ public class CacheInvalidatorTest extends KopProtocolHandlerTestBase {
     @Override
     protected void setup() throws Exception {
         conf.setKafkaTransactionCoordinatorEnabled(true);
+        conf.setTopicLevelPoliciesEnabled(false);
         super.internalSetup();
     }
 

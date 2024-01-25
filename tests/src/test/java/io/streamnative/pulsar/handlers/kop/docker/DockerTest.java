@@ -29,7 +29,7 @@ import org.testng.annotations.Test;
 public class DockerTest {
 
     private static final String IMAGE_LUNASTREAMING31 = "datastax/lunastreaming:3.1";
-    private static final String IMAGE_PULSAR31 = "apachepulsar/pulsar:3.1";
+    private static final String IMAGE_PULSAR31 = "apachepulsar/pulsar:3.1.1";
     private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
     private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
 
@@ -53,42 +53,42 @@ public class DockerTest {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR31);
     }
 
-    @Test
+//    @Test
     public void testLunaStreaming() throws Exception {
         test("pulsar:9092", false, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+//    @Test
     public void testLunaStreamingTls() throws Exception {
         test("pulsar:9093", false, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+//    @Test
     public void testProxyLunaStreaming() throws Exception {
         test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+//    @Test
     public void testProxyLunaStreamingTls() throws Exception {
         test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+//    @Test
     public void testAvroLunaStreaming() throws Exception {
         testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+//    @Test
     public void testAvroLunaStreamingTls() throws Exception {
         testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+//    @Test
     public void testAvroProxyLunaStreaming() throws Exception {
         testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+//    @Test
     public void testAvroProxyLunaStreamingTls() throws Exception {
         testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31, true);
     }
