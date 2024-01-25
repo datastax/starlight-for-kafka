@@ -15,9 +15,9 @@ package io.streamnative.pulsar.handlers.kop.coordinator.group;
 
 import static org.mockito.Mockito.spy;
 import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
-import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.fail;
 
 import com.google.common.collect.ImmutableMap;
