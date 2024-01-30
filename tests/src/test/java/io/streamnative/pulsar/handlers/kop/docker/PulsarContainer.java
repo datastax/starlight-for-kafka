@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.testcontainers.containers.GenericContainer;
@@ -64,7 +63,8 @@ public class PulsarContainer implements AutoCloseable {
                         .withNetwork(network)
                         .withStartupTimeout(Duration.ofMinutes(1))
                         .withNetworkAliases("zookeeper")
-                        .withExposedPorts(exposedPortsOnZookeeper.toArray(new Integer[0])); // ensure that the ports are listening
+                        // ensure that the ports are listening
+                        .withExposedPorts(exposedPortsOnZookeeper.toArray(new Integer[0]));
         zookeeperContainer.start();
 
         String standaloneBaseCommand =
@@ -89,7 +89,8 @@ public class PulsarContainer implements AutoCloseable {
                         .withNetwork(network)
                         .withStartupTimeout(Duration.ofMinutes(1))
                         .withNetworkAliases("pulsar")
-                        .withExposedPorts(exposedPortsOnBroker.toArray(new Integer[0])) // ensure that the ports are listening
+                        // ensure that the ports are listening
+                        .withExposedPorts(exposedPortsOnBroker.toArray(new Integer[0]))
                         .withCopyFileToContainer(
                                 MountableFile.forHostPath(getProtocolHandlerPath()),
                                 "/pulsar/protocols/kop.nar")
@@ -118,7 +119,8 @@ public class PulsarContainer implements AutoCloseable {
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationPlugin",
                 "org.apache.pulsar.client.impl.auth.AuthenticationToken");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationParameters",
-                "{\"token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.Zjo9EQa8HdY1qFTgHxMVD4II7FKc1Q-dwNg_UOuGOvU\"");
+                "{\"token\":"
+                + "\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.Zjo9EQa8HdY1qFTgHxMVD4II7FKc1Q-dwNg_UOuGOvU\"");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerServiceURL", "pulsar://pulsar:6650");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURL", "http://pulsar:8080");
         pulsarContainer.withEnv("PULSAR_PREFIX_kafkaTransactionCoordinatorEnabled", "true");
@@ -148,7 +150,8 @@ public class PulsarContainer implements AutoCloseable {
         if (enableTls) {
             pulsarContainer.withEnv("PULSAR_PREFIX_kopSchemaRegistryEnableTls", "true");
             pulsarContainer.withEnv("PULSAR_PREFIX_kafkaListeners", "PLAINTEXT://pulsar:9092,SSL://pulsar:9093");
-            pulsarContainer.withEnv("PULSAR_PREFIX_kafkaAdvertisedListeners", "PLAINTEXT://pulsar:9092,SSL://pulsar:9093");
+            pulsarContainer.withEnv("PULSAR_PREFIX_kafkaAdvertisedListeners",
+                    "PLAINTEXT://pulsar:9092,SSL://pulsar:9093");
             pulsarContainer.withEnv("PULSAR_PREFIX_tlsCertificateFilePath", "/pulsar/conf/broker.cert.pem");
             pulsarContainer.withEnv("PULSAR_PREFIX_tlsKeyFilePath", "/pulsar/conf/broker.key-pk8.pem");
             pulsarContainer.withEnv("PULSAR_PREFIX_tlsTrustCertsFilePath", "/pulsar/conf/ca.cert.pem");
@@ -226,7 +229,8 @@ public class PulsarContainer implements AutoCloseable {
             proxyContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationPlugin",
                     "org.apache.pulsar.client.impl.auth.AuthenticationToken");
             proxyContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationParameters",
-                    "{\"token\":\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.Zjo9EQa8HdY1qFTgHxMVD4II7FKc1Q-dwNg_UOuGOvU\"");
+                    "{\"token\":"
+                    + "\"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiJ9.Zjo9EQa8HdY1qFTgHxMVD4II7FKc1Q-dwNg_UOuGOvU\"");
 
             proxyContainer.withEnv("PULSAR_PREFIX_narExtractionDirectory", "data");
             proxyContainer.withEnv("PULSAR_PREFIX_kafkaListeners", "PLAINTEXT://pulsarproxy:9092");
