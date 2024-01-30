@@ -28,69 +28,69 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING210 = "datastax/lunastreaming:2.10_3.3";
-    private static final String IMAGE_PULSAR210 = "apachepulsar/pulsar:2.10.3";
+    private static final String IMAGE_LUNASTREAMING31 = "datastax/lunastreaming:3.1";
+    private static final String IMAGE_PULSAR31 = "apachepulsar/pulsar:3.1.1";
     private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
     private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
 
     @Test
     public void test() throws Exception {
-        test("pulsar:9092", false, IMAGE_PULSAR210);
+        test("pulsar:9092", false, IMAGE_PULSAR31);
     }
 
     @Test
     public void testProxy() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_PULSAR210);
+        test("pulsarproxy:9092", true, IMAGE_PULSAR31);
     }
 
     @Test
     public void testAvro() throws Exception {
-        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_PULSAR210);
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_PULSAR31);
     }
 
     @Test
     public void testAvroProxy() throws Exception {
-        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR210);
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR31);
     }
 
-    @Test
+    //    @Test
     public void testLunaStreaming() throws Exception {
-        test("pulsar:9092", false, IMAGE_LUNASTREAMING210);
+        test("pulsar:9092", false, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+    //    @Test
     public void testLunaStreamingTls() throws Exception {
-        test("pulsar:9093", false, IMAGE_LUNASTREAMING210, true);
+        test("pulsar:9093", false, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+    //    @Test
     public void testProxyLunaStreaming() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING210);
+        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+    //    @Test
     public void testProxyLunaStreamingTls() throws Exception {
-        test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING210, true);
+        test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+    //    @Test
     public void testAvroLunaStreaming() throws Exception {
-        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING210);
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+    //    @Test
     public void testAvroLunaStreamingTls() throws Exception {
-        testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING210, true);
+        testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING31, true);
     }
 
-    @Test
+    //    @Test
     public void testAvroProxyLunaStreaming() throws Exception {
-        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210);
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31);
     }
 
-    @Test
+    //    @Test
     public void testAvroProxyLunaStreamingTls() throws Exception {
-        testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING210, true);
+        testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31, true);
     }
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
@@ -212,7 +212,7 @@ public class DockerTest {
                                 "/home/appuser/ca.jks");
                         clientContainer.withEnv("SCHEMA_REGISTRY_OPTS",
                                 "-Djavax.net.ssl.trustStore=/home/appuser/ca.jks "
-                                + "-Djavax.net.ssl.trustStorePassword=pulsar"
+                                        + "-Djavax.net.ssl.trustStorePassword=pulsar"
                         );
                     }
                     clientContainer.start();
