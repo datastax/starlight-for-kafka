@@ -133,24 +133,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
         super.internalCleanup();
     }
 
-
-    @AfterMethod(alwaysRun = true)
-    void removeUselessTopics() throws Exception {
-        List<String> partitionedTopicList = admin.topics()
-                .getPartitionedTopicList(tenant + "/" + namespace);
-        for (String topic : partitionedTopicList) {
-            log.info("delete partitioned topic {}", topic);
-            admin.topics().deletePartitionedTopic(topic, true);
-        }
-
-        List<String> topics = admin.topics().getList(tenant + "/" + namespace);
-        for (String topic : topics) {
-            log.info("delete non-partitioned topic {}", topic);
-            admin.topics().delete(topic,  true, true);
-        }
-    }
-
-
     @DataProvider(name = "produceConfigProvider")
     protected static Object[][] produceConfigProvider() {
         // isBatch

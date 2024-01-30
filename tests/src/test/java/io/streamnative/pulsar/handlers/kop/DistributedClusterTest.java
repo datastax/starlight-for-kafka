@@ -182,24 +182,20 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
 
     protected int kafkaPublishMessage(KProducer kProducer, int numMessages, String messageStrPrefix) throws Exception {
         int i = 0;
-        List<Future> futures = new ArrayList<>();
         for (; i < numMessages; i++) {
             String messageStr = messageStrPrefix + i;
             ProducerRecord record = new ProducerRecord<>(
                 kProducer.getTopic(),
                 i,
                 messageStr);
+            kProducer.getProducer()
+                    .send(record)
+                    .get();
 
-            Future send = kProducer.getProducer()
-                    .send(record);
-            futures.add(send);
             if (log.isDebugEnabled()) {
                 log.debug("Kafka Producer {} Sent message with header: ({}, {})",
                     kProducer.getTopic(), i, messageStr);
             }
-        }
-        for (Future future : futures) {
-            future.get();
         }
         return i;
     }
