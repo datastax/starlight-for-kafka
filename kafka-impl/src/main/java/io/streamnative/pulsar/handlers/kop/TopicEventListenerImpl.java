@@ -20,7 +20,7 @@ import org.apache.pulsar.common.naming.TopicName;
 /**
  * This is a listener to receive notifications about UNLOAD and DELETE events.
  * The TopicEventsListener API is available only since Pulsar 3.0.0
- * and Luna Streaming 2.10.3.3. This is the reason why this class is not an innerclass
+ * and Luna Streaming 3.1.2. This is the reason why this class is not an innerclass
  * of {@link NamespaceBundleOwnershipListenerImpl}, because we don't want to load it and
  * cause errors on older versions of Pulsar.
  *

@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.streamnative.pulsar.handlers.kop.KopProtocolHandlerTestBase;
+import io.streamnative.pulsar.handlers.kop.SystemTopicClient;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupSummary;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.MemberMetadata.MemberSummary;
@@ -31,7 +32,6 @@ import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.MockTimer;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,14 +51,11 @@ import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.pulsar.client.api.Consumer;
-import org.apache.pulsar.client.api.MessageId;
-import org.apache.pulsar.client.api.ProducerBuilder;
-import org.apache.pulsar.client.api.ReaderBuilder;
-import org.apache.pulsar.client.api.Schema;
-import org.apache.pulsar.client.api.SubscriptionInitialPosition;
+import org.apache.pulsar.client.api.PulsarClientException;
 import org.apache.pulsar.common.schema.KeyValue;
+import org.testng.annotations.AfterClass;
 import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
@@ -77,16 +74,11 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     private static final String memberId = "memberId";
     private static final byte[] metadata = new byte[0];
 
-    String topicName;
-    MockTimer timer = null;
-    GroupCoordinator groupCoordinator = null;
+    private MockTimer timer = null;
+    private GroupCoordinator groupCoordinator = null;
 
-    ProducerBuilder<ByteBuffer> producerBuilder;
-    ReaderBuilder<ByteBuffer> readerBuilder;
-
-    Consumer<ByteBuffer> consumer;
-    OrderedScheduler scheduler;
-    GroupMetadataManager groupMetadataManager;
+    private OrderedScheduler scheduler;
+    private GroupMetadataManager groupMetadataManager;
     private int groupPartitionId = -1;
     private String otherGroupId;
     private int otherGroupPartitionId;
@@ -97,11 +89,20 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         super.resetConfig();
     }
 
-    @BeforeMethod
+    @BeforeClass
     @Override
     public void setup() throws Exception {
         super.internalSetup();
+    }
 
+    @AfterClass
+    @Override
+    public void cleanup() throws Exception {
+        super.internalCleanup();
+    }
+
+    @BeforeMethod
+    protected void setUp() throws PulsarClientException {
         protocols = newProtocols();
 
         scheduler = OrderedScheduler.newSchedulerBuilder()
@@ -115,22 +116,10 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
             GroupInitialRebalanceDelay
         );
 
-        topicName = "test-coordinator-" + System.currentTimeMillis();
+        String topicName = "test-coordinator-" + System.currentTimeMillis();
         OffsetConfig offsetConfig = OffsetConfig.builder().offsetsTopicName(topicName).build();
 
         timer = new MockTimer();
-
-        producerBuilder = pulsarClient.newProducer(Schema.BYTEBUFFER);
-
-        consumer = pulsarClient.newConsumer(Schema.BYTEBUFFER)
-            .topic(topicName)
-            .subscriptionName("test-sub")
-            .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
-            .subscribe();
-
-        readerBuilder = pulsarClient.newReader(Schema.BYTEBUFFER)
-            .startMessageId(MessageId.earliest);
-
         groupPartitionId = 0;
         otherGroupPartitionId = 1;
         otherGroupId = "otherGroup";
@@ -138,35 +127,34 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         groupMetadataManager = spy(new GroupMetadataManager(
                 tenant,
                 offsetConfig,
-                producerBuilder,
-                readerBuilder,
+                new SystemTopicClient(pulsar, conf),
                 scheduler,
-                timer.time(),
-                "public/default"
+                "public/default",
+                timer.time()
         ));
 
         assertNotEquals(groupPartitionId, otherGroupPartitionId);
 
         DelayedOperationPurgatory<DelayedHeartbeat> heartbeatPurgatory =
-            DelayedOperationPurgatory.<DelayedHeartbeat>builder()
-                .purgatoryName("Heartbeat")
-                .timeoutTimer(timer)
-                .reaperEnabled(false)
-                .build();
+                DelayedOperationPurgatory.<DelayedHeartbeat>builder()
+                        .purgatoryName("Heartbeat")
+                        .timeoutTimer(timer)
+                        .reaperEnabled(false)
+                        .build();
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory =
-            DelayedOperationPurgatory.<DelayedJoin>builder()
-                .purgatoryName("Rebalance")
-                .timeoutTimer(timer)
-                .reaperEnabled(false)
-                .build();
+                DelayedOperationPurgatory.<DelayedJoin>builder()
+                        .purgatoryName("Rebalance")
+                        .timeoutTimer(timer)
+                        .reaperEnabled(false)
+                        .build();
 
         groupCoordinator = new GroupCoordinator(
-            tenant,
-            groupConfig,
-            groupMetadataManager,
-            heartbeatPurgatory,
-            joinPurgatory,
-            timer.time()
+                tenant,
+                groupConfig,
+                groupMetadataManager,
+                heartbeatPurgatory,
+                joinPurgatory,
+                timer.time()
         );
 
         // start the group coordinator
@@ -178,13 +166,10 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
     }
 
     @AfterMethod
-    @Override
-    public void cleanup() throws Exception {
+    protected void tearDown() throws PulsarClientException {
         groupCoordinator.shutdown();
         groupMetadataManager.shutdown();
-        consumer.close();
         scheduler.shutdown();
-        super.internalCleanup();
     }
 
     private Map<String, byte[]> newProtocols() {
@@ -1736,7 +1721,7 @@ public class GroupCoordinatorTest extends KopProtocolHandlerTestBase {
         assertEquals(1, groups.getRight().size());
         assertEquals(
             new GroupOverview("groupId", "consumer"),
-            groups.getRight().get(0)
+                groups.getRight().get(0)
         );
     }
 

@@ -86,7 +86,6 @@ import org.apache.pulsar.common.naming.TopicName;
 import org.awaitility.Awaitility;
 import org.testng.Assert;
 import org.testng.annotations.AfterClass;
-import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
@@ -132,24 +131,6 @@ public class TransactionTest extends KopProtocolHandlerTestBase {
     protected void cleanup() throws Exception {
         super.internalCleanup();
     }
-
-
-    @AfterMethod(alwaysRun = true)
-    void removeUselessTopics() throws Exception {
-        List<String> partitionedTopicList = admin.topics()
-                .getPartitionedTopicList(tenant + "/" + namespace);
-        for (String topic : partitionedTopicList) {
-            log.info("delete partitioned topic {}", topic);
-            admin.topics().deletePartitionedTopic(topic, true);
-        }
-
-        List<String> topics = admin.topics().getList(tenant + "/" + namespace);
-        for (String topic : topics) {
-            log.info("delete non-partitioned topic {}", topic);
-            admin.topics().delete(topic,  true, true);
-        }
-    }
-
 
     @DataProvider(name = "produceConfigProvider")
     protected static Object[][] produceConfigProvider() {

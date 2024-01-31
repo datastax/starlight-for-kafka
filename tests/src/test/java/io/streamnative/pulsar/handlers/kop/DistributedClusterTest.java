@@ -43,6 +43,7 @@ import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.partition.PartitionedTopicMetadata;
 import org.apache.pulsar.common.policies.data.RetentionPolicies;
+import org.apache.pulsar.common.policies.data.TopicType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.testng.annotations.AfterMethod;
@@ -91,7 +92,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         kConfig.setAuthenticationEnabled(false);
         kConfig.setAuthorizationEnabled(false);
         kConfig.setAllowAutoTopicCreation(true);
-        kConfig.setAllowAutoTopicCreationType("partitioned");
+        kConfig.setAllowAutoTopicCreationType(TopicType.PARTITIONED);
         kConfig.setBrokerDeleteInactiveTopicsEnabled(false);
         kConfig.setGroupInitialRebalanceDelayMs(0);
         kConfig.setBrokerShutdownTimeoutMs(0);
@@ -419,6 +420,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
         log.info("Unload namespace, lookup will trigger another reload.");
         pulsarService1.getAdminClient().namespaces().unload(kopNamespace);
 
+        Thread.sleep(5000);
         // 4. publish consume again
         log.info("Re Publish / Consume again.");
         kafkaPublishMessage(kProducer, totalMsgs, messageStrPrefix);

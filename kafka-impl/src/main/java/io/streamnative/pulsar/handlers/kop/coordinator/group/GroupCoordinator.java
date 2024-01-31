@@ -35,7 +35,6 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.Gro
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey.MemberKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import io.streamnative.pulsar.handlers.kop.utils.timer.Timer;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -46,7 +45,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
@@ -62,8 +60,6 @@ import org.apache.kafka.common.requests.JoinGroupRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse.PartitionData;
 import org.apache.kafka.common.requests.TransactionResult;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.client.api.Producer;
-import org.apache.pulsar.client.api.Reader;
 import org.apache.pulsar.common.schema.KeyValue;
 import org.apache.pulsar.common.util.FutureUtil;
 
@@ -90,11 +86,10 @@ public class GroupCoordinator {
         GroupMetadataManager metadataManager = new GroupMetadataManager(
             tenant,
             offsetConfig,
-            client.newProducerBuilder(),
-            client.newReaderBuilder(),
+            client,
             coordinatorExecutor,
-            time,
-            namespacePrefixForMetadata
+            namespacePrefixForMetadata,
+            time
         );
 
         DelayedOperationPurgatory<DelayedJoin> joinPurgatory = DelayedOperationPurgatory.<DelayedJoin>builder()
@@ -190,14 +185,6 @@ public class GroupCoordinator {
 
     public String getTopicPartitionName(int partition) {
         return groupManager.getTopicPartitionName(partition);
-    }
-
-    public ConcurrentMap<Integer, CompletableFuture<Producer<ByteBuffer>>> getOffsetsProducers() {
-        return groupManager.getOffsetsProducers();
-    }
-
-    public ConcurrentMap<Integer, CompletableFuture<Reader<ByteBuffer>>> getOffsetsReaders() {
-        return groupManager.getOffsetsReaders();
     }
 
     public GroupMetadataManager getGroupManager() {

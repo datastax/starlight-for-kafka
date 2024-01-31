@@ -13,12 +13,12 @@
  */
 package io.streamnative.pulsar.handlers.kop.format;
 
-import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.common.record.MemoryRecords;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
 import org.apache.pulsar.common.protocol.Commands;
 
@@ -31,7 +31,7 @@ import org.apache.pulsar.common.protocol.Commands;
 public class KafkaV1EntryFormatter extends AbstractEntryFormatter {
 
     public KafkaV1EntryFormatter(boolean applyAvroSchemaOnDecode,
-                                 ImmutableList<EntryFilterWithClassLoader> entryfilters) {
+                                 List<EntryFilter> entryfilters) {
         super(applyAvroSchemaOnDecode, entryfilters);
     }
 

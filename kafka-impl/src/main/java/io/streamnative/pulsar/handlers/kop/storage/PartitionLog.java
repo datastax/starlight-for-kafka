@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop.storage;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
@@ -89,7 +88,7 @@ import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
-import org.apache.pulsar.broker.service.plugin.EntryFilterWithClassLoader;
+import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 import org.apache.pulsar.common.util.FutureUtil;
@@ -136,7 +135,7 @@ public class PartitionLog {
 
     private final KafkaTopicLookupService kafkaTopicLookupService;
 
-    private final ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap;
+    private final List<EntryFilter> entryFilters;
     private final boolean preciseTopicPublishRateLimitingEnable;
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
@@ -161,12 +160,12 @@ public class PartitionLog {
                         Time time,
                         TopicPartition topicPartition,
                         String fullPartitionName,
-                        ImmutableMap<String, EntryFilterWithClassLoader> entryfilterMap,
+                        List<EntryFilter> entryFilters,
                         KafkaTopicLookupService kafkaTopicLookupService,
                         ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer,
                         OrderedExecutor recoveryExecutor) {
         this.kafkaConfig = kafkaConfig;
-        this.entryfilterMap = entryfilterMap;
+        this.entryFilters = entryFilters;
         this.requestStats = requestStats;
         this.time = time;
         this.topicPartition = topicPartition;
@@ -269,7 +268,7 @@ public class PartitionLog {
             log.debug("entryFormat for {} is {} (topicProperties {})", fullPartitionName,
                     entryFormat, topicProperties);
         }
-        return EntryFormatterFactory.create(kafkaConfig, entryfilterMap, entryFormat);
+        return EntryFormatterFactory.create(kafkaConfig, entryFilters, entryFormat);
     }
 
     @Data
@@ -1195,7 +1194,7 @@ public class PartitionLog {
         return initFuture.thenCompose((___)  -> {
             // snapshot can be taken only on the same thread that is used for writes
             ManagedLedgerImpl ml = (ManagedLedgerImpl) getPersistentTopic().getManagedLedger();
-            ExecutorService executorService = ml.getExecutor().chooseThread(ml.getName());
+            Executor executorService = ml.getExecutor();
             return this
                     .getProducerStateManager()
                     .takeSnapshot(executorService);
@@ -1207,7 +1206,7 @@ public class PartitionLog {
         return initFuture.thenCompose((___)  -> {
             // purge can be taken only on the same thread that is used for writes
             ManagedLedgerImpl ml = (ManagedLedgerImpl) getPersistentTopic().getManagedLedger();
-            ExecutorService executorService = ml.getExecutor().chooseThread(ml.getName());
+            ExecutorService executorService = ml.getScheduledExecutor().chooseThread(ml.getName());
 
             return updatePurgeAbortedTxnsOffset()
                     .thenApplyAsync((____) -> {
