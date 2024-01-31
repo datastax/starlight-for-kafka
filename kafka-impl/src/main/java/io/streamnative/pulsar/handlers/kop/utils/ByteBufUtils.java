@@ -246,7 +246,7 @@ public class ByteBufUtils {
             final long timestamp = (metadata.getEventTime() > 0)
                     ? metadata.getEventTime()
                     : metadata.getPublishTime();
-            ByteBuffer value = getNioBuffer(uncompressedPayload);
+            ByteBuffer value = metadata.isNullValue() ? null : getNioBuffer(uncompressedPayload);
             ByteBuffer keyByteBuffer = getKeyByteBuffer(metadata);
             if (keySchemaId >= 0) {
                 keyByteBuffer = prependSchemaId(keyByteBuffer, keySchemaId);
