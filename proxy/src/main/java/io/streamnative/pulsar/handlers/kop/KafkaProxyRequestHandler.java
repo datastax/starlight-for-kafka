@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import static com.google.common.base.Preconditions.checkArgument;
 import static io.streamnative.pulsar.handlers.kop.KafkaRequestHandler.newNode;
 
-import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -1663,7 +1662,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                         .stream()
                                                         .collect(Collectors.toMap(Function.identity(),
                                                                 p -> Errors.UNKNOWN_SERVER_ERROR));
-                                        incErrorCountAndMaybeDiscardConnectionToBroker(badError,host, port);
+                                        incErrorCountAndMaybeDiscardConnectionToBroker(badError, host, port);
                                         resultFuture.complete(KafkaResponseUtils.newDeleteRecords(errorsMap));
                                         return null;
                                     });
