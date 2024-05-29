@@ -964,7 +964,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             log.error("bad error while fetching for {} from {}",
                                                     fetchData.keySet(), badError, kopBroker);
                                             fetchData.keySet().forEach(topicPartition ->
-                                                    errorsConsumer.accept(topicPartition, Errors.FETCH_SESSION_TOPIC_ID_ERROR)
+                                                    errorsConsumer.accept(topicPartition,
+                                                        Errors.FETCH_SESSION_TOPIC_ID_ERROR)
                                             );
                                             return null;
                                         }).whenComplete((ignore1, ignore2) -> {
