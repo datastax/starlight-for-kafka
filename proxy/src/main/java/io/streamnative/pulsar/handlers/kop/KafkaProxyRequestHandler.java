@@ -793,8 +793,9 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 .whenComplete((result, error) -> {
                     // TODO: report errors for specific partitions and continue for non failed lookups
                     if (error != null) {
+                        log.error("Cannot lookup brokers for a fetch request error {}", error);
                         FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
-                                fetchData, Errors.UNKNOWN_SERVER_ERROR);
+                                fetchData, Errors.FETCH_SESSION_ID_NOT_FOUND);
                         resultFuture.complete(fetchResponse);
                     } else {
                         boolean multipleBrokers = false;
@@ -822,7 +823,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     }).exceptionally(badError -> {
                                         log.error("bad error for FULL fetch", badError);
                                         FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
-                                                fetchData, Errors.UNKNOWN_SERVER_ERROR);
+                                                fetchData, Errors.FETCH_SESSION_TOPIC_ID_ERROR);
                                         resultFuture.complete(fetchResponse);
                                         return null;
                                     });
@@ -842,8 +843,10 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                 // add the topicPartition with timeout error if it's not existed in responseMap
                                 fetchData.keySet().forEach(topicPartition -> {
                                     if (!responseMap.containsKey(topicPartition)) {
+                                        log.error(metadataNamespace + " Request {}: not found response for {}",
+                                                fetch.getHeader(), topicPartition);
                                         responseMap.put(topicPartition,
-                                                getFetchPartitionDataWithError(Errors.UNKNOWN_SERVER_ERROR));
+                                                getFetchPartitionDataWithError(Errors.FETCH_SESSION_TOPIC_ID_ERROR));
                                     }
                                 });
                                 if (log.isDebugEnabled()) {
@@ -961,7 +964,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                             log.error("bad error while fetching for {} from {}",
                                                     fetchData.keySet(), badError, kopBroker);
                                             fetchData.keySet().forEach(topicPartition ->
-                                                    errorsConsumer.accept(topicPartition, Errors.UNKNOWN_SERVER_ERROR)
+                                                    errorsConsumer.accept(topicPartition, Errors.FETCH_SESSION_TOPIC_ID_ERROR)
                                             );
                                             return null;
                                         }).whenComplete((ignore1, ignore2) -> {
@@ -1595,6 +1598,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 .whenComplete((result, error) -> {
                     // TODO: report errors for specific partitions and continue for non failed lookups
                     if (error != null) {
+                        log.error("delete records error {}", error);
                         Map<TopicPartition, Errors> errorsMap =
                                 partitionOffsets
                                         .keySet()
