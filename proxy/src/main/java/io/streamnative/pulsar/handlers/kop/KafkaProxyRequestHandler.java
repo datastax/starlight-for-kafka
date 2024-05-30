@@ -823,7 +823,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                     }).exceptionally(badError -> {
                                         log.error("bad error for FULL fetch", badError);
                                         FetchResponse fetchResponse = buildFetchErrorResponse(fetchRequest,
-                                                fetchData, Errors.FETCH_SESSION_TOPIC_ID_ERROR);
+                                                fetchData, Errors.KAFKA_STORAGE_ERROR);
                                         resultFuture.complete(fetchResponse);
                                         return null;
                                     });
@@ -965,7 +965,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                                                     fetchData.keySet(), badError, kopBroker);
                                             fetchData.keySet().forEach(topicPartition ->
                                                     errorsConsumer.accept(topicPartition,
-                                                        Errors.FETCH_SESSION_TOPIC_ID_ERROR)
+                                                        Errors.KAFKA_STORAGE_ERROR)
                                             );
                                             return null;
                                         }).whenComplete((ignore1, ignore2) -> {
