@@ -730,6 +730,12 @@
       </releases>
     </repository>
 
+<!--    https://github.com/everit-org/json-schema?tab=readme-ov-file#maven-installation-->
+    <repository>
+      <id>jitpack.io</id>
+      <url>https://jitpack.io</url>
+    </repository>
+
   </repositories>
 
   <distributionManagement>
