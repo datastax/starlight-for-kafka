@@ -31,8 +31,8 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedCursor.FindPositionConstraint;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 
 /**
  * given a timestamp find the first message (position) (published) at or before the timestamp.
@@ -120,7 +120,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         checkState(constraint == FindPositionConstraint.SearchAllAvailableEntries);
 
         // return PositionImpl(firstLedgerId, -1)
-        PositionImpl startPosition = managedLedger.getFirstPosition();
+        Position startPosition = managedLedger.getFirstPosition();
         long max = managedLedger.getNumberOfEntries() - 1;
 
         if (startPosition == null) {
@@ -134,12 +134,12 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         op.find();
     }
 
-    public static PositionImpl getFirstValidPosition(ManagedLedgerImpl managedLedger) {
-        PositionImpl firstPosition = managedLedger.getFirstPosition();
+    public static Position getFirstValidPosition(ManagedLedgerImpl managedLedger) {
+        Position firstPosition = managedLedger.getFirstPosition();
         if (firstPosition == null) {
             return null;
         } else {
-            final PositionImpl validPosition = managedLedger.getNextValidPosition(firstPosition);
+            final Position validPosition = managedLedger.getNextValidPosition(firstPosition);
             final NavigableMap<Long, LedgerInfo> ledgers = managedLedger.getLedgersInfo();
             if (!ledgers.containsKey(validPosition.getLedgerId())) {
                 // It's a rare case if getNextValidPosition() returns a position that doesn't belong to the ledgers map
@@ -148,7 +148,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                 if (entry != null && entry.getValue().hasEntries() && entry.getValue().getEntries() > 0) {
                     log.warn("ManagedLedger {} is not empty and doesn't contain {}, return the first position {}:0",
                             managedLedger.getName(), validPosition, entry.getKey());
-                    return PositionImpl.get(entry.getKey(), 0);
+                    return PositionFactory.create(entry.getKey(), 0);
                 }
             }
             return validPosition;

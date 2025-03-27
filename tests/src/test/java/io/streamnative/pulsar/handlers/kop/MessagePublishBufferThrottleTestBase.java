@@ -72,7 +72,6 @@ public abstract class MessagePublishBufferThrottleTestBase extends KopProtocolHa
             });
         }
 
-        Assert.assertEquals(pulsar.getBrokerService().getPausedConnections(), 0);
         Awaitility.await().untilAsserted(() -> Assert.assertEquals(numSend.get(), numMessages));
         producer.close();
         super.internalCleanup();
@@ -85,20 +84,18 @@ public abstract class MessagePublishBufferThrottleTestBase extends KopProtocolHa
         try (MockedStatic<KafkaRequestHandler> utilities = mockStatic(KafkaRequestHandler.class)) {
 
             utilities.when(() -> {
-                KafkaRequestHandler.setPausedConnections(any(PulsarService.class), anyInt());
+                KafkaRequestHandler.setPausedConnections(any(PulsarService.class));
             }).then(invocation -> {
                     pausedCalled.set(true);
-                    int pausedConnections = (int) invocation.getArguments()[0];
-                    pulsar.getBrokerService().pausedConnections(pausedConnections);
+                    pulsar.getBrokerService().recordConnectionPaused();
                     return null;
             });
 
             utilities.when(() -> {
-                KafkaRequestHandler.setPausedConnections(any(PulsarService.class), anyInt());
+                KafkaRequestHandler.setPausedConnections(any(PulsarService.class));
             }).then(invocation -> {
                 resumeCalled.set(true);
-                int pausedConnections = (int) invocation.getArguments()[0];
-                pulsar.getBrokerService().resumedConnections(pausedConnections);
+                pulsar.getBrokerService().recordConnectionResumed();
                 return null;
             });
 

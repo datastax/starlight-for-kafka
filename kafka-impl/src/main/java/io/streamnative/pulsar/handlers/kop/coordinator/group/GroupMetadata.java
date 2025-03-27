@@ -50,7 +50,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.Position;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.pulsar.common.schema.KeyValue;
@@ -167,7 +167,7 @@ public class GroupMetadata {
      */
     @Data
     static class CommitRecordMetadataAndOffset {
-        private final Optional<PositionImpl> appendedPosition;
+        private final Optional<Position> appendedPosition;
         private final OffsetAndMetadata offsetAndMetadata;
 
         public boolean olderThan(CommitRecordMetadataAndOffset that) {

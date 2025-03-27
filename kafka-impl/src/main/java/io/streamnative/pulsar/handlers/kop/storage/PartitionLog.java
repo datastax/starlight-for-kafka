@@ -18,6 +18,7 @@ import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
+import io.netty.util.concurrent.FastThreadLocal;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
@@ -64,9 +65,9 @@ import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.commons.lang3.tuple.Pair;
@@ -92,6 +93,7 @@ import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Analyze result.
@@ -368,7 +370,7 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult error(Errors errors, PartitionLog partitionLog) {
-            return ReadRecordsResult.error(PositionImpl.EARLIEST, errors, partitionLog);
+            return ReadRecordsResult.error(PositionFactory.EARLIEST, errors, partitionLog);
         }
 
         public static ReadRecordsResult error(Position position, Errors errors, PartitionLog partitionLog) {
@@ -767,7 +769,7 @@ public class PartitionLog {
 
     private Position getLastPositionFromEntries(List<Entry> entries) {
         if (entries == null || entries.isEmpty()) {
-            return PositionImpl.EARLIEST;
+            return PositionFactory.EARLIEST;
         }
         return entries.get(entries.size() - 1).getPosition();
     }
@@ -823,7 +825,7 @@ public class PartitionLog {
             public void readEntriesComplete(List<Entry> entries, Object ctx) {
                 if (!entries.isEmpty()) {
                     final Entry lastEntry = entries.get(entries.size() - 1);
-                    final PositionImpl currentPosition = PositionImpl.get(
+                    final Position currentPosition = PositionFactory.create(
                             lastEntry.getLedgerId(), lastEntry.getEntryId());
 
                     try {
@@ -868,13 +870,13 @@ public class PartitionLog {
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);
             }
-        }, null, PositionImpl.LATEST);
+        }, null, PositionFactory.LATEST);
 
         return readFuture;
     }
 
     // commit the offset, so backlog not affect by this cursor.
-    private static void commitOffset(NonDurableCursorImpl cursor, PositionImpl currentPosition) {
+    private static void commitOffset(NonDurableCursorImpl cursor, Position currentPosition) {
         cursor.asyncMarkDelete(currentPosition, new AsyncCallbacks.MarkDeleteCallback() {
             @Override
             public void markDeleteComplete(Object ctx) {
@@ -1148,9 +1150,9 @@ public class PartitionLog {
         }
         log.info("{} numberOfEntries={}", fullPartitionName, numberOfEntries);
         // this is a DUMMY entry with -1
-        PositionImpl firstPosition = managedLedger.getFirstPosition();
+        Position firstPosition = managedLedger.getFirstPosition();
         // look for the first entry with data
-        PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
+        Position nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
 
         fetchOldestAvailableIndexFromTopicReadNext(future, managedLedger, nextValidPosition);
 
@@ -1159,7 +1161,7 @@ public class PartitionLog {
     }
 
     private void fetchOldestAvailableIndexFromTopicReadNext(CompletableFuture<Long> future,
-                                                            ManagedLedgerImpl managedLedger, PositionImpl position) {
+                                                            ManagedLedgerImpl managedLedger, Position position) {
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
             public void readEntryComplete(Entry entry, Object ctx) {
