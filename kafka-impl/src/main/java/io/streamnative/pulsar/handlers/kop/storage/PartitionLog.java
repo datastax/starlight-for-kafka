@@ -16,9 +16,7 @@ package io.streamnative.pulsar.handlers.kop.storage;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Maps;
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.Recycler;
-import io.netty.util.concurrent.FastThreadLocal;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicConsumerManager;
 import io.streamnative.pulsar.handlers.kop.KafkaTopicLookupService;
@@ -87,7 +85,6 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.utils.Time;
-import org.apache.pulsar.broker.service.Topic;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
@@ -138,7 +135,6 @@ public class PartitionLog {
     private final KafkaTopicLookupService kafkaTopicLookupService;
 
     private final List<EntryFilter> entryFilters;
-    private final boolean preciseTopicPublishRateLimitingEnable;
 
     private final ProducerStateManagerSnapshotBuffer producerStateManagerSnapshotBuffer;
 
@@ -172,7 +168,6 @@ public class PartitionLog {
         this.time = time;
         this.topicPartition = topicPartition;
         this.fullPartitionName = fullPartitionName;
-        this.preciseTopicPublishRateLimitingEnable = kafkaConfig.isPreciseTopicPublishRateLimiterEnable();
         this.kafkaTopicLookupService = kafkaTopicLookupService;
         this.producerStateManagerSnapshotBuffer = producerStateManagerSnapshotBuffer;
         this.recoveryExecutor = recoveryExecutor.chooseThread(fullPartitionName);
@@ -898,8 +893,6 @@ public class PartitionLog {
                                  final LogAppendInfo appendInfo,
                                  final EncodeResult encodeResult,
                                  final AppendRecordsContext appendRecordsContext) {
-        checkAndRecordPublishQuota(persistentTopic, appendInfo.validBytes(),
-                appendInfo.numMessages(), appendRecordsContext);
         if (persistentTopic.isSystemTopic()) {
             encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
@@ -942,37 +935,6 @@ public class PartitionLog {
             }
             encodeResult.recycle();
         });
-    }
-
-    private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
-                                              AppendRecordsContext appendRecordsContext) {
-        final boolean isPublishRateExceeded;
-        if (preciseTopicPublishRateLimitingEnable) {
-            boolean isPreciseTopicPublishRateExceeded =
-                    topic.isTopicPublishRateExceeded(numMessages, msgSize);
-            if (isPreciseTopicPublishRateExceeded) {
-                topic.disableCnxAutoRead();
-                return;
-            }
-            isPublishRateExceeded = topic.isBrokerPublishRateExceeded();
-        } else {
-            if (topic.isResourceGroupRateLimitingEnabled()) {
-                final boolean resourceGroupPublishRateExceeded =
-                        topic.isResourceGroupPublishRateExceeded(numMessages, msgSize);
-                if (resourceGroupPublishRateExceeded) {
-                    topic.disableCnxAutoRead();
-                    return;
-                }
-            }
-            isPublishRateExceeded = topic.isPublishRateExceeded();
-        }
-
-        if (isPublishRateExceeded) {
-            ChannelHandlerContext ctx = appendRecordsContext.getCtx();
-            if (ctx != null && ctx.channel().config().isAutoRead()) {
-                ctx.channel().config().setAutoRead(false);
-            }
-        }
     }
 
     /**
