@@ -3,7 +3,7 @@ name: kop tests
 on:
   push:
     branches:
-      - 3.1_ds
+      - 4.0_ds
   pull_request:
 
 
