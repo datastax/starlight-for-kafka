@@ -437,10 +437,10 @@ public abstract class KopProtocolHandlerTestBase {
 
     protected void setupBrokerMocks(PulsarService pulsar) throws Exception {
         // Override default providers with mocked ones
-        doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore(null);
+        doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore(null, null);
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore(null);
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore(null);
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore(null, null);
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore(null, null);
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
@@ -451,7 +451,7 @@ public abstract class KopProtocolHandlerTestBase {
     public static MockZooKeeper createMockZooKeeper(String clusterName, String brokerUrl, String brokerUrlTls,
                                                     String brokerServiceUrl, String brokerServiceUrlTls)
             throws Exception {
-        MockZooKeeper zk = MockZooKeeper.newInstance(MoreExecutors.newDirectExecutorService());
+        MockZooKeeper zk = MockZooKeeper.newInstance();
         List<ACL> dummyAclList = new ArrayList<>(0);
 
         ZkUtils.createFullPathOptimistic(zk, "/ledgers/available/192.168.1.1:" + 5000,
@@ -515,20 +515,20 @@ public abstract class KopProtocolHandlerTestBase {
     private BookKeeperClientFactory mockBookKeeperClientFactory = new BookKeeperClientFactory() {
 
         @Override
-        public BookKeeper create(ServiceConfiguration conf, MetadataStoreExtended store, EventLoopGroup eventLoopGroup,
-                                 Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
-                                 Map<String, Object> ensemblePlacementPolicyProperties) {
+        public CompletableFuture<BookKeeper> create(ServiceConfiguration conf, MetadataStoreExtended store, EventLoopGroup eventLoopGroup,
+                                                    Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
+                                                    Map<String, Object> ensemblePlacementPolicyProperties) {
             // Always return the same instance (so that we don't loose the mock BK content on broker restart
-            return mockBookKeeper;
+            return CompletableFuture.completedFuture(mockBookKeeper);
         }
 
         @Override
-        public BookKeeper create(ServiceConfiguration serviceConfiguration, MetadataStoreExtended store,
-                                 EventLoopGroup eventLoopGroup,
-                                 Optional<Class<? extends EnsemblePlacementPolicy>> optional,
-                                 Map<String, Object> ensemblePlacementPolicyProperties,
-                                 StatsLogger statsLogger) throws IOException {
-            return mockBookKeeper;
+        public CompletableFuture<BookKeeper> create(ServiceConfiguration serviceConfiguration, MetadataStoreExtended store,
+                                                    EventLoopGroup eventLoopGroup,
+                                                    Optional<Class<? extends EnsemblePlacementPolicy>> optional,
+                                                    Map<String, Object> ensemblePlacementPolicyProperties,
+                                                    StatsLogger statsLogger) {
+            return CompletableFuture.completedFuture(mockBookKeeper);
         }
 
         @Override
@@ -907,7 +907,8 @@ public abstract class KopProtocolHandlerTestBase {
         proxyConfiguration.setProxyExtensionsDirectory(extensionsDir);
         proxyConfiguration.setProxyExtensions(Sets.newHashSet("kafka"));
         beforeStartingProxy(proxyConfiguration);
-        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService()));
+        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService(),
+                null));
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createLocalMetadataStore();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createConfigurationMetadataStore();
         pulsarProxy.start();
@@ -989,7 +990,7 @@ public abstract class KopProtocolHandlerTestBase {
                             .getInternalStats(topic)));
 
             Awaitility.await().untilAsserted(() -> {
-                log.debug("Subscriptions {}", topicHandle.getSubscriptions().keys());
+                log.debug("Subscriptions {}", topicHandle.getSubscriptions().keySet());
                         assertTrue(topicHandle.getSubscriptions().isEmpty());
             });
 

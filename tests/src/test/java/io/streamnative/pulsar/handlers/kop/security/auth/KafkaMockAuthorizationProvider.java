@@ -47,7 +47,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public CompletableFuture<Boolean> isSuperUser(String role, ServiceConfiguration serviceConfiguration) {
         return roleAuthorizedAsync(role);
     }
@@ -135,7 +134,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public Boolean allowTenantOperation(String tenantName, String role, TenantOperation operation,
                                         AuthenticationDataSource authenticationData) {
         Assert.assertNotNull(authenticationData);
@@ -151,7 +149,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public Boolean allowNamespaceOperation(NamespaceName namespaceName,
                                            String role,
                                            NamespaceOperation operation,
@@ -170,7 +167,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public Boolean allowNamespacePolicyOperation(NamespaceName namespaceName,
                                                  PolicyName policy,
                                                  PolicyOperation operation,
@@ -194,7 +190,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public Boolean allowTopicOperation(TopicName topicName,
                                        String role,
                                        TopicOperation operation,
@@ -224,7 +219,6 @@ public class KafkaMockAuthorizationProvider implements AuthorizationProvider {
         return roleAuthorizedAsync(role);
     }
 
-    @Override
     public Boolean allowTopicPolicyOperation(
             TopicName topicName,
             String role,

@@ -23,9 +23,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.annotation.Nullable;
 import lombok.Getter;
+import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.pulsar.broker.PulsarService;
+import org.apache.pulsar.broker.namespace.TopicExistsInfo;
 import org.apache.pulsar.broker.resources.MetadataStoreCacheLoader;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.policies.data.loadbalancer.LoadManagerReport;
@@ -152,7 +154,9 @@ public class KopBrokerLookupManager {
     }
 
     protected CompletableFuture<Boolean> internalCheckTopicExists(TopicName topicName) {
-        return this.pulsar.getNamespaceService().checkTopicExists(topicName);
+        return pulsar.getNamespaceService()
+                .checkTopicExists(topicName)
+                .thenApplyAsync(TopicExistsInfo::isExists);
     }
 
 
