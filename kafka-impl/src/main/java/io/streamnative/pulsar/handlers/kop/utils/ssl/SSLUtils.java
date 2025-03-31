@@ -26,9 +26,10 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLEngine;
-
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;

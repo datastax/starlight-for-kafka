@@ -19,7 +19,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.pulsar.broker.service.DisabledPublishRateLimiter;
 import org.apache.pulsar.broker.service.Producer;
-import org.apache.pulsar.broker.service.PublishRateLimiter;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.ProducerImpl;
 import org.testng.Assert;
