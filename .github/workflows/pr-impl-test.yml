@@ -3,7 +3,7 @@ name: kop mvn build check and kafka-impl test
 on:
   push:
     branches:
-      - 3.1_ds
+      - 4.0_ds
   pull_request:
 
 jobs:
