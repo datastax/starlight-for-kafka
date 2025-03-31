@@ -90,7 +90,6 @@ import org.apache.pulsar.broker.service.plugin.EntryFilter;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.protocol.schema.BytesSchemaVersion;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.jetbrains.annotations.NotNull;
 
 /**
  * Analyze result.

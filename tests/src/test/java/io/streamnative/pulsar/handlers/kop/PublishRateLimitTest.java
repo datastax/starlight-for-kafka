@@ -17,8 +17,8 @@ package io.streamnative.pulsar.handlers.kop;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.pulsar.broker.service.DisabledPublishRateLimiter;
 import org.apache.pulsar.broker.service.Producer;
-import org.apache.pulsar.broker.service.PublishRateLimiter;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.impl.ProducerImpl;
 import org.testng.Assert;
@@ -76,7 +76,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService()
             .getTopicIfExists(pulsarTopicName).get().get();
         // (1) verify byte-rate is -1 disabled
-        Assert.assertEquals(topic.getBrokerPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+        Assert.assertEquals(topic.getBrokerPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // enable throttling
         admin.brokers()
@@ -84,7 +84,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
 
         retryStrategically(
             (test) ->
-                (topic.getBrokerPublishRateLimiter() != PublishRateLimiter.DISABLED_RATE_LIMITER),
+                (topic.getBrokerPublishRateLimiter() != DisabledPublishRateLimiter.INSTANCE),
             5,
             200);
 
@@ -93,7 +93,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxMessageRate(),
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxByteRate());
 
-        Assert.assertNotEquals(topic.getBrokerPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+        Assert.assertNotEquals(topic.getBrokerPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         Producer prod = topic.getProducers().values().iterator().next();
         // reset counter
@@ -129,7 +129,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
         admin.brokers()
             .updateDynamicConfiguration("brokerPublisherThrottlingMaxByteRate", Long.toString(0));
         retryStrategically((test) ->
-                topic.getBrokerPublishRateLimiter().equals(PublishRateLimiter.DISABLED_RATE_LIMITER),
+                topic.getBrokerPublishRateLimiter().equals(DisabledPublishRateLimiter.INSTANCE),
             5,
             200);
 
@@ -138,7 +138,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxMessageRate(),
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxByteRate());
 
-        Assert.assertEquals(topic.getBrokerPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+        Assert.assertEquals(topic.getBrokerPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // reset counter
         prod.updateRates();

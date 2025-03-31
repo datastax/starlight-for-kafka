@@ -14,7 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mockStatic;
 
 import java.util.Properties;

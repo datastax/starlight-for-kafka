@@ -33,8 +33,8 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.pulsar.broker.service.DisabledPublishRateLimiter;
 import org.apache.pulsar.broker.service.Producer;
-import org.apache.pulsar.broker.service.PublishRateLimiter;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PublishRate;
@@ -107,7 +107,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService()
                 .getTopicIfExists(topicNameWithPartition).get().get();
         // Verify both broker and topic limiter is disabled
-        assertEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+        assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // Enable throttling
         if (isTopicLevel) {
@@ -117,7 +117,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         }
 
         Awaitility.await().untilAsserted(() -> {
-            assertNotEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+            assertNotEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
         });
 
         Producer prod = topic.getProducers().values().iterator().next();
@@ -149,7 +149,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
         Awaitility.await().untilAsserted(() -> {
-            assertEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+            assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
         });
         // reset counter
         prod.updateRates();
@@ -185,7 +185,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService()
                 .getTopicIfExists(topicNameWithPartition).get().get();
         // Verify both broker and topic limiter is disabled
-        assertEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+        assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // Enable throttling
         if (isTopicLevel) {
@@ -195,7 +195,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         }
 
         Awaitility.await().untilAsserted(() -> {
-            assertNotEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+            assertNotEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
         });
 
         Producer prod = topic.getProducers().values().iterator().next();
@@ -226,7 +226,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
         Awaitility.await().untilAsserted(() -> {
-            assertEquals(topic.getTopicPublishRateLimiter(), PublishRateLimiter.DISABLED_RATE_LIMITER);
+            assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
         });
         // reset counter
         prod.updateRates();
