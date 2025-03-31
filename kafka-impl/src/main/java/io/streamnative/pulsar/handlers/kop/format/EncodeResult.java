@@ -84,8 +84,7 @@ public class EncodeResult {
                                     final Producer producer) {
         final int numBytes = encodedByteBuf.readableBytes();
         producer.updateRates();
-//        producer.updateRates(numMessages, numBytes);
-//        producer.getTopic().incrementPublishCount(numMessages, numBytes);
+        producer.incrementThrottleCount();
 
         final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLoggerForTopicPartition(topicPartition);
 
