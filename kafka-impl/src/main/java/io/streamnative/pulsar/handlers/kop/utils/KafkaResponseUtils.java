@@ -499,14 +499,14 @@ public class KafkaResponseUtils {
                     offsetFetchResponseGroupData.partitionsResponses);
         } else {
             // new clients
-            OffsetFetchResponseData data = new OffsetFetchResponseData();
+            List<OffsetFetchResponseData.OffsetFetchResponseGroup> data = new ArrayList<>();
             for (OffsetFetchResponseGroupData groupData : groups) {
                 OffsetFetchResponseData.OffsetFetchResponseGroup offsetFetchResponseGroup =
                         new OffsetFetchResponseData.OffsetFetchResponseGroup()
                                 .setErrorCode(groupData.errors.code())
                                 .setGroupId(groupData.groupId)
                                 .setTopics(new ArrayList<>());
-                data.groups().add(offsetFetchResponseGroup);
+                data.add(offsetFetchResponseGroup);
                 Set<String> topics = groupData.partitionsResponses.keySet().stream().map(TopicPartition::topic)
                         .collect(Collectors.toSet());
                 topics.forEach(topic -> {
@@ -531,7 +531,7 @@ public class KafkaResponseUtils {
                                     .collect(Collectors.toList())));
                 });
             }
-            return new OffsetFetchResponse(data);
+            return new OffsetFetchResponse(data, (short) version);
         }
 
     }

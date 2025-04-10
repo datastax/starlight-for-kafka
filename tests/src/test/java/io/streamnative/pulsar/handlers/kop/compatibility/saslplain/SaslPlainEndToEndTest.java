@@ -364,7 +364,8 @@ public class SaslPlainEndToEndTest extends KopProtocolHandlerTestBase {
             } catch (ExecutionException e) {
                 if (version == KafkaVersion.DEFAULT
                     || version == KafkaVersion.KAFKA_2_8_0
-                    || version == KafkaVersion.KAFKA_3_0_0) {
+                    || version == KafkaVersion.KAFKA_3_0_0
+                    || version == KafkaVersion.KAFKA_4_0_0) {
                     assertTrue(e.getMessage().contains("Topic " + KAFKA_TOPIC
                             + " not present in metadata after " + metadataTimeoutMs + " ms."));
                 } else {

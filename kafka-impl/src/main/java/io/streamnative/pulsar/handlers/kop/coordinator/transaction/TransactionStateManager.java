@@ -46,7 +46,6 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.protocol.types.SchemaException;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.TransactionResult;
-import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.client.api.MessageId;
 import org.apache.pulsar.client.api.Producer;
@@ -709,7 +708,7 @@ public class TransactionStateManager {
         }
         log.info("Partition {} start loading", partitionId);
 
-        long startTimeMs = SystemTime.SYSTEM.milliseconds();
+        long startTimeMs = Time.SYSTEM.milliseconds();
         return getProducer(topicPartition.partition())
                 .thenComposeAsync(producer ->
                         producer.newMessage().value(null).sendAsync(), scheduler)
@@ -807,7 +806,7 @@ public class TransactionStateManager {
     private void completeLoadedTransactions(TopicPartition topicPartition, long startTimeMs,
                                                                SendTxnMarkersCallback sendTxnMarkersCallback) {
         Map<String, TransactionMetadata> loadedTransactions = transactionMetadataCache.get(topicPartition.partition());
-        long endTimeMs = SystemTime.SYSTEM.milliseconds();
+        long endTimeMs = Time.SYSTEM.milliseconds();
         long totalLoadingTimeMs = endTimeMs - startTimeMs;
         log.info("Finished loading transaction metadata {} from {} in {} milliseconds",
                 loadedTransactions.size(), topicPartition, totalLoadingTimeMs);
@@ -828,7 +827,7 @@ public class TransactionStateManager {
                                                 entry.getKey(),
                                                 TransactionResult.ABORT,
                                                 txnMetadata,
-                                                txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds())
+                                                txnMetadata.prepareComplete(Time.SYSTEM.milliseconds())
                                         ));
                                 break;
                             case PREPARE_COMMIT:
@@ -837,7 +836,7 @@ public class TransactionStateManager {
                                                 entry.getKey(),
                                                 TransactionResult.COMMIT,
                                                 txnMetadata,
-                                                txnMetadata.prepareComplete(SystemTime.SYSTEM.milliseconds())
+                                                txnMetadata.prepareComplete(Time.SYSTEM.milliseconds())
                                         ));
                                 break;
                             default:
