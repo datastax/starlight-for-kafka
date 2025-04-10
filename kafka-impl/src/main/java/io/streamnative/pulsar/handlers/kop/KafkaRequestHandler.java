@@ -2459,10 +2459,12 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return AddPartitionsToTxnRequest.getPartitions(request.data().v3AndBelowTopics());
     }
 
-    private AddPartitionsToTxnResponse buildAddPartitionsToTxnResponseData(int throttleMs, Map<TopicPartition, Errors> errors) {
-        AddPartitionsToTxnResponseData.AddPartitionsToTxnResult result = AddPartitionsToTxnResponse.resultForTransaction(
+    private AddPartitionsToTxnResponse buildAddPartitionsToTxnResponseData(int throttleMs,
+                                                                           Map<TopicPartition, Errors> errors) {
+        AddPartitionsToTxnResponseData.AddPartitionsToTxnResult res = AddPartitionsToTxnResponse.resultForTransaction(
                 AddPartitionsToTxnResponse.V3_AND_BELOW_TXN_ID, errors);
-        AddPartitionsToTxnResponseData data = new AddPartitionsToTxnResponseData().setResultsByTopicV3AndBelow(result.topicResults()).setThrottleTimeMs(throttleMs);
+        AddPartitionsToTxnResponseData data = new AddPartitionsToTxnResponseData()
+                .setResultsByTopicV3AndBelow(res.topicResults()).setThrottleTimeMs(throttleMs);
         return new AddPartitionsToTxnResponse(data);
     }
 
@@ -2490,7 +2492,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response.complete(buildAddPartitionsToTxnResponseData(0, partitionErrors));
                 } else {
                     transactionCoordinator.handleAddPartitionsToTransaction(data.v3AndBelowTransactionalId(),
-                            data.v3AndBelowProducerId(), data.v3AndBelowProducerEpoch(), authorizedPartitions, (errors) -> {
+                            data.v3AndBelowProducerId(), data.v3AndBelowProducerEpoch(),
+                            authorizedPartitions, (errors) -> {
                                 AddPartitionsToTxnResponseData responseData = new AddPartitionsToTxnResponseData();
                                 // TODO: handle PRODUCER_FENCED errors
                                 Map<TopicPartition, Errors> topicPartitionErrorsMap =
