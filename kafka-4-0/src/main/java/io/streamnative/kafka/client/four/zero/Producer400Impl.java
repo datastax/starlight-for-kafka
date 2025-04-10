@@ -17,11 +17,10 @@ import io.streamnative.kafka.client.api.ProduceContext;
 import io.streamnative.kafka.client.api.Producer;
 import io.streamnative.kafka.client.api.ProducerConfiguration;
 import io.streamnative.kafka.client.api.RecordMetadata;
+import java.util.concurrent.Future;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.header.internals.RecordHeader;
-
-import java.util.concurrent.Future;
 
 /**
  * The implementation of Kafka producer 4.0.0.

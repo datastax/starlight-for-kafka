@@ -292,8 +292,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     private int appendConsumerOffsetCommit(ByteBuffer buffer,
                                            long baseOffset,
                                            Map<TopicPartition, Long> offsets) {
-        MemoryRecordsBuilder builder =
-            MemoryRecords.builder(buffer, Compression.of(CompressionType.NONE).build(), TimestampType.LOG_APPEND_TIME, baseOffset);
+        MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, Compression.of(CompressionType.NONE).build(),
+                    TimestampType.LOG_APPEND_TIME, baseOffset);
         List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId,
                 NAMESPACE_PREFIX);
         commitRecords.forEach(builder::append);
