@@ -30,32 +30,37 @@
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-client-api</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-1-0</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-0-10</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-2-8</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-3-0</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>kafka-0-9</artifactId>
-      <version>4.0.3.1-SNAPSHOT</version>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.datastax.oss</groupId>
+      <artifactId>kafka-4-0</artifactId>
+      <version>${project.version}</version>
     </dependency>
   </dependencies>
 </project>

@@ -19,6 +19,7 @@ import io.streamnative.pulsar.handlers.kop.format.EntryFormatter;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.stream.IntStream;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -45,7 +46,7 @@ public class EntryFormatterTest {
         int baseOffset = 0;
         for (int batchSize : batchSizes) {
             MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, RecordBatch.CURRENT_MAGIC_VALUE,
-                    compressionType, TimestampType.LOG_APPEND_TIME, baseOffset);
+                    Compression.of(compressionType).build(), TimestampType.LOG_APPEND_TIME, baseOffset);
             for (int i = 0; i < batchSize; i++) {
                 builder.append(0L, "a".getBytes(), "1".getBytes());
             }
