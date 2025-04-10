@@ -2314,7 +2314,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
             V data = (V) request.data();
             String transactionalId = keyExtractor.apply(data);
             if (!isNoisyRequest(request)) {
-                log.info("handleRequestWithCoordinator {} {} {} {}", request.getClass().getSimpleName(), request,
+                log.info("handleRequestWithCoordinator {} {} {}", request.getClass().getSimpleName(), request,
                         transactionalId);
             }
 
