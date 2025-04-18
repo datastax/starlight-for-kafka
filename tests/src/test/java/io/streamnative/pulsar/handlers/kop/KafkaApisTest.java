@@ -288,7 +288,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                    false, false, false)
+                    false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, EARLIEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -342,7 +342,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         // 2. real test, for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                    false, false, false)
+                    false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -577,7 +577,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
     private ListOffsetsResponse listOffset(long timestamp, TopicPartition tp) throws Exception {
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                        false, false, false)
+                        false)
                 .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, timestamp));
 
         KafkaHeaderAndRequest request = buildRequest(builder);
@@ -1007,7 +1007,7 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         TopicPartition tp = new TopicPartition(topicName, 0);
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
             .forConsumer(false, IsolationLevel.READ_UNCOMMITTED,
-                    false, false, false)
+                    false)
             .setTargetTimes(KafkaCommonTestUtils.newListOffsetTargetTimes(tp, ListOffsetsRequest.LATEST_TIMESTAMP));
 
         KafkaHeaderAndRequest request = buildRequest(builder);

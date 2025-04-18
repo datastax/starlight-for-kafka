@@ -26,11 +26,13 @@ import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerSaslServ
 import io.streamnative.pulsar.handlers.kop.security.oauth.KopOAuthBearerUnsecuredValidatorCallbackHandler;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -47,6 +49,7 @@ import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.feature.Features;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ApiVersionsRequestData;
+import org.apache.kafka.common.message.ApiVersionsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.RecordVersion;
@@ -562,14 +565,16 @@ public class SaslAuthenticator {
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
-            ApiVersionsResponse versionsResponse = new ApiVersionsResponse.Builder().
-                    setApiVersions(ApiVersionsResponse.filterApis(
+            ApiVersionsResponse versionsResponse = ApiVersionsResponse.createApiVersionsResponse(
+                    Duration.ofSeconds(5).toMillisPart(),
+                    ApiVersionsResponse.filterApis(
                             RecordVersion.current(), ApiMessageType.ListenerType.BROKER,
-                            true, false)).
-                    setSupportedFeatures(Features.emptySupportedFeatures()).
-                    setFinalizedFeatures(Collections.emptyMap()).
-                    setFinalizedFeaturesEpoch(ApiVersionsResponse.UNKNOWN_FINALIZED_FEATURES_EPOCH).
-                    build();
+                            true, false),
+                    Features.emptySupportedFeatures(),
+                    Collections.emptyMap(),
+                    ApiVersionsResponse.UNKNOWN_FINALIZED_FEATURES_EPOCH,
+                    false
+            );
             registerRequestLatency.accept(header.apiKey(), startProcessTime);
             sendKafkaResponse(ctx,
                     header,

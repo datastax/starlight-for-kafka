@@ -399,7 +399,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         // Test for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                        false, false, false)
+                        false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -428,7 +428,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
                 .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                        false, false, false)
+                        false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 

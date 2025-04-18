@@ -2139,8 +2139,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 // see "forConsumer" implementation
                 boolean requireMaxTimestamp = request.version() >= 7;
                 ListOffsetsRequest requestForSinglePartition = ListOffsetsRequest.Builder
-                        .forConsumer(false, request.isolationLevel(), requireMaxTimestamp,
-                                false, false)
+                        .forConsumer(false, request.isolationLevel(), requireMaxTimestamp)
                         .setTargetTimes(Collections.singletonList(tsData))
                         .build(request.version());
 

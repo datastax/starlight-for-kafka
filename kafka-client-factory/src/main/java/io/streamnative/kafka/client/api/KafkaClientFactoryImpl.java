@@ -49,8 +49,6 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new Producer300Impl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_9_0_0)) {
             return new Producer009Impl<>(conf);
-        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_4_0_0)) {
-            return new Producer400Impl<>(conf);
         }
         throw new IllegalArgumentException("No producer for version: " + kafkaVersion);
     }
@@ -67,8 +65,6 @@ public class KafkaClientFactoryImpl implements KafkaClientFactory {
             return new Consumer300Impl<>(conf);
         } else if (kafkaVersion.equals(KafkaVersion.KAFKA_0_9_0_0)) {
             return new Consumer009Impl<>(conf);
-        } else if (kafkaVersion.equals(KafkaVersion.KAFKA_4_0_0)) {
-            return new Consumer400Impl<>(conf);
         }
         throw new IllegalArgumentException("No consumer for version: " + kafkaVersion);
     }

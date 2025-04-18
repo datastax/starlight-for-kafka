@@ -214,16 +214,19 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 Unpooled.buffer(20),
                 null);
 
-        ApiVersionsResponse apiVersionsResponse = new ApiVersionsResponse.Builder().
-                setApiVersions(ApiVersionsResponse.filterApis(
+        ApiVersionsResponse versionsResponse = ApiVersionsResponse.createApiVersionsResponse(
+                Duration.ofSeconds(5).toMillisPart(),
+                ApiVersionsResponse.filterApis(
                         RecordVersion.current(), ApiMessageType.ListenerType.BROKER,
-                        true, false)).
-                setSupportedFeatures(Features.emptySupportedFeatures()).
-                setFinalizedFeatures(Collections.emptyMap()).
-                setFinalizedFeaturesEpoch(ApiVersionsResponse.UNKNOWN_FINALIZED_FEATURES_EPOCH).
-                build();
+                        true, false),
+                Features.emptySupportedFeatures(),
+                Collections.emptyMap(),
+                ApiVersionsResponse.UNKNOWN_FINALIZED_FEATURES_EPOCH,
+                false
+        );
+
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
-                kopRequest, apiVersionsResponse);
+                kopRequest, versionsResponse);
 
         // 1. serialize response into ByteBuf
         ByteBuf serializedResponse = KafkaCommandDecoder.responseToByteBuf(kopResponse.getResponse(), kopRequest, true);
@@ -236,7 +239,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         ApiVersionsResponse parsedResponse = ApiVersionsResponse.parse(
                 byteBuffer, kopResponse.getApiVersion());
 
-        assertEquals(parsedResponse.data().apiKeys().size(), apiVersionsResponse.data().apiKeys().size());
+        assertEquals(parsedResponse.data().apiKeys().size(), versionsResponse.data().apiKeys().size());
     }
 
     @Test
@@ -647,7 +650,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
         final ListOffsetsRequest request =
                 ListOffsetsRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
-                                false, false, false)
+                                false)
                         .setTargetTimes(KafkaCommonTestUtils
                                 .newListOffsetTargetTimes(topicPartition, ListOffsetsRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());
