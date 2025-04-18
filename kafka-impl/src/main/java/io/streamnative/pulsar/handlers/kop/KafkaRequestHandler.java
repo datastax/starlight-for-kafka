@@ -90,7 +90,7 @@ import org.apache.bookkeeper.mledger.AsyncCallbacks;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.commons.collections4.ListUtils;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.commons.lang3.tuple.Pair;
@@ -847,7 +847,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     public static void setPausedConnections(PulsarService pulsarService, int numConnections) {
-        pulsarService.getBrokerService().pausedConnections(numConnections);
+//        pulsarService.getBrokerService().pausedConnections(numConnections);
     }
 
     private void completeSendOperationForThrottling(long msgSize) {
@@ -865,7 +865,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     public static void resumePausedConnections(PulsarService pulsarService, int numConnections) {
-        pulsarService.getBrokerService().resumedConnections(numConnections);
+//        pulsarService.getBrokerService().resumedConnections(numConnections);
     }
 
     @Override
@@ -1286,7 +1286,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             }
             PersistentTopic perTopic = perTopicOpt.get();
             ManagedLedgerImpl managedLedger = (ManagedLedgerImpl) perTopic.getManagedLedger();
-            PositionImpl lac = (PositionImpl) managedLedger.getLastConfirmedEntry();
+            ImmutablePositionImpl lac = (ImmutablePositionImpl) managedLedger.getLastConfirmedEntry();
             if (lac == null) {
                 log.error("[{}] Unexpected LastConfirmedEntry for topic {}, managed ledger: {}",
                         ctx, perTopic.getName(), managedLedger.getName());
@@ -1294,7 +1294,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 return;
             }
             if (timestamp == ListOffsetsRequest.LATEST_TIMESTAMP) {
-                PositionImpl position = (PositionImpl) managedLedger.getLastConfirmedEntry();
+                ImmutablePositionImpl position = (ImmutablePositionImpl) managedLedger.getLastConfirmedEntry();
                 if (log.isDebugEnabled()) {
                     log.debug("Get latest position for topic {} time {}. result: {}",
                         perTopic.getName(), timestamp, position);
@@ -1303,7 +1303,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 partitionData.complete(Pair.of(Errors.NONE, offset));
 
             } else if (timestamp == ListOffsetsRequest.EARLIEST_TIMESTAMP) {
-                PositionImpl position = OffsetFinder.getFirstValidPosition(managedLedger);
+                Position position = OffsetFinder.getFirstValidPosition(managedLedger);
                 if (position == null) {
                     log.error("[{}] Failed to find first valid position for topic {}", ctx, perTopic.getName());
                     partitionData.complete(Pair.of(Errors.UNKNOWN_SERVER_ERROR, -1L));
@@ -1347,7 +1347,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private void fetchOffsetByTimestamp(CompletableFuture<Pair<Errors, Long>> partitionData,
                                         ManagedLedgerImpl managedLedger,
-                                        PositionImpl lac,
+                                        ImmutablePositionImpl lac,
                                         long timestamp,
                                         String topic) {
         // find with real wanted timestamp
@@ -1356,7 +1356,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         offsetFinder.findMessages(timestamp, new AsyncCallbacks.FindEntryCallback() {
             @Override
             public void findEntryComplete(Position position, Object ctx) {
-                PositionImpl finalPosition;
+                Position finalPosition;
                 if (position == null) {
                     finalPosition = OffsetFinder.getFirstValidPosition(managedLedger);
                     if (finalPosition == null) {
@@ -1366,7 +1366,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         return;
                     }
                 } else {
-                    finalPosition = (PositionImpl) position;
+                    finalPosition = (ImmutablePositionImpl) position;
                 }
 
 

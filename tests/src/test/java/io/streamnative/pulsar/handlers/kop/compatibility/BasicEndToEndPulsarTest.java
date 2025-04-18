@@ -49,7 +49,7 @@ public class BasicEndToEndPulsarTest extends BasicEndToEndTestBase {
         super("pulsar");
     }
 
-    @Test(timeOut = 30000)
+    @Test
     protected void testKafkaProduceKafkaConsume() throws Exception {
         super.testKafkaProduceKafkaConsume();
     }

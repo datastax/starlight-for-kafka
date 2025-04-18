@@ -32,8 +32,8 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.internals.BrokerSecurityConfigs;
 import org.apache.kafka.common.config.types.Password;
-import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
-import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
+//import org.apache.pulsar.common.util.NettyServerSslContextBuilder;
+//import org.apache.pulsar.common.util.keystoretls.NettySSLContextAutoRefreshBuilder;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 
 /**
@@ -358,80 +358,80 @@ public class SSLUtils {
         return ssl;
     }
 
-    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(
-            KafkaServiceConfiguration serviceConfig) {
-        try {
-            SslProvider sslProvider = null;
-            if (serviceConfig.getTlsProvider() != null) {
-                sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
-            }
-
-            return new NettyServerSslContextBuilder(
-                    sslProvider,
-                    serviceConfig.isTlsAllowInsecureConnection(),
-                    serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
-                    serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
-                    serviceConfig.getTlsProtocols(),
-                    serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
-                    serviceConfig.getTlsCertRefreshCheckDurationSec());
-        } catch (Throwable t) {
-            throw new RuntimeException(t);
-        }
-    }
+//    public static NettyServerSslContextBuilder buildNettyServerSslContextBuilder(
+//            KafkaServiceConfiguration serviceConfig) {
+//        try {
+//            SslProvider sslProvider = null;
+//            if (serviceConfig.getTlsProvider() != null) {
+//                sslProvider = SslProvider.valueOf(serviceConfig.getTlsProvider());
+//            }
+//
+//            return new NettyServerSslContextBuilder(
+//                    sslProvider,
+//                    serviceConfig.isTlsAllowInsecureConnection(),
+//                    serviceConfig.getTlsTrustCertsFilePath(), serviceConfig.getTlsCertificateFilePath(),
+//                    serviceConfig.getTlsKeyFilePath(), serviceConfig.getTlsCiphers(),
+//                    serviceConfig.getTlsProtocols(),
+//                    serviceConfig.isTlsRequireTrustedClientCertOnConnect(),
+//                    serviceConfig.getTlsCertRefreshCheckDurationSec());
+//        } catch (Throwable t) {
+//            throw new RuntimeException(t);
+//        }
+//    }
 
 
     public static final class ServerSideTLSSupport {
-        private final SslContextFactory.Server sslContextFactory;
-        private final NettyServerSslContextBuilder serverSslCtxRefresher;
-        private final boolean tlsEnabledWithKeyStore;
-        private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
+//        private final SslContextFactory.Server sslContextFactory;
+//        private final NettyServerSslContextBuilder serverSslCtxRefresher;
+//        private final boolean tlsEnabledWithKeyStore;
+//        private NettySSLContextAutoRefreshBuilder serverSSLContextAutoRefreshBuilder;
 
         public ServerSideTLSSupport(KafkaServiceConfiguration kafkaConfig) {
-            this.tlsEnabledWithKeyStore = kafkaConfig.isTlsEnabledWithKeyStore();
-            if (!StringUtils.isEmpty(kafkaConfig.getKopSslKeystoreLocation())) {
-                // KOP mode
-                sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
-                serverSSLContextAutoRefreshBuilder = null;
-                serverSslCtxRefresher = null;
-            } else if (tlsEnabledWithKeyStore) { // Pulsar mode - tlsEnabledWithKeyStore=true
-                serverSSLContextAutoRefreshBuilder = new NettySSLContextAutoRefreshBuilder(
-                        kafkaConfig.getTlsProvider(),
-                        kafkaConfig.getTlsKeyStoreType(),
-                        kafkaConfig.getTlsKeyStore(),
-                        kafkaConfig.getTlsKeyStorePassword(),
-                        kafkaConfig.isTlsAllowInsecureConnection(),
-                        kafkaConfig.getTlsTrustStoreType(),
-                        kafkaConfig.getTlsTrustStore(),
-                        kafkaConfig.getTlsTrustStorePassword(),
-                        kafkaConfig.isTlsRequireTrustedClientCertOnConnect(),
-                        kafkaConfig.getTlsCiphers(),
-                        kafkaConfig.getTlsProtocols(),
-                        kafkaConfig.getTlsCertRefreshCheckDurationSec());
-                serverSslCtxRefresher = null;
-                sslContextFactory = null;
-            } else { // Pulsar mode - tlsEnabledWithKeyStore=false
-                sslContextFactory = null;
-                serverSSLContextAutoRefreshBuilder = null;
-                serverSslCtxRefresher = SSLUtils.buildNettyServerSslContextBuilder(kafkaConfig);
-            }
+//            this.tlsEnabledWithKeyStore = kafkaConfig.isTlsEnabledWithKeyStore();
+//            if (!StringUtils.isEmpty(kafkaConfig.getKopSslKeystoreLocation())) {
+//                // KOP mode
+//                sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
+//                serverSSLContextAutoRefreshBuilder = null;
+//                serverSslCtxRefresher = null;
+//            } else if (tlsEnabledWithKeyStore) { // Pulsar mode - tlsEnabledWithKeyStore=true
+//                serverSSLContextAutoRefreshBuilder = new NettySSLContextAutoRefreshBuilder(
+//                        kafkaConfig.getTlsProvider(),
+//                        kafkaConfig.getTlsKeyStoreType(),
+//                        kafkaConfig.getTlsKeyStore(),
+//                        kafkaConfig.getTlsKeyStorePassword(),
+//                        kafkaConfig.isTlsAllowInsecureConnection(),
+//                        kafkaConfig.getTlsTrustStoreType(),
+//                        kafkaConfig.getTlsTrustStore(),
+//                        kafkaConfig.getTlsTrustStorePassword(),
+//                        kafkaConfig.isTlsRequireTrustedClientCertOnConnect(),
+//                        kafkaConfig.getTlsCiphers(),
+//                        kafkaConfig.getTlsProtocols(),
+//                        kafkaConfig.getTlsCertRefreshCheckDurationSec());
+//                serverSslCtxRefresher = null;
+//                sslContextFactory = null;
+//            } else { // Pulsar mode - tlsEnabledWithKeyStore=false
+//                sslContextFactory = null;
+//                serverSSLContextAutoRefreshBuilder = null;
+//                serverSslCtxRefresher = SSLUtils.buildNettyServerSslContextBuilder(kafkaConfig);
+//            }
         }
 
         public void addTlsHandler(SocketChannel ch){
-            try {
-                if (sslContextFactory != null) {
-                    ch.pipeline().addLast(TLS_HANDLER, new SslHandler(createSslEngine(sslContextFactory)));
-                } else if (serverSslCtxRefresher != null) {
-                    SslContext sslContext = serverSslCtxRefresher.get();
-                    if (sslContext != null) {
-                        ch.pipeline().addLast(TLS_HANDLER, sslContext.newHandler(ch.alloc()));
-                    }
-                } else if (tlsEnabledWithKeyStore && serverSSLContextAutoRefreshBuilder != null) {
-                    ch.pipeline().addLast(TLS_HANDLER,
-                            new SslHandler(serverSSLContextAutoRefreshBuilder.get().createSSLEngine()));
-                }
-            } catch (Exception err) {
-                throw new RuntimeException(err);
-            }
+//            try {
+//                if (sslContextFactory != null) {
+//                    ch.pipeline().addLast(TLS_HANDLER, new SslHandler(createSslEngine(sslContextFactory)));
+//                } else if (serverSslCtxRefresher != null) {
+//                    SslContext sslContext = serverSslCtxRefresher.get();
+//                    if (sslContext != null) {
+//                        ch.pipeline().addLast(TLS_HANDLER, sslContext.newHandler(ch.alloc()));
+//                    }
+//                } else if (tlsEnabledWithKeyStore && serverSSLContextAutoRefreshBuilder != null) {
+//                    ch.pipeline().addLast(TLS_HANDLER,
+//                            new SslHandler(serverSSLContextAutoRefreshBuilder.get().createSSLEngine()));
+//                }
+//            } catch (Exception err) {
+//                throw new RuntimeException(err);
+//            }
         }
 
     }

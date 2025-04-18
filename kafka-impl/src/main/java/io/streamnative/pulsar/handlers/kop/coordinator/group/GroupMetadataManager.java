@@ -62,7 +62,7 @@ import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.common.util.MathUtils;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
@@ -484,7 +484,7 @@ public class GroupMetadataManager {
                     filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
                         CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
                             new CommitRecordMetadataAndOffset(
-                                Optional.of(new PositionImpl(lastMessageId.getLedgerId(), lastMessageId.getEntryId())),
+                                Optional.of(new ImmutablePositionImpl(lastMessageId.getLedgerId(), lastMessageId.getEntryId())),
                                 offsetAndMetadata
                             );
                         if (isTxnOffsetCommit) {
@@ -715,7 +715,7 @@ public class GroupMetadataManager {
                     pendingOffsets.remove(batch.producerId());
                 }
             } else {
-                Optional<PositionImpl> batchBaseOffset = Optional.empty();
+                Optional<ImmutablePositionImpl> batchBaseOffset = Optional.empty();
                 for (Record record : batch) {
                     if (!record.hasKey()) {
                         // It throws an exception here in Kafka. However, the exception will be caught and processed
@@ -724,7 +724,7 @@ public class GroupMetadataManager {
                         continue;
                     }
                     if (batchBaseOffset.isEmpty()) {
-                        batchBaseOffset = Optional.of(new PositionImpl(0, record.offset()));
+                        batchBaseOffset = Optional.of(new ImmutablePositionImpl(0, record.offset()));
                     }
                     BaseKey bk = readMessageKey(record.key());
                     if (log.isTraceEnabled()) {

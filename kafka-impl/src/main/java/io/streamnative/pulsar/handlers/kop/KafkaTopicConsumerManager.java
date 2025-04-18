@@ -28,13 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.bookkeeper.mledger.*;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -260,7 +257,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
 
             // get previous position, because NonDurableCursor is read from next position.
-            final PositionImpl previous = ((ManagedLedgerImpl) ledger).getPreviousPosition((PositionImpl) position);
+            final Position previous = ((ManagedLedgerImpl) ledger).getPreviousPosition((ImmutablePositionImpl) position);
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
                         description, cursorName, offset, position, previous);
@@ -299,7 +296,7 @@ public class KafkaTopicConsumerManager implements Closeable {
     /**
      * Returns the position in the ManagedLedger for the given offset.
      * @param offset
-     * @return null if not found, PositionImpl.LATEST if the offset matches the end of the topic
+     * @return null if not found, ImmutablePositionImpl.LATEST if the offset matches the end of the topic
      */
     public CompletableFuture<Position> findPositionForIndex(Long offset) {
         if (closed.get()) {
@@ -309,7 +306,7 @@ public class KafkaTopicConsumerManager implements Closeable {
         final ManagedLedger ledger = topic.getManagedLedger();
 
         return MessageMetadataUtils.asyncFindPosition(ledger, offset, skipMessagesWithoutIndex).thenApply(position -> {
-            PositionImpl lastConfirmedEntry = (PositionImpl) ledger.getLastConfirmedEntry();
+            ImmutablePositionImpl lastConfirmedEntry = (ImmutablePositionImpl) ledger.getLastConfirmedEntry();
             log.info("Found position {} for offset {}, lastConfirmedEntry {}", position, offset, lastConfirmedEntry);
             if (position == null) {
                 return null;
@@ -318,7 +315,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     && Objects.equals(lastConfirmedEntry.getNext(), position)) {
                 log.debug("Found position {} for offset {}, LAC {} -> RETURN LATEST",
                         position, offset, lastConfirmedEntry);
-                return PositionImpl.LATEST;
+                return PositionFactory.LATEST;
             } else {
                 return position;
             }

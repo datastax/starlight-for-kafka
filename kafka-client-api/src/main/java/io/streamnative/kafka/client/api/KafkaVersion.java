@@ -38,14 +38,14 @@ public enum KafkaVersion {
         if (this.equals(DEFAULT)) {
             return "org.apache.kafka.common.serialization.StringSerializer";
         }
-        return String.format("org.apache.kafka%s.common.serialization.StringSerializer", name);
+        return String.format("org.apache.kafka.common.serialization.StringSerializer", name);
     }
 
     public String getStringDeserializer() {
         if (this.equals(DEFAULT)) {
             return "org.apache.kafka.common.serialization.StringDeserializer";
         }
-        return String.format("org.apache.kafka%s.common.serialization.StringDeserializer", name);
+        return String.format("org.apache.kafka.common.serialization.StringDeserializer", name);
     }
 
     // Because there is no header in ProducerRecord before 0.11.x.

@@ -24,15 +24,11 @@ import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.AsyncCallbacks;
+import org.apache.bookkeeper.mledger.*;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
 import org.apache.bookkeeper.mledger.ManagedCursor.FindPositionConstraint;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 
 /**
  * given a timestamp find the first message (position) (published) at or before the timestamp.
@@ -119,8 +115,8 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                                         FindEntryCallback callback, Object ctx) {
         checkState(constraint == FindPositionConstraint.SearchAllAvailableEntries);
 
-        // return PositionImpl(firstLedgerId, -1)
-        PositionImpl startPosition = managedLedger.getFirstPosition();
+        // return ImmutablePositionImpl(firstLedgerId, -1)
+        Position startPosition = managedLedger.getFirstPosition();
         long max = managedLedger.getNumberOfEntries() - 1;
 
         if (startPosition == null) {
@@ -134,12 +130,12 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
         op.find();
     }
 
-    public static PositionImpl getFirstValidPosition(ManagedLedgerImpl managedLedger) {
-        PositionImpl firstPosition = managedLedger.getFirstPosition();
+    public static Position getFirstValidPosition(ManagedLedgerImpl managedLedger) {
+        Position firstPosition = managedLedger.getFirstPosition();
         if (firstPosition == null) {
             return null;
         } else {
-            final PositionImpl validPosition = managedLedger.getNextValidPosition(firstPosition);
+            final Position validPosition = managedLedger.getNextValidPosition(firstPosition);
             final NavigableMap<Long, LedgerInfo> ledgers = managedLedger.getLedgersInfo();
             if (!ledgers.containsKey(validPosition.getLedgerId())) {
                 // It's a rare case if getNextValidPosition() returns a position that doesn't belong to the ledgers map
@@ -148,7 +144,7 @@ public class OffsetFinder implements AsyncCallbacks.FindEntryCallback {
                 if (entry != null && entry.getValue().hasEntries() && entry.getValue().getEntries() > 0) {
                     log.warn("ManagedLedger {} is not empty and doesn't contain {}, return the first position {}:0",
                             managedLedger.getName(), validPosition, entry.getKey());
-                    return PositionImpl.get(entry.getKey(), 0);
+                    return new ImmutablePositionImpl(entry.getKey(), 0);
                 }
             }
             return validPosition;

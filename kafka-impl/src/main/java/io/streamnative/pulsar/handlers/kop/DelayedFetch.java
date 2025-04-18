@@ -22,7 +22,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.PositionFactory;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.FetchRequestData;
 
@@ -112,12 +113,12 @@ public class DelayedFetch extends DelayedOperation {
             if (partitionLog == null) {
                 return true;
             }
-            PositionImpl currLastPosition = (PositionImpl) partitionLog.getLastPosition();
-            if (currLastPosition.compareTo(PositionImpl.EARLIEST) == 0) {
+            ImmutablePositionImpl currLastPosition = (ImmutablePositionImpl) partitionLog.getLastPosition();
+            if (currLastPosition.compareTo(PositionFactory.EARLIEST) == 0) {
                 HAS_ERROR_UPDATER.set(this, true);
                 return forceComplete();
             }
-            PositionImpl lastPosition = (PositionImpl) result.lastPosition();
+            ImmutablePositionImpl lastPosition = (ImmutablePositionImpl) result.lastPosition();
             if (currLastPosition.compareTo(lastPosition) > 0) {
                 int diffBytes = (int) (fetchMaxBytes - bytesReadable);
                 if (diffBytes != fetchMaxBytes) {

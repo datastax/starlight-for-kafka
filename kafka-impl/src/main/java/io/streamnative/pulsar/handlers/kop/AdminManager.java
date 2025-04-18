@@ -40,7 +40,8 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.mledger.Position;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.PositionFactory;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.InvalidPartitionsException;
@@ -291,7 +292,7 @@ public class AdminManager {
             errorConsumer.accept("Cannot find position");
             return;
         }
-        if (position.equals(PositionImpl.LATEST)) {
+        if (position.equals(PositionFactory.LATEST)) {
             admin.topics()
                 .truncateAsync(topicToDelete)
                 .thenRun(() -> {

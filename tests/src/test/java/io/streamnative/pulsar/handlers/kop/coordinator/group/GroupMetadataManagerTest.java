@@ -62,7 +62,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -770,13 +770,13 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         committedOffsetsFirstProducer.forEach((tp, offset) -> {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
-                Optional.of(new PositionImpl(0, firstProduceRecordOffset)),
+                Optional.of(new ImmutablePositionImpl(0, firstProduceRecordOffset)),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedPosition));
         });
         committedOffsetsSecondProducer.forEach((tp, offset) -> {
             assertEquals(Optional.of(offset), group.offset(tp, NAMESPACE_PREFIX).map(OffsetAndMetadata::offset));
             assertEquals(
-                Optional.of(new PositionImpl(0, secondProduceRecordOffset)),
+                Optional.of(new ImmutablePositionImpl(0, secondProduceRecordOffset)),
                 group.offsetWithRecordMetadata(tp).flatMap(CommitRecordMetadataAndOffset::appendedPosition));
         });
 

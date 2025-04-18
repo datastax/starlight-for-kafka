@@ -15,14 +15,12 @@ package io.streamnative.pulsar.handlers.kop.utils;
 
 import com.google.common.base.Predicate;
 import java.util.Optional;
+
+import org.apache.bookkeeper.mledger.*;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.FindEntryCallback;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.ReadEntryCallback;
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.PositionBound;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 
 /**
  * Used to find Entry/Offset from ManagedLedger.
@@ -31,7 +29,7 @@ import org.apache.bookkeeper.mledger.impl.PositionImpl;
  */
 class OpFindNewestEntry implements ReadEntryCallback {
     private final ManagedLedgerImpl managedLedger;
-    private final PositionImpl startPosition;
+    private final Position startPosition;
     private final FindEntryCallback callback;
     private final Predicate<Entry> condition;
     private final Object ctx;
@@ -40,13 +38,13 @@ class OpFindNewestEntry implements ReadEntryCallback {
         checkFirst, checkLast, searching
     }
 
-    PositionImpl searchPosition;
+    Position searchPosition;
     long min;
     long max;
     Position lastMatchedPosition = null;
     State state;
 
-    public OpFindNewestEntry(ManagedLedgerImpl managedLedger, PositionImpl startPosition, Predicate<Entry> condition,
+    public OpFindNewestEntry(ManagedLedgerImpl managedLedger, Position startPosition, Predicate<Entry> condition,
                              long numberOfEntries, FindEntryCallback callback, Object ctx) {
         this.managedLedger = managedLedger;
         this.startPosition = startPosition;

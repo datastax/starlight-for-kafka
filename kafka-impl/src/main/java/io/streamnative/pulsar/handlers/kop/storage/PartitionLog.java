@@ -58,15 +58,10 @@ import lombok.experimental.Accessors;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
-import org.apache.bookkeeper.mledger.AsyncCallbacks;
-import org.apache.bookkeeper.mledger.Entry;
-import org.apache.bookkeeper.mledger.ManagedCursor;
-import org.apache.bookkeeper.mledger.ManagedLedger;
-import org.apache.bookkeeper.mledger.ManagedLedgerException;
-import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.*;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.commons.compress.utils.Lists;
 import org.apache.commons.lang3.tuple.Pair;
@@ -368,7 +363,7 @@ public class PartitionLog {
         }
 
         public static ReadRecordsResult error(Errors errors, PartitionLog partitionLog) {
-            return ReadRecordsResult.error(PositionImpl.EARLIEST, errors, partitionLog);
+            return ReadRecordsResult.error(PositionFactory.EARLIEST, errors, partitionLog);
         }
 
         public static ReadRecordsResult error(Position position, Errors errors, PartitionLog partitionLog) {
@@ -767,7 +762,7 @@ public class PartitionLog {
 
     private Position getLastPositionFromEntries(List<Entry> entries) {
         if (entries == null || entries.isEmpty()) {
-            return PositionImpl.EARLIEST;
+            return PositionFactory.EARLIEST;
         }
         return entries.get(entries.size() - 1).getPosition();
     }
@@ -823,7 +818,7 @@ public class PartitionLog {
             public void readEntriesComplete(List<Entry> entries, Object ctx) {
                 if (!entries.isEmpty()) {
                     final Entry lastEntry = entries.get(entries.size() - 1);
-                    final PositionImpl currentPosition = PositionImpl.get(
+                    final ImmutablePositionImpl currentPosition = new ImmutablePositionImpl(
                             lastEntry.getLedgerId(), lastEntry.getEntryId());
 
                     try {
@@ -868,13 +863,13 @@ public class PartitionLog {
                         MathUtils.elapsedNanos(startReadingMessagesNanos), TimeUnit.NANOSECONDS);
                 readFuture.completeExceptionally(exception);
             }
-        }, null, PositionImpl.LATEST);
+        }, null, PositionFactory.LATEST);
 
         return readFuture;
     }
 
     // commit the offset, so backlog not affect by this cursor.
-    private static void commitOffset(NonDurableCursorImpl cursor, PositionImpl currentPosition) {
+    private static void commitOffset(NonDurableCursorImpl cursor, ImmutablePositionImpl currentPosition) {
         cursor.asyncMarkDelete(currentPosition, new AsyncCallbacks.MarkDeleteCallback() {
             @Override
             public void markDeleteComplete(Object ctx) {
@@ -946,31 +941,31 @@ public class PartitionLog {
                                               AppendRecordsContext appendRecordsContext) {
         final boolean isPublishRateExceeded;
         if (preciseTopicPublishRateLimitingEnable) {
-            boolean isPreciseTopicPublishRateExceeded =
-                    topic.isTopicPublishRateExceeded(numMessages, msgSize);
-            if (isPreciseTopicPublishRateExceeded) {
-                topic.disableCnxAutoRead();
-                return;
-            }
-            isPublishRateExceeded = topic.isBrokerPublishRateExceeded();
+//            boolean isPreciseTopicPublishRateExceeded =
+//                    topic.isTopicPublishRateExceeded(numMessages, msgSize);
+//            if (isPreciseTopicPublishRateExceeded) {
+//                topic.disableCnxAutoRead();
+//                return;
+//            }
+//            isPublishRateExceeded = topic.isBrokerPublishRateExceeded();
         } else {
-            if (topic.isResourceGroupRateLimitingEnabled()) {
-                final boolean resourceGroupPublishRateExceeded =
-                        topic.isResourceGroupPublishRateExceeded(numMessages, msgSize);
-                if (resourceGroupPublishRateExceeded) {
-                    topic.disableCnxAutoRead();
-                    return;
-                }
-            }
-            isPublishRateExceeded = topic.isPublishRateExceeded();
+//            if (topic.isResourceGroupRateLimitingEnabled()) {
+//                final boolean resourceGroupPublishRateExceeded =
+//                        topic.isResourceGroupPublishRateExceeded(numMessages, msgSize);
+//                if (resourceGroupPublishRateExceeded) {
+//                    topic.disableCnxAutoRead();
+//                    return;
+//                }
+//            }
+            isPublishRateExceeded = false;
         }
 
-        if (isPublishRateExceeded) {
-            ChannelHandlerContext ctx = appendRecordsContext.getCtx();
-            if (ctx != null && ctx.channel().config().isAutoRead()) {
-                ctx.channel().config().setAutoRead(false);
-            }
-        }
+//        if (isPublishRateExceeded) {
+//            ChannelHandlerContext ctx = appendRecordsContext.getCtx();
+//            if (ctx != null && ctx.channel().config().isAutoRead()) {
+//                ctx.channel().config().setAutoRead(false);
+//            }
+//        }
     }
 
     /**
@@ -1148,9 +1143,9 @@ public class PartitionLog {
         }
         log.info("{} numberOfEntries={}", fullPartitionName, numberOfEntries);
         // this is a DUMMY entry with -1
-        PositionImpl firstPosition = managedLedger.getFirstPosition();
+        Position firstPosition = managedLedger.getFirstPosition();
         // look for the first entry with data
-        PositionImpl nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
+        Position nextValidPosition = managedLedger.getNextValidPosition(firstPosition);
 
         fetchOldestAvailableIndexFromTopicReadNext(future, managedLedger, nextValidPosition);
 
@@ -1159,7 +1154,7 @@ public class PartitionLog {
     }
 
     private void fetchOldestAvailableIndexFromTopicReadNext(CompletableFuture<Long> future,
-                                                            ManagedLedgerImpl managedLedger, PositionImpl position) {
+                                                            ManagedLedgerImpl managedLedger, Position position) {
         managedLedger.asyncReadEntry(position, new AsyncCallbacks.ReadEntryCallback() {
             @Override
             public void readEntryComplete(Entry entry, Object ctx) {

@@ -26,7 +26,7 @@ import org.apache.bookkeeper.mledger.ManagedLedger;
 import org.apache.bookkeeper.mledger.ManagedLedgerException;
 import org.apache.bookkeeper.mledger.Position;
 import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
-import org.apache.bookkeeper.mledger.impl.PositionImpl;
+import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.pulsar.broker.intercept.ManagedLedgerInterceptorImpl;
 import org.apache.pulsar.common.api.proto.BrokerEntryMetadata;
 import org.apache.pulsar.common.api.proto.MessageMetadata;
@@ -66,7 +66,7 @@ public class MessageMetadataUtils {
     }
 
     public static CompletableFuture<Long> getOffsetOfPosition(ManagedLedgerImpl managedLedger,
-                                                              PositionImpl position,
+                                                              Position position,
                                                               boolean needCheckMore,
                                                               long timestamp,
                                                               boolean skipMessagesWithoutIndex) {
