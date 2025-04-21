@@ -28,69 +28,69 @@ import org.testng.annotations.Test;
 @Slf4j
 public class DockerTest {
 
-    private static final String IMAGE_LUNASTREAMING31 = "datastax/lunastreaming:3.1";
-    private static final String IMAGE_PULSAR31 = "apachepulsar/pulsar:3.1.1";
+    private static final String IMAGE_LUNASTREAMING40 = "datastax/lunastreaming:4.0_3.2";
+    private static final String IMAGE_PULSAR40 = "apachepulsar/pulsar:4.0.4";
     private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
     private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
 
     @Test
     public void test() throws Exception {
-        test("pulsar:9092", false, IMAGE_PULSAR31);
+        test("pulsar:9092", false, IMAGE_PULSAR40);
     }
 
     @Test
     public void testProxy() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_PULSAR31);
+        test("pulsarproxy:9092", true, IMAGE_PULSAR40);
     }
 
     @Test
     public void testAvro() throws Exception {
-        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_PULSAR31);
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_PULSAR40);
     }
 
     @Test
     public void testAvroProxy() throws Exception {
-        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR31);
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_PULSAR40);
     }
 
     //    @Test
     public void testLunaStreaming() throws Exception {
-        test("pulsar:9092", false, IMAGE_LUNASTREAMING31);
+        test("pulsar:9092", false, IMAGE_LUNASTREAMING40);
     }
 
     //    @Test
     public void testLunaStreamingTls() throws Exception {
-        test("pulsar:9093", false, IMAGE_LUNASTREAMING31, true);
+        test("pulsar:9093", false, IMAGE_LUNASTREAMING40, true);
     }
 
     //    @Test
     public void testProxyLunaStreaming() throws Exception {
-        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING31);
+        test("pulsarproxy:9092", true, IMAGE_LUNASTREAMING40);
     }
 
     //    @Test
     public void testProxyLunaStreamingTls() throws Exception {
-        test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING31, true);
+        test("pulsarproxy:9093", true, IMAGE_LUNASTREAMING40, true);
     }
 
     //    @Test
     public void testAvroLunaStreaming() throws Exception {
-        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING31);
+        testAvro("pulsar:9092", "http://pulsar:8001", false, IMAGE_LUNASTREAMING40);
     }
 
     //    @Test
     public void testAvroLunaStreamingTls() throws Exception {
-        testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING31, true);
+        testAvro("pulsar:9093", "https://pulsar:8001", false, IMAGE_LUNASTREAMING40, true);
     }
 
     //    @Test
     public void testAvroProxyLunaStreaming() throws Exception {
-        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31);
+        testAvro("pulsarproxy:9092", "http://pulsarproxy:8081", true, IMAGE_LUNASTREAMING40);
     }
 
     //    @Test
     public void testAvroProxyLunaStreamingTls() throws Exception {
-        testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING31, true);
+        testAvro("pulsarproxy:9093", "https://pulsarproxy:8081", true, IMAGE_LUNASTREAMING40, true);
     }
 
     private void test(String kafkaAddress, boolean proxy, String image) throws Exception {
