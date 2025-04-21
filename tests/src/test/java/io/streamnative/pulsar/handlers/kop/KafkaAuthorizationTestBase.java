@@ -290,6 +290,7 @@ public abstract class KafkaAuthorizationTestBase extends KopProtocolHandlerTestB
         String fullNewTopicName = "persistent://" + TENANT + "/" + NAMESPACE + "/" + topic;
 
         // Grant produce permission with topic level permission to ANOTHER_USER
+        admin.topics().createPartitionedTopic(fullNewTopicName, 1);
         admin.topics().grantPermission(fullNewTopicName,
                 ANOTHER_USER,
                 Sets.newHashSet(AuthAction.produce));
