@@ -79,6 +79,7 @@ import org.apache.pulsar.broker.protocol.ProtocolHandler;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.client.admin.PulsarAdmin;
 import org.apache.pulsar.client.admin.PulsarAdminException;
+import org.apache.pulsar.client.api.Authentication;
 import org.apache.pulsar.client.api.PulsarClient;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.ClusterData;
@@ -216,7 +217,7 @@ public abstract class KopProtocolHandlerTestBase {
 
         kafkaConfig.setKafkaListeners(
                 PLAINTEXT_PREFIX + "localhost:" + kafkaBrokerPort + ","
-//                        + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls
+                        + SSL_PREFIX + "localhost:" + kafkaBrokerPortTls
         );
         kafkaConfig.setEntryFormat(entryFormat);
 
@@ -908,7 +909,7 @@ public abstract class KopProtocolHandlerTestBase {
         proxyConfiguration.setProxyExtensionsDirectory(extensionsDir);
         proxyConfiguration.setProxyExtensions(Sets.newHashSet("kafka"));
         beforeStartingProxy(proxyConfiguration);
-        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService(), Mockito.any()));
+        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService(), Mockito.mock(Authentication.class)));
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createLocalMetadataStore();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createConfigurationMetadataStore();
         pulsarProxy.start();
