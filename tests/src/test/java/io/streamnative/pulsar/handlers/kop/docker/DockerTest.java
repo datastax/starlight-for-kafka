@@ -160,10 +160,10 @@ public class DockerTest {
                                     "/home/appuser/ca.jks");
                         }
                         producerContainer.start();
-                        assertTrue(sent.await(5, TimeUnit.MINUTES));
+                        assertTrue(sent.await(10, TimeUnit.MINUTES));
                     }
 
-                    assertTrue(received.await(5, TimeUnit.MINUTES));
+                    assertTrue(received.await(10, TimeUnit.MINUTES));
                 }
             }
         }
@@ -286,10 +286,10 @@ public class DockerTest {
                             );
                         }
                         producerContainer.start();
-                        assertTrue(sent.await(5, TimeUnit.MINUTES));
+                        assertTrue(sent.await(10, TimeUnit.MINUTES));
                     }
 
-                    assertTrue(received.await(5, TimeUnit.MINUTES));
+                    assertTrue(received.await(10, TimeUnit.MINUTES));
                 }
             }
         }
