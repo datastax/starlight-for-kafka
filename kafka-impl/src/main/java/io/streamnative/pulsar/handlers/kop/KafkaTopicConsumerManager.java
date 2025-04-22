@@ -28,10 +28,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.bookkeeper.mledger.*;
 import org.apache.bookkeeper.mledger.AsyncCallbacks.DeleteCursorCallback;
-import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
+import org.apache.bookkeeper.mledger.ManagedCursor;
+import org.apache.bookkeeper.mledger.ManagedLedger;
+import org.apache.bookkeeper.mledger.ManagedLedgerException;
+import org.apache.bookkeeper.mledger.Position;
+import org.apache.bookkeeper.mledger.PositionFactory;
 import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
+import org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -257,7 +261,7 @@ public class KafkaTopicConsumerManager implements Closeable {
                     + "-" + DigestUtils.sha1Hex(UUID.randomUUID().toString()).substring(0, 10);
 
             // get previous position, because NonDurableCursor is read from next position.
-            final Position previous = ((ManagedLedgerImpl) ledger).getPreviousPosition((ImmutablePositionImpl) position);
+            final Position previous = (ledger).getPreviousPosition(position);
             if (log.isDebugEnabled()) {
                 log.debug("[{}] Create cursor {} for offset: {}. position: {}, previousPosition: {}",
                         description, cursorName, offset, position, previous);

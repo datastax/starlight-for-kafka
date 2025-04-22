@@ -16,7 +16,6 @@ package io.streamnative.pulsar.handlers.kop;
 import java.net.InetSocketAddress;
 import java.util.concurrent.CompletableFuture;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.client.impl.LookupTopicResult;
 import org.apache.pulsar.common.naming.TopicName;

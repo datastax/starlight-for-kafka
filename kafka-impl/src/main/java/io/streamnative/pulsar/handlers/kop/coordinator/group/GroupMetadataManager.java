@@ -484,7 +484,9 @@ public class GroupMetadataManager {
                     filteredOffsetMetadata.forEach((tp, offsetAndMetadata) -> {
                         CommitRecordMetadataAndOffset commitRecordMetadataAndOffset =
                             new CommitRecordMetadataAndOffset(
-                                Optional.of(new ImmutablePositionImpl(lastMessageId.getLedgerId(), lastMessageId.getEntryId())),
+                                Optional.of(new ImmutablePositionImpl(
+                                        lastMessageId.getLedgerId(),
+                                        lastMessageId.getEntryId())),
                                 offsetAndMetadata
                             );
                         if (isTxnOffsetCommit) {

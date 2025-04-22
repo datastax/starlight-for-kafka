@@ -29,7 +29,6 @@ import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCo
 import io.streamnative.pulsar.handlers.kop.utils.ConfigurationUtils;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.Closeable;
-import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -441,8 +440,10 @@ public abstract class KopProtocolHandlerTestBase {
         // Override default providers with mocked ones
         doReturn(createLocalMetadataStore()).when(pulsar).createLocalMetadataStore(Mockito.any(), Mockito.any());
         doReturn(mockBookKeeperClientFactory).when(pulsar).newBookKeeperClientFactory();
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createLocalMetadataStore(Mockito.any(), Mockito.any());
-        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar).createConfigurationMetadataStore(Mockito.any(), Mockito.any());
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar)
+                .createLocalMetadataStore(Mockito.any(), Mockito.any());
+        doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsar)
+                .createConfigurationMetadataStore(Mockito.any(), Mockito.any());
 
         Supplier<NamespaceService> namespaceServiceSupplier = () -> spy(new NamespaceService(pulsar));
         doReturn(namespaceServiceSupplier).when(pulsar).getNamespaceServiceProvider();
@@ -517,15 +518,18 @@ public abstract class KopProtocolHandlerTestBase {
     private BookKeeperClientFactory mockBookKeeperClientFactory = new BookKeeperClientFactory() {
 
         @Override
-        public CompletableFuture<BookKeeper> create(ServiceConfiguration conf, MetadataStoreExtended store, EventLoopGroup eventLoopGroup,
-                                                    Optional<Class<? extends EnsemblePlacementPolicy>> ensemblePlacementPolicyClass,
+        public CompletableFuture<BookKeeper> create(ServiceConfiguration conf, MetadataStoreExtended store,
+                                                    EventLoopGroup eventLoopGroup,
+                                                    Optional<Class<? extends EnsemblePlacementPolicy>>
+                                                            ensemblePlacementPolicyClass,
                                                     Map<String, Object> ensemblePlacementPolicyProperties) {
             // Always return the same instance (so that we don't loose the mock BK content on broker restart
             return CompletableFuture.completedFuture(mockBookKeeper);
         }
 
         @Override
-        public CompletableFuture<BookKeeper> create(ServiceConfiguration serviceConfiguration, MetadataStoreExtended store,
+        public CompletableFuture<BookKeeper> create(ServiceConfiguration serviceConfiguration,
+                                                    MetadataStoreExtended store,
                                                     EventLoopGroup eventLoopGroup,
                                                     Optional<Class<? extends EnsemblePlacementPolicy>> optional,
                                                     Map<String, Object> ensemblePlacementPolicyProperties,
@@ -909,7 +913,9 @@ public abstract class KopProtocolHandlerTestBase {
         proxyConfiguration.setProxyExtensionsDirectory(extensionsDir);
         proxyConfiguration.setProxyExtensions(Sets.newHashSet("kafka"));
         beforeStartingProxy(proxyConfiguration);
-        pulsarProxy = spy(new ProxyService(proxyConfiguration, pulsar.getBrokerService().getAuthenticationService(), Mockito.mock(Authentication.class)));
+        pulsarProxy = spy(new ProxyService(proxyConfiguration,
+                pulsar.getBrokerService().getAuthenticationService(),
+                Mockito.mock(Authentication.class)));
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createLocalMetadataStore();
         doReturn(new ZKMetadataStore(mockZooKeeper)).when(pulsarProxy).createConfigurationMetadataStore();
         pulsarProxy.start();
