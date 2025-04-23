@@ -389,7 +389,7 @@ public class SSLUtils {
         public ServerSideTLSSupport(KafkaServiceConfiguration kafkaConfig) {
             this.tlsEnabledWithKeyStore = kafkaConfig.isTlsEnabledWithKeyStore();
             if (!StringUtils.isEmpty(kafkaConfig.getKopSslKeystoreLocation())) {
-                // KOP mode
+                // KOP mode comment
                 sslContextFactory = SSLUtils.createSslContextFactory(kafkaConfig);
                 serverSSLContextAutoRefreshBuilder = null;
                 serverSslCtxRefresher = null;
