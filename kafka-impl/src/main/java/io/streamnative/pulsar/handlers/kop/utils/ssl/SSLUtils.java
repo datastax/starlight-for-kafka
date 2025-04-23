@@ -15,6 +15,7 @@ package io.streamnative.pulsar.handlers.kop.utils.ssl;
 
 
 import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDLER;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
 import io.netty.channel.socket.SocketChannel;
