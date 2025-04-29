@@ -217,6 +217,7 @@ import org.apache.pulsar.common.util.FutureUtil;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.apache.pulsar.metadata.api.MetadataStoreException;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
+import org.apache.pulsar.opentelemetry.OpenTelemetryAttributes;
 
 /**
  * This class contains all the request handling methods.
@@ -847,7 +848,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     public static void setPausedConnections(PulsarService pulsarService, int numConnections) {
-//        pulsarService.getBrokerService().pausedConnections(numConnections);
+        pulsarService.getBrokerService().getRateLimitedConnectionsCounter()
+                .add(numConnections, OpenTelemetryAttributes.ConnectionRateLimitOperationName.PAUSED.attributes);
     }
 
     private void completeSendOperationForThrottling(long msgSize) {
@@ -865,7 +867,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @VisibleForTesting
     public static void resumePausedConnections(PulsarService pulsarService, int numConnections) {
-//        pulsarService.getBrokerService().resumedConnections(numConnections);
+        pulsarService.getBrokerService().getRateLimitedConnectionsCounter()
+                .add(numConnections, OpenTelemetryAttributes.ConnectionRateLimitOperationName.RESUMED.attributes);
     }
 
     @Override
