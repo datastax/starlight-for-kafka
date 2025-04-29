@@ -83,7 +83,7 @@ public class EncodeResult {
                                     final RequestStats requestStats,
                                     final Producer producer) {
         final int numBytes = encodedByteBuf.readableBytes();
-        producer.updateRates();
+        producer.getStats().recordMsgIn(numMessages, numBytes);
         producer.getTopic().incrementPublishCount(producer, numMessages, numBytes);
 
         final StatsLogger statsLoggerForThisPartition = requestStats.getStatsLoggerForTopicPartition(topicPartition);
