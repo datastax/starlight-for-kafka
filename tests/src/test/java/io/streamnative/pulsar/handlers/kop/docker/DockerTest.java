@@ -30,8 +30,8 @@ public class DockerTest {
 
     private static final String IMAGE_LUNASTREAMING31 = "datastax/lunastreaming:3.1";
     private static final String IMAGE_PULSAR31 = "apachepulsar/pulsar:3.1.1";
-    private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:latest";
-    private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:latest";
+    private static final String CONFLUENT_CLIENT = "confluentinc/cp-kafka:7.8.2";
+    private static final String CONFLUENT_SCHEMAREGISTRY_CLIENT = "confluentinc/cp-schema-registry:7.8.2";
 
     @Test
     public void test() throws Exception {

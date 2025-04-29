@@ -33,7 +33,7 @@ wait_for_url() {
 }
 
 # Start hydra server
-docker-compose -f ci/hydra/docker-compose.yml up -d
+docker compose -f ci/hydra/docker-compose.yml up -d
 
 # Wait until the hydra server started
 wait_for_url "http://localhost:4445/clients" "Waiting for Hydra admin REST to start"
