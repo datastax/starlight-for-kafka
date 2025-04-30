@@ -251,6 +251,7 @@ public class PulsarContainer implements AutoCloseable {
             // it is valid to set this URLS even if the broker does not enable TLS
             proxyContainer.withEnv("PULSAR_PREFIX_brokerServiceURLTLS", "pulsar+ssl://pulsar:6651");
             proxyContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURLTLS", "https://pulsar:8443");
+            proxyContainer.withEnv("PULSAR_PREFIX_clusterName", "standalone");
 
             if (enableTls) {
                 proxyContainer.withEnv("PULSAR_PREFIX_kopSchemaRegistryProxyEnableTls", "true");
