@@ -895,6 +895,8 @@ public class PartitionLog {
                                  final LogAppendInfo appendInfo,
                                  final EncodeResult encodeResult,
                                  final AppendRecordsContext appendRecordsContext) {
+        checkAndRecordPublishQuota(persistentTopic, appendInfo.validBytes(),
+                appendInfo.numMessages(), appendRecordsContext);
         if (persistentTopic.isSystemTopic()) {
             encodeResult.recycle();
             log.error("Not support producing message to system topic: {}", persistentTopic);
@@ -937,6 +939,37 @@ public class PartitionLog {
             }
             encodeResult.recycle();
         });
+    }
+
+    private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
+                                              AppendRecordsContext appendRecordsContext) {
+        final boolean isPublishRateExceeded;
+        if (preciseTopicPublishRateLimitingEnable) {
+//            boolean isPreciseTopicPublishRateExceeded =
+//                    topic.isTopicPublishRateExceeded(numMessages, msgSize);
+//            if (isPreciseTopicPublishRateExceeded) {
+//                topic.disableCnxAutoRead();
+//                return;
+//            }
+//            isPublishRateExceeded = topic.isBrokerPublishRateExceeded();
+        } else {
+//            if (topic.isResourceGroupRateLimitingEnabled()) {
+//                final boolean resourceGroupPublishRateExceeded =
+//                        topic.isResourceGroupPublishRateExceeded(numMessages, msgSize);
+//                if (resourceGroupPublishRateExceeded) {
+//                    topic.disableCnxAutoRead();
+//                    return;
+//                }
+//            }
+            isPublishRateExceeded = false;
+        }
+
+//        if (isPublishRateExceeded) {
+//            ChannelHandlerContext ctx = appendRecordsContext.getCtx();
+//            if (ctx != null && ctx.channel().config().isAutoRead()) {
+//                ctx.channel().config().setAutoRead(false);
+//            }
+//        }
     }
 
     /**
