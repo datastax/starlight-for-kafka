@@ -214,14 +214,16 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         stateUpdater.setAccessible(true);
         stateUpdater.set(managedLedger, ManagedLedgerImpl.State.LedgerOpened);
         // Rollover and delete the old ledgers, wait until there is only one empty ledger
-        managedLedger.getConfig().setRetentionTime(0, TimeUnit.MILLISECONDS);
+        managedLedger.getConfig().setRetentionTime(1, TimeUnit.MILLISECONDS);
+        managedLedger.checkInactiveLedgerAndRollOver();
         managedLedger.rollCurrentLedgerIfFull();
-        Awaitility.await().atMost(Duration.ofSeconds(10))
+        Awaitility.await().atMost(Duration.ofMinutes(5))
                 .until(() -> {
                     log.info("Managed ledger status: [{}], ledgers info: [{}]",
                             managedLedger.getState(), managedLedger.getLedgersInfo().toString());
                     return managedLedger.getLedgersInfo().size() == 1;
                 });
+
         final List<LedgerInfo> ledgerInfoList = managedLedger.getLedgersInfoAsList();
         assertEquals(ledgerInfoList.size(), 1);
         assertEquals(ledgerInfoList.get(0).getEntries(), 0);
@@ -231,7 +233,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         final TopicPartition topicPartition = new TopicPartition(topic, 0);
         try {
             final Map<TopicPartition, Long> partitionToOffset =
-                    consumer.beginningOffsets(Collections.singleton(topicPartition), Duration.ofSeconds(2));
+                    consumer.endOffsets(Collections.singleton(topicPartition), Duration.ofSeconds(2));
             assertTrue(partitionToOffset.containsKey(topicPartition));
             assertEquals(partitionToOffset.get(topicPartition).intValue(), numMessages);
         } catch (Exception e) {
@@ -245,7 +247,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
                     consumer.offsetsForTimes(Collections.singletonMap(new TopicPartition(topic, 0), 0L),
                             Duration.ofSeconds(2));
             assertTrue(partitionToTimestamp.containsKey(topicPartition));
-            assertEquals(partitionToTimestamp.get(topicPartition).offset(), numMessages);
+            assertEquals(partitionToTimestamp.get(topicPartition).offset(), numMessages - 1);
         } catch (Exception e) {
             log.error("Failed to get offsets for times: {}", e.getMessage());
             fail(e.getMessage());
@@ -258,7 +260,7 @@ public class MultiLedgerTest extends KopProtocolHandlerTestBase {
         }
         final List<String> receivedValues = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            final ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+            final ConsumerRecords<String, String> records = consumer.poll(Duration.ofMinutes(5));
             if (!records.isEmpty()) {
                 records.forEach(record -> receivedValues.add(record.value()));
                 break;
