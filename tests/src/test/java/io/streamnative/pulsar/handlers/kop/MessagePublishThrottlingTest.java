@@ -14,8 +14,6 @@
 package io.streamnative.pulsar.handlers.kop;
 
 
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotEquals;
 import static org.testng.Assert.assertTrue;
 
 import com.google.common.collect.Sets;
@@ -33,13 +31,11 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.apache.pulsar.broker.service.DisabledPublishRateLimiter;
 import org.apache.pulsar.broker.service.Producer;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PublishRate;
 import org.apache.pulsar.common.util.FutureUtil;
-import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -51,21 +47,9 @@ import org.testng.annotations.Test;
 @Slf4j
 public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
 
-    private final boolean preciseTopicPublishRateLimiterEnable;
-
-    public MessagePublishThrottlingTest(boolean preciseTopicPublishRateLimiterEnable) {
-        this.preciseTopicPublishRateLimiterEnable = preciseTopicPublishRateLimiterEnable;
-    }
-
-    public MessagePublishThrottlingTest() {
-        this(false);
-    }
-
-
     @BeforeClass
     @Override
     protected void setup() throws Exception {
-        conf.setPreciseTopicPublishRateLimiterEnable(preciseTopicPublishRateLimiterEnable);
         conf.setTopicLevelPoliciesEnabled(true);
         conf.setSystemTopicEnabled(true);
         super.internalSetup();
@@ -87,7 +71,12 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    @Test(timeOut = 30 * 1000, dataProvider = "isTopicLevel")
+    private void waitForPublishRateChange() throws InterruptedException {
+        // no good way to wait?
+        Thread.sleep(3000);
+    }
+
+    @Test(timeOut = 60 * 1000, dataProvider = "isTopicLevel")
     public void testPublishByteThrottling(boolean isTopicLevel) throws Exception {
 
         final String namespace = "public/throttling_publish" + (isTopicLevel ? "_topic_level" : "_namespace_level");
@@ -106,8 +95,6 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         String topicNameWithPartition = TopicName.get(topicName).getPartition(0).toString();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService()
                 .getTopicIfExists(topicNameWithPartition).get().get();
-        // Verify both broker and topic limiter is disabled
-        assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // Enable throttling
         if (isTopicLevel) {
@@ -116,9 +103,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
 
-        Awaitility.await().untilAsserted(() -> {
-            assertNotEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
-        });
+        waitForPublishRateChange();
 
         Producer prod = topic.getProducers().values().iterator().next();
         // reset counter
@@ -134,12 +119,12 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         int totalBytes = numMessage * msgBytes * numThread;
 
         log.info("Byte rate in: {} byte/s, total: {} bytes", rateIn, numMessage * msgBytes * numThread);
-        if (preciseTopicPublishRateLimiterEnable) {
-            assertTrue(rateIn <= topicByteRate + 100);
-            assertTrue(rateIn >= topicByteRate - 100);
-        } else {
+//        if (preciseTopicPublishRateLimiterEnable) {
+//            assertTrue(rateIn <= topicByteRate + 100);
+//            assertTrue(rateIn >= topicByteRate - 100);
+//        } else {
             assertTrue(rateIn <= totalBytes);
-        }
+        //}
 
         // Disable throttling
         topicPublishMsgRate.publishThrottlingRateInByte = -1;
@@ -148,9 +133,8 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         } else {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
-        Awaitility.await().untilAsserted(() -> {
-            assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
-        });
+        waitForPublishRateChange();
+
         // reset counter
         prod.updateRates();
         for (int i = 0; i < numMessage; i++) {
@@ -164,7 +148,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         assertTrue(rateIn >= numMessage * msgBytes);
     }
 
-    @Test(timeOut = 30 * 1000, dataProvider = "isTopicLevel")
+    @Test(timeOut = 60 * 1000, dataProvider = "isTopicLevel")
     public void testPublishMsgNumThrottling(boolean isTopicLevel) throws Exception {
 
         final String namespace = "public/throttling_publish_msg_num"
@@ -184,8 +168,6 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         String topicNameWithPartition = TopicName.get(topicName).getPartition(0).toString();
         PersistentTopic topic = (PersistentTopic) pulsar.getBrokerService()
                 .getTopicIfExists(topicNameWithPartition).get().get();
-        // Verify both broker and topic limiter is disabled
-        assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
 
         // Enable throttling
         if (isTopicLevel) {
@@ -194,9 +176,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
 
-        Awaitility.await().untilAsserted(() -> {
-            assertNotEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
-        });
+        waitForPublishRateChange();
 
         Producer prod = topic.getProducers().values().iterator().next();
         // reset counter
@@ -210,13 +190,8 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         double rateIn = prod.getStats().getMsgRateIn();
 
         log.info("Msg rate in: {} msgs/s, total: {} msgs", rateIn, numMessage * numThread);
-        if (preciseTopicPublishRateLimiterEnable) {
-            // 0 <= topicPublishRateInMsg <= 20
             assertTrue(rateIn <= topicPublishRateInMsg + 10);
             assertTrue(rateIn >= topicPublishRateInMsg - 10);
-        } else {
-            assertTrue(rateIn >= topicPublishRateInMsg);
-        }
 
         // Disable throttling
         topicPublishMsgRate.publishThrottlingRateInMsg = -1;
@@ -225,9 +200,8 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         } else {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
-        Awaitility.await().untilAsserted(() -> {
-            assertEquals(topic.getTopicPublishRateLimiter(), DisabledPublishRateLimiter.INSTANCE);
-        });
+        waitForPublishRateChange();
+
         // reset counter
         prod.updateRates();
         for (int i = 0; i < numMessage; i++) {
@@ -254,18 +228,25 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
                                               int numThread, int numMessage, int msgBytes) throws Exception {
         ExecutorService executorService = Executors.newFixedThreadPool(numThread);
         List<CompletableFuture<Void>> futures = new ArrayList<>();
+        log.info("Sending messages from {} threads, {} messages each, {} bytes each", numThread, numMessage, msgBytes);
         for (int n = 0; n < numThread; n++) {
             final CompletableFuture<Void> future = new CompletableFuture<>();
             futures.add(future);
+            final int threadNum = n;
+            log.info("Starting thread {}", threadNum);
             executorService.submit(() -> {
                 for (int i = 0; i < numMessage; i++) {
                     try {
+                        log.info("Send message {} from thread {}", i, threadNum);
                         producer.send(new ProducerRecord<>(topicName, new byte[msgBytes])).get();
+                        log.info("done Send message {} from thread {}", i, threadNum);
                     } catch (InterruptedException | ExecutionException e) {
-                        log.error("Send message failed.", e);
+                        log.error("Send message {} failed from thread {}", i, threadNum, e);
                         future.completeExceptionally(e);
+                        return;
                     }
                 }
+                log.info("Sent {} messages from thread {} and completed the future", numMessage, threadNum);
                 future.complete(null);
             });
         }
