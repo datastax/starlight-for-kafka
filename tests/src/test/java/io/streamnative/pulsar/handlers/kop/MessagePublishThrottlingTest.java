@@ -119,12 +119,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         int totalBytes = numMessage * msgBytes * numThread;
 
         log.info("Byte rate in: {} byte/s, total: {} bytes", rateIn, numMessage * msgBytes * numThread);
-//        if (preciseTopicPublishRateLimiterEnable) {
-//            assertTrue(rateIn <= topicByteRate + 100);
-//            assertTrue(rateIn >= topicByteRate - 100);
-//        } else {
-            assertTrue(rateIn <= totalBytes);
-        //}
+        assertTrue(rateIn <= totalBytes);
 
         // Disable throttling
         topicPublishMsgRate.publishThrottlingRateInByte = -1;
