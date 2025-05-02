@@ -363,6 +363,7 @@ public class SSLUtils {
 
     public static PulsarSslConfiguration buildSslConfiguration(KafkaServiceConfiguration serviceConfig) {
         return PulsarSslConfiguration.builder()
+                .tlsProvider(serviceConfig.getTlsProvider())
                 .tlsKeyStoreType(serviceConfig.getTlsKeyStoreType())
                 .tlsKeyStorePath(serviceConfig.getTlsKeyStore())
                 .tlsKeyStorePassword(serviceConfig.getTlsKeyStorePassword())
