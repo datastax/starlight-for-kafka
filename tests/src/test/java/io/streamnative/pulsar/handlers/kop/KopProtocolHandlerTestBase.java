@@ -388,7 +388,7 @@ public abstract class KopProtocolHandlerTestBase {
                 mockBookKeeper.reallyShutdown();
             }
             if (mockZooKeeper != null) {
-                mockZooKeeper.shutdown();
+                mockZooKeeper.close();
             }
             if (sameThreadOrderedSafeExecutor != null) {
                 sameThreadOrderedSafeExecutor.shutdown();
