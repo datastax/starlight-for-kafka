@@ -135,7 +135,7 @@ public class PublishRateLimitTest extends KopProtocolHandlerTestBase {
             pulsar.getConfiguration().getBrokerPublisherThrottlingTickTimeMillis(),
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxMessageRate(),
             pulsar.getConfiguration().getBrokerPublisherThrottlingMaxByteRate());
-        
+
         // reset counter
         prod.updateRates();
         for (int i = 0; i < numMessage; i++) {

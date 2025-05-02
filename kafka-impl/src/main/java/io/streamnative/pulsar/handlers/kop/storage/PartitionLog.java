@@ -947,7 +947,7 @@ public class PartitionLog {
     private void checkAndRecordPublishQuota(Topic topic, int msgSize, int numMessages,
                                               Producer producer) {
         // this handles precise and resource group limits, as configured for the broker
-        ((AbstractTopic)topic).getTopicPublishRateLimiter()
+        ((AbstractTopic) topic).getTopicPublishRateLimiter()
                 .handlePublishThrottling(producer, numMessages, msgSize);
     }
 
