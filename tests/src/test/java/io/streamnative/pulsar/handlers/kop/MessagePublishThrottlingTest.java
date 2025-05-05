@@ -13,10 +13,13 @@
  */
 package io.streamnative.pulsar.handlers.kop;
 
-
+import static org.testng.Assert.assertEquals;
+import static org.testng.Assert.assertNull;
 import static org.testng.Assert.assertTrue;
+import static org.testng.AssertJUnit.assertNotNull;
 
 import com.google.common.collect.Sets;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -26,16 +29,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.pulsar.broker.service.AbstractTopic;
 import org.apache.pulsar.broker.service.Producer;
+import org.apache.pulsar.broker.service.PublishRateLimiterImpl;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
 import org.apache.pulsar.common.naming.TopicName;
 import org.apache.pulsar.common.policies.data.PublishRate;
 import org.apache.pulsar.common.util.FutureUtil;
+import org.awaitility.Awaitility;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -71,9 +78,25 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         };
     }
 
-    private void waitForPublishRateChange() throws InterruptedException {
-        // no good way to wait?
-        Thread.sleep(3000);
+    private void waitForPublishRateChange(PersistentTopic topic, PublishRate expectedRate) throws Exception {
+        // got to read private field, otherwise inaccessible
+        Field throttleField = FieldUtils.getDeclaredField(AbstractTopic.class, "topicPublishRateLimiter", true);
+        PublishRateLimiterImpl throttle = (PublishRateLimiterImpl)FieldUtils.readField(throttleField, topic, true);
+
+        Awaitility.await().untilAsserted(() -> {
+            if (expectedRate.publishThrottlingRateInMsg > 0) {
+                assertNotNull(throttle.getTokenBucketOnMessage());
+                assertEquals(throttle.getTokenBucketOnMessage().getRate(), expectedRate.publishThrottlingRateInMsg);
+            } else {
+                assertNull(throttle.getTokenBucketOnMessage());
+            }
+            if (expectedRate.publishThrottlingRateInByte > 0) {
+                assertNotNull(throttle.getTokenBucketOnByte());
+                assertEquals(throttle.getTokenBucketOnByte().getRate(), expectedRate.publishThrottlingRateInByte);
+            } else {
+                assertNull(throttle.getTokenBucketOnByte());
+            }
+        });
     }
 
     @Test(timeOut = 60 * 1000, dataProvider = "isTopicLevel")
@@ -103,7 +126,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
 
-        waitForPublishRateChange();
+        waitForPublishRateChange(topic, topicPublishMsgRate);
 
         Producer prod = topic.getProducers().values().iterator().next();
         // reset counter
@@ -128,7 +151,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         } else {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
-        waitForPublishRateChange();
+        waitForPublishRateChange(topic, topicPublishMsgRate);
 
         // reset counter
         prod.updateRates();
@@ -171,7 +194,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
 
-        waitForPublishRateChange();
+        waitForPublishRateChange(topic, topicPublishMsgRate);
 
         Producer prod = topic.getProducers().values().iterator().next();
         // reset counter
@@ -195,7 +218,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
         } else {
             admin.namespaces().setPublishRate(namespace, topicPublishMsgRate);
         }
-        waitForPublishRateChange();
+        waitForPublishRateChange(topic, topicPublishMsgRate);
 
         // reset counter
         prod.updateRates();
