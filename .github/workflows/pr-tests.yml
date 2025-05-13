@@ -41,7 +41,7 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false -pl schema-registry
 
     - name: tests module
-      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!Docker*Test,!*Proxy*Test,!*Throttling*Test,!PublishRateLimitTest' -pl tests
+      run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=!Docker*Test,!*Proxy*Test' -pl tests
       timeout-minutes: 120
 
     - name: Upload to Codecov
