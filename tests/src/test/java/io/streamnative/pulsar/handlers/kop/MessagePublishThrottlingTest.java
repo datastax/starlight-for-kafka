@@ -81,7 +81,7 @@ public class MessagePublishThrottlingTest extends KopProtocolHandlerTestBase {
     private void waitForPublishRateChange(PersistentTopic topic, PublishRate expectedRate) throws Exception {
         // got to read private field, otherwise inaccessible
         Field throttleField = FieldUtils.getDeclaredField(AbstractTopic.class, "topicPublishRateLimiter", true);
-        PublishRateLimiterImpl throttle = (PublishRateLimiterImpl)FieldUtils.readField(throttleField, topic, true);
+        PublishRateLimiterImpl throttle = (PublishRateLimiterImpl) FieldUtils.readField(throttleField, topic, true);
 
         Awaitility.await().untilAsserted(() -> {
             if (expectedRate.publishThrottlingRateInMsg > 0) {

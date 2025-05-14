@@ -19,7 +19,6 @@ import static io.streamnative.pulsar.handlers.kop.KafkaProtocolHandler.TLS_HANDL
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMap.Builder;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.handler.ssl.SslContext;
 import io.netty.handler.ssl.SslHandler;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import java.util.Arrays;
@@ -423,11 +422,8 @@ public class SSLUtils {
                     ch.pipeline().addLast(TLS_HANDLER, new SslHandler(createSslEngine(sslContextFactory)));
                 } else {
                     sslFactory.createInternalSslContext();
-                    SslContext sslContext = sslFactory.getInternalNettySslContext();
-                    if (sslContext != null) {
-                        ch.pipeline().addLast(TLS_HANDLER,
-                                new SslHandler(this.sslFactory.createServerSslEngine(ch.alloc())));
-                    }
+                    ch.pipeline().addLast(TLS_HANDLER,
+                            new SslHandler(this.sslFactory.createServerSslEngine(ch.alloc())));
                 }
             } catch (Exception err) {
                 throw new RuntimeException(err);
