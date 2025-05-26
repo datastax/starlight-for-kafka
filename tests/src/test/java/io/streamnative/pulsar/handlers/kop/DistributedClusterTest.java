@@ -103,6 +103,7 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             protocolHandlerDir
         );
         kConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
+        kConfig.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
 
         return kConfig;
     }
