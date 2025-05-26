@@ -146,6 +146,7 @@ public class MetadataInitTest extends KopProtocolHandlerTestBase {
         conf.setProtocolHandlerDirectory(protocolHandlerDirectory);
         conf.setMessagingProtocols(Collections.singleton("kafka"));
         conf.setKafkaListeners(PLAINTEXT_PREFIX + "localhost:" + kafkaPort);
+        conf.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
         return conf;
     }
 
