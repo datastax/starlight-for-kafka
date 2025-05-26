@@ -234,6 +234,7 @@ public abstract class KopProtocolHandlerTestBase {
                 protocolHandlerDir
         );
         kafkaConfig.setMessagingProtocols(Sets.newHashSet("kafka"));
+        kafkaConfig.setLoadBalancerOverrideBrokerNicSpeedGbps(Optional.of(1.0d));
 
         this.conf = kafkaConfig;
     }
