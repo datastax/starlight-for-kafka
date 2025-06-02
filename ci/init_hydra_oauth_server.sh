@@ -33,7 +33,20 @@ wait_for_url() {
 }
 
 # Start hydra server
-docker compose -f ci/hydra/docker-compose.yml up -d
+COMPOSE_FILE="ci/hydra/docker-compose.yml"
+
+# Try the “docker compose” subcommand (Docker CLI v2+)
+if docker compose version >/dev/null 2>&1; then
+  docker compose -f "$COMPOSE_FILE" up -d
+
+# Fall back to the standalone “docker-compose” binary
+elif command -v docker-compose >/dev/null 2>&1; then
+  docker-compose -f "$COMPOSE_FILE" up -d
+
+else
+  echo "Error: Neither 'docker compose' nor 'docker-compose' is available on this system." >&2
+  exit 1
+fi
 
 # Wait until the hydra server started
 wait_for_url "http://localhost:4445/clients" "Waiting for Hydra admin REST to start"
