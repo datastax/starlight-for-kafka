@@ -447,7 +447,6 @@
       <groupId>commons-configuration</groupId>
       <artifactId>commons-configuration</artifactId>
       <version>${commons-configuration.version}</version>
-      <scope>provided</scope>
     </dependency>
 
     <dependency>
