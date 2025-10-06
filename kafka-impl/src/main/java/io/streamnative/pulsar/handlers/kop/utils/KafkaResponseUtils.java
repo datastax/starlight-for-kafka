@@ -47,6 +47,7 @@ import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.SaslAuthenticateResponseData;
 import org.apache.kafka.common.message.SaslHandshakeResponseData;
 import org.apache.kafka.common.message.SyncGroupResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -89,6 +90,9 @@ public class KafkaResponseUtils {
     public static ApiVersionsResponse newApiVersions(Errors errors) {
         ApiVersionsResponseData data = new ApiVersionsResponseData()
                 .setErrorCode(errors.code());
+        ApiVersionsResponseData.ApiVersionCollection apiKeys = new ApiVersionsResponseData.ApiVersionCollection();
+        apiKeys.add(ApiVersionsResponse.toApiVersion(ApiKeys.API_VERSIONS));
+        data.setApiKeys(apiKeys);
         return new ApiVersionsResponse(data);
     }
 
