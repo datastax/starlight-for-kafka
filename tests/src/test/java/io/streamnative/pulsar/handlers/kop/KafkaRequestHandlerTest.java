@@ -87,6 +87,7 @@ import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
+import org.apache.kafka.common.message.ApiVersionsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest;
@@ -1095,6 +1096,39 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
             }
         }
         assertEquals(fetchMessages, numMessages);
+    }
+
+    @Test
+    public void testHandleApiVersionsRequestWithUnsupportedVersion() throws ExecutionException, InterruptedException {
+        short unsupportedVersion = (short) (ApiKeys.API_VERSIONS.latestVersion() + 1);
+        RequestHeader header = new RequestHeader(
+                ApiKeys.API_VERSIONS,
+                unsupportedVersion,
+                "clientId",
+                1
+        );
+        ApiVersionsRequest request = new ApiVersionsRequest.Builder().build();
+        KafkaHeaderAndRequest headerAndRequest = new KafkaHeaderAndRequest(
+                header,
+                request,
+                Unpooled.buffer(0),
+                null
+        );
+        CompletableFuture<AbstractResponse> resultFuture = new CompletableFuture<>();
+        handler.handleApiVersionsRequest(headerAndRequest, resultFuture);
+        assertTrue(resultFuture.isDone());
+        AbstractResponse response = resultFuture.get();
+        assertTrue(response instanceof ApiVersionsResponse);
+        ApiVersionsResponse apiVersionsResponse = (ApiVersionsResponse) response;
+        ApiVersionsResponseData responseData = apiVersionsResponse.data();
+        assertEquals(responseData.errorCode(), Errors.UNSUPPORTED_VERSION.code(),
+                "Expected error code UNSUPPORTED_VERSION");
+        ApiVersionsResponseData.ApiVersionCollection versionCollection = responseData.apiKeys();
+        assertEquals(versionCollection.size(), 1, "Expected one ApiVersion in response");
+        ApiVersionsResponseData.ApiVersion apiVersion = versionCollection.iterator().next();
+        assertEquals(apiVersion.apiKey(), ApiKeys.API_VERSIONS.id);
+        assertEquals(apiVersion.minVersion(), ApiKeys.API_VERSIONS.oldestVersion());
+        assertEquals(apiVersion.maxVersion(), ApiKeys.API_VERSIONS.latestVersion());
     }
 
     private KafkaHeaderAndRequest createTopicMetadataRequest(List<String> topics, boolean allowAutoTopicCreation) {
