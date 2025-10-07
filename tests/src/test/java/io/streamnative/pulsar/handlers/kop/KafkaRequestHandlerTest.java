@@ -1100,10 +1100,10 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
 
     @Test
     public void testHandleApiVersionsRequestWithUnsupportedVersion() throws ExecutionException, InterruptedException {
-        short unsupportedVersion = (short) (ApiKeys.API_VERSIONS.latestVersion() + 1);
+        short higherVersion = (short) (ApiKeys.API_VERSIONS.latestVersion() + 1);
         RequestHeader header = new RequestHeader(
                 ApiKeys.API_VERSIONS,
-                unsupportedVersion,
+                higherVersion,
                 "clientId",
                 1
         );
