@@ -72,7 +72,6 @@
     <netty.version>4.1.125.Final</netty.version>
     <vertx.version>4.5.22</vertx.version>
     <jose4j.version>0.9.6</jose4j.version>
-    <jersey-client.version>2.46</jersey-client.version>
     <lz4.version>1.8.1</lz4.version>
 
     <!-- plugin dependencies -->
@@ -406,13 +405,6 @@
         <groupId>org.bitbucket.b_c</groupId>
         <artifactId>jose4j</artifactId>
         <version>${jose4j.version}</version>
-        <scope>runtime</scope>
-      </dependency>
-      <!-- Override transitive dependency version to fix vulnerability -->
-      <dependency>
-        <groupId>org.glassfish.jersey.core</groupId>
-        <artifactId>jersey-client</artifactId>
-        <version>${jersey-client.version}</version>
         <scope>runtime</scope>
       </dependency>
       <!-- Override transitive dependency version to fix vulnerability -->
