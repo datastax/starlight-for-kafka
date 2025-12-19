@@ -63,6 +63,10 @@
       <version>${apicurio.version}</version>
     </dependency>
     <dependency>
+      <groupId>io.netty</groupId>
+      <artifactId>netty-codec-http</artifactId>
+    </dependency>
+    <dependency>
       <groupId>${pulsar.group.id}</groupId>
       <artifactId>pulsar-broker</artifactId>
       <scope>provided</scope>

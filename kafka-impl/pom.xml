@@ -102,6 +102,13 @@
       <scope>test</scope>
     </dependency>
 
+    <!-- Resolves org.apache.kafka.common.KafkaException: java.lang.NoClassDefFoundError: net/jpountz/lz4/LZ4Factory -->
+    <dependency>
+      <groupId>org.lz4</groupId>
+      <artifactId>lz4-java</artifactId>
+      <scope>test</scope>
+    </dependency>
+
     <dependency>
       <groupId>${pulsar.group.id}</groupId>
       <artifactId>managed-ledger</artifactId>
