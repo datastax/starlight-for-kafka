@@ -5,12 +5,26 @@ on:
     branches:
       - 4.0_ds
   pull_request:
+  workflow_dispatch:
+    inputs:
+      netty_leak_detection:
+        description: 'Controls Netty leak detection. report: enable reporting, fail_on_leak: fail build when leaks detected, off: disable.'
+        required: true
+        type: choice
+        options:
+          - report
+          - fail_on_leak
+          - off
+        default: report
 
 
 jobs:
   build:
 
     runs-on: ubuntu-latest
+    env:
+      NETTY_LEAK_DETECTION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.netty_leak_detection || 'report' }}
+      NETTY_LEAK_DUMP_DIR: ${{ github.workspace }}/target/netty-leak-dumps
 
     steps:
     - uses: actions/checkout@v1
@@ -30,12 +44,26 @@ jobs:
       run: mvn test -ntp -B -DfailIfNoTests=false '-Dtest=DockerTest' -pl tests
       timeout-minutes: 120
 
+    - name: Report detected Netty leaks
+      if: ${{ always() && env.NETTY_LEAK_DETECTION != 'off' }}
+      run: bash scripts/report_netty_leaks.sh
+
+    - uses: actions/upload-artifact@master
+      name: upload netty-leak-dumps
+      if: ${{ success() && env.NETTY_LEAK_DETECTION != 'off' && hashFiles('target/netty_leaks_found') != '' }}
+      with:
+        name: netty-leak-dumps
+        path: target/netty-leak-dumps
+
     - name: package surefire artifacts
       if: failure()
       run: |
         rm -rf artifacts
         mkdir artifacts
         find . -type d -name "*surefire*" -exec cp --parents -R {} artifacts/ \;
+        if [ -d target/netty-leak-dumps ]; then
+          cp --parents -R target/netty-leak-dumps artifacts/ || true
+        fi
         zip -r artifacts.zip artifacts
 
     - uses: actions/upload-artifact@master

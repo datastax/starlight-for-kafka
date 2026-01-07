@@ -15,16 +15,26 @@ package io.streamnative.pulsar.handlers.kop.docker;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.streamnative.pulsar.handlers.kop.common.test.ExtendedNettyLeakDetector;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.utility.MountableFile;
@@ -35,6 +45,13 @@ public class PulsarContainer implements AutoCloseable {
     protected static final String PROTOCOLS_TEST_PROTOCOL_HANDLER_NAR = "/protocols/test-protocol-handler.nar";
     protected static final String PROXY_EXTENSION_TEST_NAR = "/proxyextensions/test-proxy-extension.nar";
     public static final String ZOOKEEPER_3_7_2 = "zookeeper:3.7.2";
+    private static final String NETTY_LEAK_DETECTION_ENV = "NETTY_LEAK_DETECTION";
+    private static final String NETTY_LEAK_DUMP_DIR_ENV = "NETTY_LEAK_DUMP_DIR";
+    private static final String PULSAR_EXTRA_OPTS_ENV = "PULSAR_EXTRA_OPTS";
+    private static final String PULSAR_EXTRA_CLASSPATH_ENV = "PULSAR_EXTRA_CLASSPATH";
+    private static final String CONTAINER_NETTY_LEAK_DUMP_DIR = "/pulsar/netty-leak-dumps";
+    private static final String CONTAINER_NETTY_LEAK_DETECTOR_JAR =
+            "/pulsar/lib/kop-netty-leak-detector.jar";
 
     @Getter
     private GenericContainer<?> pulsarContainer;
@@ -116,6 +133,7 @@ public class PulsarContainer implements AutoCloseable {
                                     log.info(text);
                                 });
         pulsarContainer.withEnv("PULSAR_LOG_LEVEL", "info");
+        maybeEnableNettyLeakDetection(pulsarContainer, "pulsar");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationPlugin",
                 "org.apache.pulsar.client.impl.auth.AuthenticationToken");
         pulsarContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationParameters",
@@ -224,6 +242,7 @@ public class PulsarContainer implements AutoCloseable {
                                     });
             proxyContainer.withEnv("JAVA_JDK_OPTIONS", "-Djdk.tls.disabledAlgorithms=");
             proxyContainer.withEnv("PULSAR_LOG_LEVEL", "info");
+            maybeEnableNettyLeakDetection(proxyContainer, "pulsarproxy");
             proxyContainer.withEnv("PULSAR_PREFIX_brokerServiceURL", "pulsar://pulsar:6650");
             proxyContainer.withEnv("PULSAR_PREFIX_brokerWebServiceURL", "http://pulsar:8080");
             proxyContainer.withEnv("PULSAR_PREFIX_brokerClientAuthenticationPlugin",
@@ -295,6 +314,117 @@ public class PulsarContainer implements AutoCloseable {
         if (zookeeperContainer != null) {
             zookeeperContainer.stop();
         }
+    }
+
+    private static void maybeEnableNettyLeakDetection(GenericContainer<?> container, String name) {
+        String mode = System.getenv(NETTY_LEAK_DETECTION_ENV);
+        if (mode == null || mode.isBlank() || "off".equalsIgnoreCase(mode)) {
+            return;
+        }
+        String hostDumpDir = System.getenv(NETTY_LEAK_DUMP_DIR_ENV);
+        if (hostDumpDir != null && !hostDumpDir.isBlank()) {
+            try {
+                Path containerDumpDir = Paths.get(hostDumpDir, "containers", name);
+                Files.createDirectories(containerDumpDir);
+                makeWorldWritable(containerDumpDir);
+                container.withFileSystemBind(containerDumpDir.toString(), CONTAINER_NETTY_LEAK_DUMP_DIR,
+                        BindMode.READ_WRITE);
+                container.withEnv(NETTY_LEAK_DUMP_DIR_ENV, CONTAINER_NETTY_LEAK_DUMP_DIR);
+            } catch (IOException e) {
+                log.warn("Failed to setup Netty leak dump directory bind mount for container {}", name, e);
+            }
+        }
+        container.withEnv(NETTY_LEAK_DETECTION_ENV, mode);
+
+        boolean customLeakDetectorAvailable = false;
+        try {
+            Path leakDetectorJar = createLeakDetectorJar();
+            MountableFile leakDetectorJarFile = MountableFile.forHostPath(leakDetectorJar, 0644);
+            container.withCopyFileToContainer(leakDetectorJarFile, CONTAINER_NETTY_LEAK_DETECTOR_JAR);
+            customLeakDetectorAvailable = true;
+        } catch (IOException e) {
+            log.warn("Failed to create/copy Netty leak detector jar to container {}", name, e);
+        }
+
+        // Mirror defaults used by unit tests (see root pom.xml surefire argLine).
+        String leakDetectionLevel = System.getProperty("io.netty.leakDetection.level", "paranoid");
+        String leakDetectionTargetRecords = System.getProperty("io.netty.leakDetection.targetRecords", "16");
+        String leakDetectionAcquireAndReleaseOnly =
+                System.getProperty("io.netty.leakDetection.acquireAndReleaseOnly", "true");
+        String leakDetectionSamplingInterval = System.getProperty("io.netty.leakDetection.samplingInterval", "32");
+        String tryReflectionSetAccessible = System.getProperty("io.netty.tryReflectionSetAccessible", "true");
+        String tryReflectionSetAccessibleShaded =
+                System.getProperty("org.apache.pulsar.shade.io.netty.tryReflectionSetAccessible", "true");
+        String exitJvmOnLeak = System.getProperty(ExtendedNettyLeakDetector.EXIT_JVM_ON_LEAK_SYSTEM_PROPERTY_NAME,
+                "false");
+        String exitJvmDelayMillis = System.getProperty(
+                ExtendedNettyLeakDetector.EXIT_JVM_DELAY_MILLIS_SYSTEM_PROPERTY_NAME, "1000");
+
+        String leakDetectionOpts = "-XX:+UnlockExperimentalVMOptions -XX:ReferencesPerThread=0 "
+                + "-XX:+ParallelRefProcEnabled "
+                + "-Dpulsar.allocator.pooled=false "
+                + "-Dpulsar.allocator.leak_detection=Advanced "
+                + "-Dio.netty.tryReflectionSetAccessible=" + tryReflectionSetAccessible + " "
+                + "-Dorg.apache.pulsar.shade.io.netty.tryReflectionSetAccessible=" + tryReflectionSetAccessibleShaded
+                + " "
+                + "-Dio.netty.leakDetection.level=" + leakDetectionLevel + " "
+                + "-Dio.netty.leakDetection.targetRecords=" + leakDetectionTargetRecords + " "
+                + "-Dio.netty.leakDetection.acquireAndReleaseOnly=" + leakDetectionAcquireAndReleaseOnly + " "
+                + "-Dio.netty.leakDetection.samplingInterval=" + leakDetectionSamplingInterval + " "
+                + "-D" + ExtendedNettyLeakDetector.EXIT_JVM_ON_LEAK_SYSTEM_PROPERTY_NAME + "=" + exitJvmOnLeak + " "
+                + "-D" + ExtendedNettyLeakDetector.EXIT_JVM_DELAY_MILLIS_SYSTEM_PROPERTY_NAME + "="
+                + exitJvmDelayMillis;
+        if (customLeakDetectorAvailable) {
+            leakDetectionOpts = leakDetectionOpts
+                    + " -Dio.netty.customResourceLeakDetector=" + ExtendedNettyLeakDetector.class.getName()
+                    + " -D" + ExtendedNettyLeakDetector.USE_SHUTDOWN_HOOK_SYSTEM_PROPERTY_NAME + "=true";
+            container.withEnv(PULSAR_EXTRA_CLASSPATH_ENV, CONTAINER_NETTY_LEAK_DETECTOR_JAR);
+        }
+        container.withEnv(PULSAR_EXTRA_OPTS_ENV, leakDetectionOpts);
+    }
+
+    private static void makeWorldWritable(Path path) {
+        try {
+            Set<PosixFilePermission> permissions = PosixFilePermissions.fromString("rwxrwxrwx");
+            Files.setPosixFilePermissions(path, permissions);
+        } catch (UnsupportedOperationException e) {
+            log.debug("Posix permissions not supported for {}, skipping chmod", path);
+        } catch (IOException e) {
+            log.debug("Failed to set chmod 777 on {}, skipping", path, e);
+        }
+    }
+
+    private static void makeWorldReadable(Path path) {
+        try {
+            Set<PosixFilePermission> permissions = PosixFilePermissions.fromString("rw-r--r--");
+            Files.setPosixFilePermissions(path, permissions);
+        } catch (UnsupportedOperationException e) {
+            log.debug("Posix permissions not supported for {}, skipping chmod", path);
+        } catch (IOException e) {
+            log.debug("Failed to set chmod 644 on {}, skipping", path, e);
+        }
+    }
+
+    private static Path createLeakDetectorJar() throws IOException {
+        Path jarPath = Files.createTempFile("kop-netty-leak-detector-", ".jar");
+        jarPath.toFile().deleteOnExit();
+
+        String classEntryName = ExtendedNettyLeakDetector.class.getName().replace('.', '/') + ".class";
+        String classResourcePath = "/" + classEntryName;
+
+        try (JarOutputStream jarOut = new JarOutputStream(Files.newOutputStream(jarPath))) {
+            jarOut.putNextEntry(new JarEntry(classEntryName));
+            try (InputStream in = ExtendedNettyLeakDetector.class.getResourceAsStream(classResourcePath)) {
+                if (in == null) {
+                    throw new IOException("Cannot load class bytes for " + classResourcePath);
+                }
+                in.transferTo(jarOut);
+            }
+            jarOut.closeEntry();
+            jarOut.flush();
+        }
+        makeWorldReadable(jarPath);
+        return jarPath;
     }
 
     protected Path getProtocolHandlerPath() {

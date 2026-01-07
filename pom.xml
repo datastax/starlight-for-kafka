@@ -43,6 +43,28 @@
       --add-opens java.base/sun.net=ALL-UNNAMED <!--netty.DnsResolverUtil-->
       --add-opens java.management/sun.management=ALL-UNNAMED <!--JvmDefaultGCMetricsLogger-->
     </test.additional.args>
+    <!-- Netty leak detection defaults in tests (aligned with Apache Pulsar CI conventions). -->
+    <testExitJvmOnLeak>false</testExitJvmOnLeak>
+    <testExitJvmOnLeakDelayMillis>1000</testExitJvmOnLeakDelayMillis>
+    <testLeakDetectionLevel>paranoid</testLeakDetectionLevel>
+    <test.netty.args>
+      <!-- required for triggering GC to trigger leak detection synchronously in tests -->
+      -XX:+UnlockExperimentalVMOptions -XX:ReferencesPerThread=0 -XX:+ParallelRefProcEnabled
+      -Dio.netty.tryReflectionSetAccessible=true
+      -Dorg.apache.pulsar.shade.io.netty.tryReflectionSetAccessible=true
+    </test.netty.args>
+    <test.netty.leakdetection.args>
+      -Dpulsar.allocator.pooled=false
+      -Dpulsar.allocator.leak_detection=Advanced
+      -Dio.netty.customResourceLeakDetector=io.streamnative.pulsar.handlers.kop.common.test.ExtendedNettyLeakDetector
+      -Dio.streamnative.pulsar.handlers.kop.common.test.ExtendedNettyLeakDetector.exitJvmOnLeak=${testExitJvmOnLeak}
+      -Dio.streamnative.pulsar.handlers.kop.common.test.ExtendedNettyLeakDetector.exitJvmDelayMillis=${testExitJvmOnLeakDelayMillis}
+      -Dio.netty.leakDetection.level=${testLeakDetectionLevel}
+      <!-- allows using paranoid leak detection with relatively low overhead -->
+      -Dio.netty.leakDetection.targetRecords=16
+      -Dio.netty.leakDetection.acquireAndReleaseOnly=true
+      -Dio.netty.leakDetection.samplingInterval=32
+    </test.netty.leakdetection.args>
     <!-- dependencies -->
     <jackson.version>2.14.2</jackson.version>
     <jackson-databind.version>2.14.2</jackson-databind.version>
@@ -618,8 +640,8 @@
         <version>${maven-surefire-plugin.version}</version>
         <configuration>
           <argLine>@{argLine} -Xmx2G
-            -Dpulsar.allocator.pooled=false
-            -Dpulsar.allocator.leak_detection=Advanced
+            ${test.netty.args}
+            ${test.netty.leakdetection.args}
             -Dlog4j.configurationFile="log4j2.xml"
             ${test.additional.args}
           </argLine>
@@ -793,6 +815,21 @@
   </distributionManagement>
 
   <profiles>
+    <!-- This profile is used to disable Netty leak detection in tests. It is activated by setting the
+         environment variable NETTY_LEAK_DETECTION to off. -->
+    <profile>
+      <id>disableNettyLeakDetection</id>
+      <activation>
+        <property>
+          <name>env.NETTY_LEAK_DETECTION</name>
+          <value>off</value>
+        </property>
+      </activation>
+      <properties>
+        <test.netty.leakdetection.args></test.netty.leakdetection.args>
+      </properties>
+    </profile>
+
     <profile>
       <id>release</id>
       <build>

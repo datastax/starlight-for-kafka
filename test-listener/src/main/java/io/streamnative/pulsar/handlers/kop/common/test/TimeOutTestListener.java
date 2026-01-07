@@ -27,6 +27,10 @@ import java.util.Map;
 import javax.management.JMException;
 import javax.management.ObjectName;
 import lombok.extern.slf4j.Slf4j;
+import org.testng.IExecutionListener;
+import org.testng.ISuite;
+import org.testng.ISuiteListener;
+import org.testng.ITestContext;
 import org.testng.ITestResult;
 import org.testng.TestListenerAdapter;
 import org.testng.internal.thread.ThreadTimeoutException;
@@ -36,7 +40,9 @@ import org.testng.internal.thread.ThreadTimeoutException;
  * in case a test is failed due to timeout.
  */
 @Slf4j
-public class TimeOutTestListener extends TestListenerAdapter {
+public class TimeOutTestListener extends TestListenerAdapter implements IExecutionListener, ISuiteListener {
+
+    private static final String NETTY_LEAK_DETECTION_ENV = "NETTY_LEAK_DETECTION";
 
     private static void print(String prefix, ITestResult tr) {
         if (tr.getParameters() != null && tr.getParameters().length > 0) {
@@ -51,6 +57,8 @@ public class TimeOutTestListener extends TestListenerAdapter {
 
     @Override
     public void onTestStart(ITestResult tr) {
+        ExtendedNettyLeakDetector.setInitialHint(String.format("Test: %s.%s",
+                tr.getTestClass().getName(), tr.getMethod().getMethodName()));
         print("onTestStart", tr);
         super.onTestStart(tr);
     }
@@ -59,6 +67,7 @@ public class TimeOutTestListener extends TestListenerAdapter {
     public void onTestSuccess(ITestResult tr) {
         print("onTestSuccess", tr);
         super.onTestSuccess(tr);
+        maybeTriggerNettyLeakDetection();
     }
 
     @Override
@@ -71,6 +80,7 @@ public class TimeOutTestListener extends TestListenerAdapter {
     public void onTestFailedButWithinSuccessPercentage(ITestResult tr) {
         print("onTestFailedButWithinSuccessPercentage", tr);
         super.onTestFailedButWithinSuccessPercentage(tr);
+        maybeTriggerNettyLeakDetection();
     }
 
     @Override
@@ -84,6 +94,54 @@ public class TimeOutTestListener extends TestListenerAdapter {
             System.err.println();
             System.err.print(ThreadDumpUtil.buildThreadDiagnosticString());
         }
+        maybeTriggerNettyLeakDetection();
+    }
+
+    @Override
+    public void onFinish(ITestContext testContext) {
+        maybeTriggerNettyLeakDetection();
+        ExtendedNettyLeakDetector.setInitialHint("Finished test: " + testContext.getName());
+        super.onFinish(testContext);
+    }
+
+    private static void maybeTriggerNettyLeakDetection() {
+        String mode = System.getenv(NETTY_LEAK_DETECTION_ENV);
+        if (mode != null && "off".equalsIgnoreCase(mode.trim())) {
+            return;
+        }
+        ExtendedNettyLeakDetector.triggerLeakDetection();
+    }
+
+    @Override
+    public void onExecutionStart() {
+        ExtendedNettyLeakDetector.setInitialHint("Starting test execution");
+    }
+
+    @Override
+    public void onExecutionFinish() {
+        if (!ExtendedNettyLeakDetector.isExtendedNettyLeakDetectorEnabled()) {
+            return;
+        }
+        if (!ExtendedNettyLeakDetector.isEnabled()) {
+            return;
+        }
+        ExtendedNettyLeakDetector.triggerLeakDetection();
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        ExtendedNettyLeakDetector.triggerLeakDetection();
+    }
+
+    @Override
+    public void onFinish(ISuite suite) {
+        ExtendedNettyLeakDetector.setInitialHint("Finished suite: " + suite.getName());
+    }
+
+    @Override
+    public void onStart(ISuite suite) {
+        ExtendedNettyLeakDetector.setInitialHint("Starting suite: " + suite.getName());
     }
 
     /**
