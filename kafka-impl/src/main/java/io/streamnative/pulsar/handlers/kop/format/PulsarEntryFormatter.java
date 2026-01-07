@@ -15,7 +15,6 @@ package io.streamnative.pulsar.handlers.kop.format;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
 import io.streamnative.pulsar.handlers.kop.utils.PulsarMessageBuilder;
 import java.nio.ByteBuffer;
@@ -54,71 +53,76 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
     public EncodeResult encode(final EncodeRequest encodeRequest) {
         final MemoryRecords records = encodeRequest.getRecords();
         final int numMessages = encodeRequest.getAppendInfo().numMessages();
+        final long startConversionNanos = MathUtils.nowInNano();
+
         long currentBatchSizeBytes = 0;
-        int numMessagesInBatch = 0;
-        long startConversionNanos = MathUtils.nowInNano();
-
         long sequenceId = -1;
+        int numMessagesInBatch = 0;
 
-        ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT
-                .buffer(Math.min(INITIAL_BATCH_BUFFER_SIZE, MAX_MESSAGE_BATCH_SIZE_BYTES));
-        List<MessageImpl<ByteBuffer>> messages = Lists.newArrayListWithExpectedSize(numMessages);
         final MessageMetadata msgMetadata = new MessageMetadata();
+        final int initialBatchBufferSize = Math.min(
+                Math.max(INITIAL_BATCH_BUFFER_SIZE, encodeRequest.getAppendInfo().validBytes()),
+                MAX_MESSAGE_BATCH_SIZE_BYTES);
+        ByteBuf batchedMessageMetadataAndPayload = PulsarByteBufAllocator.DEFAULT.buffer(initialBatchBufferSize);
 
-        for (MutableRecordBatch recordBatch : records.batches()) {
-            for (Record record : recordBatch) {
-                MessageImpl<ByteBuffer> message = recordToEntry(record);
-                messages.add(message);
+        try {
+            boolean batchMetadataInitialized = false;
+            boolean markerTypeSet = false;
+            for (MutableRecordBatch recordBatch : records.batches()) {
                 if (recordBatch.isTransactional()) {
                     msgMetadata.setTxnidMostBits(recordBatch.producerId());
                     msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
                 }
-                if (recordBatch.isControlBatch()) {
-                    ControlRecordType controlRecordType = ControlRecordType.parse(record.key());
-                    switch (controlRecordType) {
-                        case ABORT:
-                            msgMetadata.setMarkerType(MarkerType.TXN_ABORT_VALUE);
-                            break;
-                        case COMMIT:
-                            msgMetadata.setMarkerType(MarkerType.TXN_COMMIT_VALUE);
-                            break;
-                        default:
-                            msgMetadata.setMarkerType(MarkerType.UNKNOWN_MARKER_VALUE);
-                            break;
+                final boolean isControlBatch = recordBatch.isControlBatch();
+                for (Record record : recordBatch) {
+                    if (isControlBatch && !markerTypeSet) {
+                        final ControlRecordType controlRecordType = ControlRecordType.parse(record.key().duplicate());
+                        switch (controlRecordType) {
+                            case ABORT:
+                                msgMetadata.setMarkerType(MarkerType.TXN_ABORT_VALUE);
+                                break;
+                            case COMMIT:
+                                msgMetadata.setMarkerType(MarkerType.TXN_COMMIT_VALUE);
+                                break;
+                            default:
+                                msgMetadata.setMarkerType(MarkerType.UNKNOWN_MARKER_VALUE);
+                                break;
+                        }
+                        markerTypeSet = true;
                     }
+
+                    final MessageImpl<ByteBuffer> message = recordToEntry(record);
+                    if (!batchMetadataInitialized) {
+                        // msgMetadata will set publish time here
+                        sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
+                        batchMetadataInitialized = true;
+                    }
+
+                    numMessagesInBatch++;
+                    final ByteBuf dataBuffer = message.getDataBuffer();
+                    if (log.isTraceEnabled()) {
+                        currentBatchSizeBytes += dataBuffer.readableBytes();
+                        log.trace("recordsToByteBuf, sequenceId: {}, numMessagesInBatch: {}, batchBytes: {}",
+                                sequenceId, numMessagesInBatch, currentBatchSizeBytes);
+                    }
+
+                    batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(
+                            message.getMessageBuilder(), dataBuffer, batchedMessageMetadataAndPayload);
                 }
             }
+
+            msgMetadata.setNumMessagesInBatch(numMessagesInBatch);
+
+            final ByteBuf buf = Commands.serializeMetadataAndPayload(
+                    ChecksumType.Crc32c, msgMetadata, batchedMessageMetadataAndPayload);
+
+            return EncodeResult.get(records, buf, numMessages, numMessagesInBatch,
+                    MathUtils.elapsedNanos(startConversionNanos));
+        } finally {
+            batchedMessageMetadataAndPayload.release();
         }
-
-        for (MessageImpl<ByteBuffer> message : messages) {
-            if (++numMessagesInBatch == 1) {
-                // msgMetadata will set publish time here
-                sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
-            }
-            currentBatchSizeBytes += message.getDataBuffer().readableBytes();
-            if (log.isTraceEnabled()) {
-                log.trace("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
-                        sequenceId, numMessagesInBatch, currentBatchSizeBytes);
-            }
-
-            final MessageMetadata msgBuilder = message.getMessageBuilder();
-            batchedMessageMetadataAndPayload = Commands.serializeSingleMessageInBatchWithPayload(msgBuilder,
-                    message.getDataBuffer(), batchedMessageMetadataAndPayload);
-        }
-
-        msgMetadata.setNumMessagesInBatch(numMessagesInBatch);
-
-        ByteBuf buf = Commands.serializeMetadataAndPayload(ChecksumType.Crc32c,
-                msgMetadata,
-                batchedMessageMetadataAndPayload);
-
-        batchedMessageMetadataAndPayload.release();
-
-        return EncodeResult.get(records, buf, numMessages, numMessagesInBatch,
-                MathUtils.elapsedNanos(startConversionNanos));
     }
 
-    // convert kafka Record to Pulsar Message.
     // convert kafka Record to Pulsar Message.
     // called when publish received Kafka Record into Pulsar.
     private static MessageImpl<ByteBuffer> recordToEntry(Record record) {
@@ -128,7 +132,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         // key
         if (record.hasKey()) {
             byte[] key = new byte[record.keySize()];
-            record.key().get(key);
+            record.key().duplicate().get(key);
             builder.keyBytes(key);
             // reuse ordering key to avoid converting string < > bytes
             builder.orderingKey(key);
@@ -161,8 +165,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         // header
         for (Header h : record.headers()) {
-            builder.property(h.key(),
-                    new String(h.value(), UTF_8));
+            final byte[] value = h.value();
+            builder.property(h.key(), value == null ? "" : new String(value, UTF_8));
         }
 
         return (MessageImpl<ByteBuffer>) builder.getMessage();
