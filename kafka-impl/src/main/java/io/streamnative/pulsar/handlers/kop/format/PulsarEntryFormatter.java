@@ -67,16 +67,17 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         try {
             boolean batchMetadataInitialized = false;
-            boolean markerTypeSet = false;
             for (MutableRecordBatch recordBatch : records.batches()) {
-                if (recordBatch.isTransactional()) {
-                    msgMetadata.setTxnidMostBits(recordBatch.producerId());
-                    msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
-                }
+                final boolean isTransactional = recordBatch.isTransactional();
                 final boolean isControlBatch = recordBatch.isControlBatch();
                 for (Record record : recordBatch) {
-                    if (isControlBatch && !markerTypeSet) {
-                        final ControlRecordType controlRecordType = ControlRecordType.parse(record.key().duplicate());
+                    final MessageImpl<ByteBuffer> message = recordToEntry(record);
+                    if (isTransactional) {
+                        msgMetadata.setTxnidMostBits(recordBatch.producerId());
+                        msgMetadata.setTxnidLeastBits(recordBatch.producerEpoch());
+                    }
+                    if (isControlBatch) {
+                        final ControlRecordType controlRecordType = ControlRecordType.parse(record.key());
                         switch (controlRecordType) {
                             case ABORT:
                                 msgMetadata.setMarkerType(MarkerType.TXN_ABORT_VALUE);
@@ -88,10 +89,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                                 msgMetadata.setMarkerType(MarkerType.UNKNOWN_MARKER_VALUE);
                                 break;
                         }
-                        markerTypeSet = true;
                     }
 
-                    final MessageImpl<ByteBuffer> message = recordToEntry(record);
                     if (!batchMetadataInitialized) {
                         // msgMetadata will set publish time here
                         sequenceId = Commands.initBatchMessageMetadata(msgMetadata, message.getMessageBuilder());
@@ -102,7 +101,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                     final ByteBuf dataBuffer = message.getDataBuffer();
                     if (log.isTraceEnabled()) {
                         currentBatchSizeBytes += dataBuffer.readableBytes();
-                        log.trace("recordsToByteBuf, sequenceId: {}, numMessagesInBatch: {}, batchBytes: {}",
+                        log.trace("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
                                 sequenceId, numMessagesInBatch, currentBatchSizeBytes);
                     }
 
@@ -132,7 +131,7 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
         // key
         if (record.hasKey()) {
             byte[] key = new byte[record.keySize()];
-            record.key().duplicate().get(key);
+            record.key().get(key);
             builder.keyBytes(key);
             // reuse ordering key to avoid converting string < > bytes
             builder.orderingKey(key);
@@ -165,8 +164,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
 
         // header
         for (Header h : record.headers()) {
-            final byte[] value = h.value();
-            builder.property(h.key(), value == null ? "" : new String(value, UTF_8));
+            builder.property(h.key(),
+                    new String(h.value(), UTF_8));
         }
 
         return (MessageImpl<ByteBuffer>) builder.getMessage();
