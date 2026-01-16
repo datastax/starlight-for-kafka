@@ -1211,14 +1211,19 @@ public class KafkaApisTest extends KopProtocolHandlerTestBase {
         final int numMessages = 10;
         final KafkaProducer<String, String> producer = createKafkaProducer();
         produceData(producer, Collections.singletonList(new TopicPartition(topic, 0)), numMessages);
-        AbstractResponse abstractResponse = ((ResponseCallbackWrapper)
-                future.get(maxWaitMs + 1000, TimeUnit.MILLISECONDS)).getResponse();
-        assertTrue(abstractResponse instanceof FetchResponse);
-        final FetchResponse response = (FetchResponse) abstractResponse;
-        assertEquals(response.error(), Errors.NONE);
-        final long endTime = System.currentTimeMillis();
-        log.info("Take {} ms to process FETCH request", endTime - startTime);
-        assertTrue(endTime - startTime <= maxWaitMs);
+        final ResponseCallbackWrapper responseWrapper =
+                (ResponseCallbackWrapper) future.get(maxWaitMs + 1000, TimeUnit.MILLISECONDS);
+        try {
+            AbstractResponse abstractResponse = responseWrapper.getResponse();
+            assertTrue(abstractResponse instanceof FetchResponse);
+            final FetchResponse response = (FetchResponse) abstractResponse;
+            assertEquals(response.error(), Errors.NONE);
+            final long endTime = System.currentTimeMillis();
+            log.info("Take {} ms to process FETCH request", endTime - startTime);
+            assertTrue(endTime - startTime <= maxWaitMs);
+        } finally {
+            responseWrapper.responseComplete();
+        }
 
         Long waitingFetchesTriggered = kafkaRequestHandler.getRequestStats().getWaitingFetchesTriggered().get();
         assertEquals((long) waitingFetchesTriggered, 1);
