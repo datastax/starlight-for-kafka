@@ -101,7 +101,8 @@ public class PulsarEntryFormatter extends AbstractEntryFormatter {
                     final ByteBuf dataBuffer = message.getDataBuffer();
                     if (log.isTraceEnabled()) {
                         currentBatchSizeBytes += dataBuffer.readableBytes();
-                        log.trace("recordsToByteBuf , sequenceId: {}, numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
+                        log.trace("recordsToByteBuf , sequenceId: {}," +
+                                        " numMessagesInBatch: {}, currentBatchSizeBytes: {} ",
                                 sequenceId, numMessagesInBatch, currentBatchSizeBytes);
                     }
 
