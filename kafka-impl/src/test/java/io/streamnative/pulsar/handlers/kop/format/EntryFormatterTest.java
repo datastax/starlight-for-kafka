@@ -34,6 +34,7 @@ import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.mledger.Entry;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.CompressionType;
@@ -321,7 +322,7 @@ public class EntryFormatterTest {
                                         byte magic,
                                         CompressionType compressionType,
                                         long baseOffset) {
-            super(bufferStream, magic, compressionType, TimestampType.CREATE_TIME, baseOffset,
+            super(bufferStream, magic, Compression.of(compressionType).build(), TimestampType.CREATE_TIME, baseOffset,
                     RecordBatch.NO_TIMESTAMP, RecordBatch.NO_PRODUCER_ID, RecordBatch.NO_PRODUCER_EPOCH,
                     RecordBatch.NO_SEQUENCE, false, false, RecordBatch.NO_PARTITION_LEADER_EPOCH,
                     bufferStream.remaining());
@@ -335,7 +336,8 @@ public class EntryFormatterTest {
 
             bufferStream.position(initialPosition + batchHeaderSizeInBytes);
             this.bufferStream = bufferStream;
-            this.appendStream = new DataOutputStream(compressionType.wrapForOutput(this.bufferStream, magic));
+            this.appendStream = new DataOutputStream(Compression.of(compressionType).build()
+                    .wrapForOutput(this.bufferStream, magic));
         }
 
         @Override

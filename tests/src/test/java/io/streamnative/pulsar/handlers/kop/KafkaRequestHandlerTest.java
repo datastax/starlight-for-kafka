@@ -83,6 +83,7 @@ import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownServerException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
+import org.apache.kafka.common.feature.Features;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ApiVersionsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
@@ -90,6 +91,7 @@ import org.apache.kafka.common.message.MetadataRequestData;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.RecordVersion;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -213,8 +215,14 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 Unpooled.buffer(20),
                 null);
 
-        ApiVersionsResponse apiVersionsResponse = ApiVersionsResponse
-                .defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
+        ApiVersionsResponse apiVersionsResponse = new ApiVersionsResponse.Builder().
+                setApiVersions(ApiVersionsResponse.filterApis(
+                        RecordVersion.current(), ApiMessageType.ListenerType.BROKER,
+                        true, false)).
+                setSupportedFeatures(Features.emptySupportedFeatures()).
+                setFinalizedFeatures(Collections.emptyMap()).
+                setFinalizedFeaturesEpoch(ApiVersionsResponse.UNKNOWN_FINALIZED_FEATURES_EPOCH).
+                build();
         KafkaHeaderAndResponse kopResponse = KafkaHeaderAndResponse.responseForRequest(
                 kopRequest, apiVersionsResponse);
 
@@ -518,7 +526,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
 
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
-                .setGenerationId(generationId)
+                .setGenerationIdOrMemberEpoch(generationId)
                 .setMemberId(memberId)
                 .setGroupId("test-groupId")
                 .setTopics(Collections.singletonList(offsetCommitRequestTopic)));
@@ -590,7 +598,7 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
                 KafkaCommonTestUtils.newOffsetCommitRequestPartitionData(topicPartition, 1L, "");
         offsetData.put(topicPartition, offsetCommitRequestTopic.partitions().get(0));
         OffsetCommitRequest.Builder builder = new OffsetCommitRequest.Builder(new OffsetCommitRequestData()
-                .setGenerationId(generationId)
+                .setGenerationIdOrMemberEpoch(generationId)
                 .setMemberId(memberId)
                 .setGroupId("test-groupId")
                 .setTopics(Collections.singletonList(offsetCommitRequestTopic)));
@@ -639,7 +647,8 @@ public class KafkaRequestHandlerTest extends KopProtocolHandlerTestBase {
         final RequestHeader header =
                 new RequestHeader(ApiKeys.LIST_OFFSETS, ApiKeys.LIST_OFFSETS.latestVersion(), "client", 0);
         final ListOffsetsRequest request =
-                ListOffsetsRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
+                ListOffsetsRequest.Builder.forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
+                                false, false, false)
                         .setTargetTimes(KafkaCommonTestUtils
                                 .newListOffsetTargetTimes(topicPartition, ListOffsetsRequest.EARLIEST_TIMESTAMP))
                         .build(ApiKeys.LIST_OFFSETS.latestVersion());

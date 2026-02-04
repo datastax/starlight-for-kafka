@@ -14,6 +14,7 @@
 package io.streamnative.pulsar.handlers.kop.format;
 
 import java.nio.ByteBuffer;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
 import org.apache.kafka.common.record.RecordBatch;
@@ -66,7 +67,7 @@ public class DirectBufferOutputStreamTest {
     private static MemoryRecordsBuilder newMemoryRecordsBuilder(final ByteBufferOutputStream bufferStream) {
         return new MemoryRecordsBuilder(bufferStream,
                 RecordBatch.MAGIC_VALUE_V2,
-                CompressionType.NONE,
+                Compression.of(CompressionType.NONE).build(),
                 TimestampType.CREATE_TIME,
                 0,
                 LOG_APPEND_TIME,

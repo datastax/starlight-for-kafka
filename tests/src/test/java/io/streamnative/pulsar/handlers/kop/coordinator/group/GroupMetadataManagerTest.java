@@ -64,6 +64,7 @@ import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.common.util.OrderedScheduler;
 import org.apache.bookkeeper.mledger.impl.ImmutablePositionImpl;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.CompressionType;
@@ -275,7 +276,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
         );
 
         MemoryRecordsBuilder builder = MemoryRecords.builder(
-            buffer, RecordBatch.CURRENT_MAGIC_VALUE, offsetConfig.offsetsTopicCompressionType(),
+            buffer, RecordBatch.CURRENT_MAGIC_VALUE,
+            Compression.of(offsetConfig.offsetsTopicCompressionType()).build(),
             timestampType, 0L, timestamp,
             producerId,
             producerEpoch,
@@ -290,8 +292,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
     private int appendConsumerOffsetCommit(ByteBuffer buffer,
                                            long baseOffset,
                                            Map<TopicPartition, Long> offsets) {
-        MemoryRecordsBuilder builder =
-            MemoryRecords.builder(buffer, CompressionType.NONE, TimestampType.LOG_APPEND_TIME, baseOffset);
+        MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, Compression.of(CompressionType.NONE).build(),
+                    TimestampType.LOG_APPEND_TIME, baseOffset);
         List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId,
                 NAMESPACE_PREFIX);
         commitRecords.forEach(builder::append);
@@ -306,7 +308,8 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                                                  Map<TopicPartition, Long> offsets,
                                                  String namespacePrefix) {
         MemoryRecordsBuilder builder =
-            MemoryRecords.builder(buffer, CompressionType.NONE, baseOffset, producerId, producerEpoch, 0, true);
+            MemoryRecords.builder(buffer, Compression.of(CompressionType.NONE).build(), baseOffset, producerId,
+                    producerEpoch, 0, true);
         List<SimpleRecord> commitRecords = createCommittedOffsetRecords(offsets, groupId, namespacePrefix);
         commitRecords.forEach(builder::append);
         builder.build();
@@ -319,7 +322,7 @@ public class GroupMetadataManagerTest extends KopProtocolHandlerTestBase {
                                                   long baseOffset,
                                                   boolean isCommit) {
         MemoryRecordsBuilder builder = MemoryRecords.builder(
-            buffer, RecordBatch.MAGIC_VALUE_V2, CompressionType.NONE,
+            buffer, RecordBatch.MAGIC_VALUE_V2, Compression.of(CompressionType.NONE).build(),
             TimestampType.LOG_APPEND_TIME, baseOffset, Time.SYSTEM.milliseconds(),
             producerId, producerEpoch, 0, true, true,
             RecordBatch.NO_PARTITION_LEADER_EPOCH);
