@@ -46,7 +46,8 @@ public class ClientQuotaRequestValidatorTest {
         Optional<ClientQuotaRequestValidator.ValidationError> userEmpty =
                 ClientQuotaRequestValidator.validateAlterEntity(List.of(new EntityComponent("user", "")), false);
         assertTrue(userEmpty.isPresent());
-        assertEquals(userEmpty.get().message(), "INVALID_REQUEST: Empty entity_name is not allowed for entityType user");
+        assertEquals(userEmpty.get().message(),
+                "INVALID_REQUEST: Empty entity_name is not allowed for entityType user");
 
         Optional<ClientQuotaRequestValidator.ValidationError> ipEmpty =
                 ClientQuotaRequestValidator.validateAlterEntity(List.of(new EntityComponent("ip", "")), false);

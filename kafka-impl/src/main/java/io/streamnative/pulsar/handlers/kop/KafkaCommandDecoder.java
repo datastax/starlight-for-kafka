@@ -646,7 +646,8 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
     handleDescribeCluster(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
     protected abstract void
-    handleDescribeClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+    handleDescribeClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                               CompletableFuture<AbstractResponse> response);
 
     protected abstract void
     handleAlterClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);

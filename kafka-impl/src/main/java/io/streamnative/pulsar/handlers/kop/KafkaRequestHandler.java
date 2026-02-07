@@ -34,7 +34,14 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntityUtils;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntry;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaRequestValidator;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaService;
 import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaServiceManager;
+import io.streamnative.pulsar.handlers.kop.quota.EntityComponent;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
@@ -46,13 +53,6 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntry;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntityUtils;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaRequestValidator;
-import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaService;
-import io.streamnative.pulsar.handlers.kop.quota.EntityComponent;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -107,8 +107,8 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicIdPartition;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
@@ -128,11 +128,11 @@ import org.apache.kafka.common.message.CreateTopicsRequestData;
 import org.apache.kafka.common.message.DeleteGroupsRequestData;
 import org.apache.kafka.common.message.DeleteRecordsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
+import org.apache.kafka.common.message.DescribeClientQuotasRequestData;
+import org.apache.kafka.common.message.DescribeClientQuotasResponseData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
-import org.apache.kafka.common.message.DescribeClientQuotasRequestData;
-import org.apache.kafka.common.message.DescribeClientQuotasResponseData;
 import org.apache.kafka.common.message.DescribeProducersResponseData;
 import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
@@ -334,7 +334,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private String currentQuotaUser() {
-        if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
+        if (authenticator != null && authenticator.session() != null
+                && authenticator.session().getPrincipal() != null) {
             String name = authenticator.session().getPrincipal().getName();
             return name == null ? "" : name;
         }
@@ -1105,7 +1106,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (acks == 0) {
                         resultFuture.complete(null);
                     } else {
-                        resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap, throttleTimeMsInResponse));
+                        resultFuture.complete(
+                                new ProduceResponse(unauthorizedTopicResponsesMap, throttleTimeMsInResponse));
                     }
                     return;
                 }
@@ -2034,7 +2036,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         resultFuture.complete(FetchResponse.of(Errors.NONE, throttle.throttleTimeMsInResponse(),
                                 request.metadata().sessionId(), new LinkedHashMap<>()));
                     } else {
-                        resultFuture.complete(FetchResponse.of(Errors.NONE, 0, request.metadata().sessionId(), ordered));
+                        resultFuture.complete(FetchResponse.of(Errors.NONE, 0,
+                                request.metadata().sessionId(), ordered));
                     }
                 } else {
                     MessageFetchContext context = MessageFetchContext

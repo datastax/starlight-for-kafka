@@ -68,7 +68,8 @@ public class ClientQuotaIndex {
         private final boolean hasIp;
         private final String ip;
 
-        private EntityKey(boolean hasUser, String user, boolean hasClientId, String clientId, boolean hasIp, String ip) {
+        private EntityKey(boolean hasUser, String user, boolean hasClientId,
+                          String clientId, boolean hasIp, String ip) {
             this.hasUser = hasUser;
             this.user = user;
             this.hasClientId = hasClientId;

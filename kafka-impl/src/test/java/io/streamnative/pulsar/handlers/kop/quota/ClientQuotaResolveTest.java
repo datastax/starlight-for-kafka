@@ -22,8 +22,9 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 import org.mockito.Mockito;
 import org.testng.annotations.Test;
@@ -115,7 +116,7 @@ public class ClientQuotaResolveTest {
 
         MetadataStoreExtended metadataStore = Mockito.mock(MetadataStoreExtended.class);
         Mockito.when(metadataStore.get(Mockito.anyString()))
-                .thenReturn(java.util.concurrent.CompletableFuture.completedFuture(Optional.empty()));
+                .thenReturn(CompletableFuture.completedFuture(Optional.empty()));
 
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
         ClientQuotaStats stats = new ClientQuotaStats(NullStatsLogger.INSTANCE);

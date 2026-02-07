@@ -82,7 +82,8 @@ public class ClientQuotaIndexTest {
 
     private static Set<String> entityKeySet(List<ClientQuotaEntry> entries) {
         return entries.stream()
-                .map(e -> ClientQuotaEntityUtils.canonicalEntityString(ClientQuotaEntityUtils.canonicalize(e.getEntity())))
+                .map(e -> ClientQuotaEntityUtils.canonicalEntityString(
+                        ClientQuotaEntityUtils.canonicalize(e.getEntity())))
                 .collect(Collectors.toSet());
     }
 }
