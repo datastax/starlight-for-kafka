@@ -94,9 +94,10 @@ public class ClientQuotaStats implements AutoCloseable {
     }
 
     public void recordLimitersEvicted(int count) {
-        for (int i = 0; i < count; i++) {
-            limitersEvictedTotal.inc();
+        if (count <= 0) {
+            return;
         }
+        limitersEvictedTotal.addCount(count);
     }
 
     public void recordThrottle(String api, ResolvedQuota resolvedQuota, long throttleMs) {

@@ -47,6 +47,7 @@ import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
 import org.apache.kafka.common.requests.KopResponseUtils;
 import org.apache.kafka.common.requests.ListOffsetRequestV0;
+import org.apache.kafka.common.requests.ProduceRequest;
 import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.requests.ResponseCallbackWrapper;
 import org.apache.kafka.common.requests.ResponseHeader;
@@ -455,10 +456,20 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (responseFuture.isDone()) {
                 responseFuture.thenAccept(response -> {
                     if (response == null) {
-                        // Allow null response (for example, Produce acks=0). Just release the request.
-                        request.close();
+                        boolean allowNullResponse = apiKey == ApiKeys.PRODUCE
+                                && request.getRequest() instanceof ProduceRequest
+                                && ((ProduceRequest) request.getRequest()).acks() == 0;
+                        if (allowNullResponse) {
+                            // Produce acks=0: no response expected. Just release the request.
+                            request.close();
+                            requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
+                                    .registerSuccessfulEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
+                            return;
+                        }
+                        log.error("[{}] Unexpected null response. request={}", channel, request.getHeader());
+                        sendErrorResponse(request, channel, new ApiException("unexpected null response"), true);
                         requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
-                                .registerSuccessfulEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
+                                .registerFailedEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
                         return;
                     }
                     if (log.isDebugEnabled()) {

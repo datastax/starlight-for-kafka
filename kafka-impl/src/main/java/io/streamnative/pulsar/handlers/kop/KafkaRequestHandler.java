@@ -457,6 +457,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     @Override
     protected void close() {
+        if (ctx != null && !ctx.executor().inEventLoop()) {
+            ctx.executor().execute(this::close);
+            return;
+        }
         if (isActive.getAndSet(false)) {
             releaseDeferredQuotaFrames();
             super.close();
