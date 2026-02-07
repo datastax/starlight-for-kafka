@@ -13,6 +13,7 @@
  */
 package io.streamnative.pulsar.handlers.kop.quota;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -22,6 +23,7 @@ import org.apache.kafka.common.protocol.Errors;
 
 public final class ClientQuotaRequestValidator {
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record ValidationError(Errors error, String message) {}
 
     private ClientQuotaRequestValidator() {}
@@ -110,4 +112,3 @@ public final class ClientQuotaRequestValidator {
         return Optional.empty();
     }
 }
-

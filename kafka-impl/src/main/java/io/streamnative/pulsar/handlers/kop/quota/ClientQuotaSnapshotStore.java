@@ -17,6 +17,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.MapperFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
@@ -39,6 +40,7 @@ public class ClientQuotaSnapshotStore {
             .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true)
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true);
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record LoadedSnapshot(ClientQuotaSnapshot snapshot, long metadataVersion) {}
 
     private final MetadataStoreExtended metadataStore;
@@ -152,4 +154,3 @@ public class ClientQuotaSnapshotStore {
         return new ClientQuotaSnapshot(SCHEMA_VERSION, java.util.Collections.emptyList());
     }
 }
-

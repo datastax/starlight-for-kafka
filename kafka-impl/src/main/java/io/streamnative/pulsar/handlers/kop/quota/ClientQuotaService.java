@@ -18,6 +18,7 @@ import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUO
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUOTA_CONSUMER_BYTE_RATE;
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUOTA_PRODUCER_BYTE_RATE;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex.DescribeComponent;
 import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex.ResolvedQuota;
@@ -44,10 +45,13 @@ import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 @Slf4j
 public class ClientQuotaService implements AutoCloseable {
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record QuotaOp(String key, Double value, boolean remove) {}
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record AlterEntry(List<EntityComponent> entity, List<QuotaOp> ops) {}
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record ThrottleResult(String quotaKey,
                                  long bytes,
                                  long rawThrottleMs,
@@ -55,6 +59,7 @@ public class ClientQuotaService implements AutoCloseable {
                                  int muteMs,
                                  ResolvedQuota resolvedQuota) {}
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     private record LimiterKey(String quotaKey, String user, String clientId) {}
 
     private final KafkaServiceConfiguration kafkaConfig;

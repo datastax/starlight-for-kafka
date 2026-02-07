@@ -17,6 +17,7 @@ import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.ENT
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.ENTITY_TYPE_IP;
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.ENTITY_TYPE_USER;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -46,8 +47,10 @@ public class ClientQuotaIndex {
         }
     }
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record ResolvedQuota(String quotaKey, double quotaValue, int resolvedLevel, ResolvedDim resolvedDim) {}
 
+    @SuppressFBWarnings("EQ_UNUSUAL")
     public record DescribeComponent(String entityType, byte matchType, String match) {}
 
     private static final class IndexedEntry {
@@ -332,4 +335,3 @@ public class ClientQuotaIndex {
         return new EntityKey(hasUser, user, hasClientId, clientId, hasIp, ip);
     }
 }
-
