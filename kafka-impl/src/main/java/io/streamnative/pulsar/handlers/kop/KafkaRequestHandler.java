@@ -26,6 +26,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
+import io.netty.util.ReferenceCountUtil;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupCoordinator;
 import io.streamnative.pulsar.handlers.kop.coordinator.group.GroupMetadata.GroupOverview;
 import io.streamnative.pulsar.handlers.kop.coordinator.transaction.TransactionCoordinator;
@@ -33,6 +34,7 @@ import io.streamnative.pulsar.handlers.kop.exceptions.KoPTopicException;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetAndMetadata;
 import io.streamnative.pulsar.handlers.kop.offset.OffsetMetadata;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaServiceManager;
 import io.streamnative.pulsar.handlers.kop.scala.Either;
 import io.streamnative.pulsar.handlers.kop.security.SaslAuthenticator;
 import io.streamnative.pulsar.handlers.kop.security.Session;
@@ -44,6 +46,13 @@ import io.streamnative.pulsar.handlers.kop.security.auth.SimpleAclAuthorizer;
 import io.streamnative.pulsar.handlers.kop.storage.AppendRecordsContext;
 import io.streamnative.pulsar.handlers.kop.storage.PartitionLog;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntry;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaEntityUtils;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaRequestValidator;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaService;
+import io.streamnative.pulsar.handlers.kop.quota.EntityComponent;
 import io.streamnative.pulsar.handlers.kop.utils.CoreUtils;
 import io.streamnative.pulsar.handlers.kop.utils.GroupIdUtils;
 import io.streamnative.pulsar.handlers.kop.utils.KafkaRequestUtils;
@@ -63,6 +72,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -98,6 +108,8 @@ import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.TopicIdPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.acl.AclOperation;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.ApiException;
@@ -107,6 +119,8 @@ import org.apache.kafka.common.message.AddOffsetsToTxnRequestData;
 import org.apache.kafka.common.message.AddOffsetsToTxnResponseData;
 import org.apache.kafka.common.message.AddPartitionsToTxnRequestData;
 import org.apache.kafka.common.message.AddPartitionsToTxnResponseData;
+import org.apache.kafka.common.message.AlterClientQuotasRequestData;
+import org.apache.kafka.common.message.AlterClientQuotasResponseData;
 import org.apache.kafka.common.message.AlterConfigsRequestData;
 import org.apache.kafka.common.message.AlterConfigsResponseData;
 import org.apache.kafka.common.message.CreatePartitionsRequestData;
@@ -117,6 +131,8 @@ import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.DescribeClientQuotasRequestData;
+import org.apache.kafka.common.message.DescribeClientQuotasResponseData;
 import org.apache.kafka.common.message.DescribeProducersResponseData;
 import org.apache.kafka.common.message.DescribeTransactionsResponseData;
 import org.apache.kafka.common.message.EndTxnRequestData;
@@ -149,6 +165,8 @@ import org.apache.kafka.common.requests.AddOffsetsToTxnRequest;
 import org.apache.kafka.common.requests.AddOffsetsToTxnResponse;
 import org.apache.kafka.common.requests.AddPartitionsToTxnRequest;
 import org.apache.kafka.common.requests.AddPartitionsToTxnResponse;
+import org.apache.kafka.common.requests.AlterClientQuotasRequest;
+import org.apache.kafka.common.requests.AlterClientQuotasResponse;
 import org.apache.kafka.common.requests.AlterConfigsRequest;
 import org.apache.kafka.common.requests.AlterConfigsResponse;
 import org.apache.kafka.common.requests.ApiError;
@@ -158,6 +176,8 @@ import org.apache.kafka.common.requests.CreateTopicsRequest;
 import org.apache.kafka.common.requests.DeleteGroupsRequest;
 import org.apache.kafka.common.requests.DeleteRecordsRequest;
 import org.apache.kafka.common.requests.DeleteTopicsRequest;
+import org.apache.kafka.common.requests.DescribeClientQuotasRequest;
+import org.apache.kafka.common.requests.DescribeClientQuotasResponse;
 import org.apache.kafka.common.requests.DescribeClusterRequest;
 import org.apache.kafka.common.requests.DescribeClusterResponse;
 import org.apache.kafka.common.requests.DescribeConfigsRequest;
@@ -250,6 +270,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final Function<String, SchemaManager> schemaManagerForTenant;
     private final PulsarAdmin admin;
     private final MetadataStoreExtended metadataStore;
+    private final ClientQuotaServiceManager clientQuotaServiceManager;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
     private final AdminManager adminManager;
@@ -278,6 +299,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     private final long resumeThresholdPendingBytes;
     private final AtomicLong pendingBytes = new AtomicLong(0);
     private volatile boolean autoReadDisabledPublishBufferLimiting = false;
+    private volatile boolean autoReadDisabledQuota = false;
+    private volatile long quotaMutedUntilMs = 0L;
+    private final java.util.ArrayDeque<ByteBuf> deferredQuotaFrames = new java.util.ArrayDeque<>();
+    private long deferredQuotaBytes = 0L;
 
     private String getCurrentTenant() {
         return getCurrentTenant(kafkaConfig.getKafkaMetadataTenant());
@@ -302,6 +327,22 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     public String currentNamespacePrefix() {
         String currentTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
         return MetadataUtils.constructUserTopicsNamespace(currentTenant, kafkaConfig);
+    }
+
+    private String currentQuotaTenant() {
+        return getCurrentTenant(kafkaConfig.getKafkaTenant());
+    }
+
+    private String currentQuotaUser() {
+        if (authenticator != null && authenticator.session() != null && authenticator.session().getPrincipal() != null) {
+            String name = authenticator.session().getPrincipal().getName();
+            return name == null ? "" : name;
+        }
+        return "";
+    }
+
+    private static String normalizeClientId(String clientId) {
+        return clientId == null ? "" : clientId;
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -346,7 +387,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
                                Function<String, SchemaManager> schemaManagerForTenant,
                                KafkaTopicLookupService kafkaTopicLookupService,
-                               LookupClient lookupClient) throws Exception {
+                               LookupClient lookupClient,
+                               ClientQuotaServiceManager clientQuotaServiceManager) throws Exception {
         super(requestStats, kafkaConfig, sendResponseScheduler);
         this.schemaManagerForTenant = schemaManagerForTenant;
         this.pulsarService = pulsarService;
@@ -358,6 +400,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         this.executor = pulsarService.getExecutor();
         this.admin = pulsarService.getAdminClient();
         this.metadataStore = pulsarService.getLocalMetadataStore();
+        this.clientQuotaServiceManager = clientQuotaServiceManager;
         final boolean authenticationEnabled = pulsarService.getBrokerService().isAuthenticationEnabled()
                 && !kafkaConfig.getSaslAllowedMechanisms().isEmpty();
         this.authenticator = authenticationEnabled
@@ -414,6 +457,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     @Override
     protected void close() {
         if (isActive.getAndSet(false)) {
+            releaseDeferredQuotaFrames();
             super.close();
             topicManager.close();
             String clientHost = ctx.channel().remoteAddress().toString();
@@ -513,6 +557,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
                 if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                    if (!kafkaConfig.isKopClientQuotaEnabled()
+                            && (apiKey == ApiKeys.DESCRIBE_CLIENT_QUOTAS
+                            || apiKey == ApiKeys.ALTER_CLIENT_QUOTAS)) {
+                        continue;
+                    }
                     switch (apiKey) {
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
@@ -822,7 +871,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private void enableCnxAutoRead() {
         if (ctx != null && !ctx.channel().config().isAutoRead()
-                && !autoReadDisabledPublishBufferLimiting) {
+                && !autoReadDisabledPublishBufferLimiting
+                && !autoReadDisabledQuota) {
             // Resume reading from socket if pending-request is not reached to threshold
             ctx.channel().config().setAutoRead(true);
             // triggers channel read
@@ -830,6 +880,136 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             if (log.isDebugEnabled()) {
                 log.debug("[{}] enable auto read", ctx.channel());
             }
+        }
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        if (autoReadDisabledQuota && msg instanceof ByteBuf) {
+            deferQuotaFrame((ByteBuf) msg);
+            return;
+        }
+        super.channelRead(ctx, msg);
+    }
+
+    private void deferQuotaFrame(ByteBuf buffer) {
+        if (!isActive.get()) {
+            ReferenceCountUtil.safeRelease(buffer);
+            return;
+        }
+        deferredQuotaFrames.add(buffer);
+        deferredQuotaBytes += buffer.readableBytes();
+
+        int maxFrames = kafkaConfig.getKopClientQuotaMaxDeferredFrames();
+        long maxBytes = kafkaConfig.getKopClientQuotaMaxDeferredBytes();
+        if (deferredQuotaFrames.size() > maxFrames || deferredQuotaBytes > maxBytes) {
+            log.warn("[{}] Closing connection due to deferred quota frames overflow: frames={}, bytes={}, caps: {}, {}",
+                    ctx.channel(), deferredQuotaFrames.size(), deferredQuotaBytes, maxFrames, maxBytes);
+            close();
+        }
+    }
+
+    private void releaseDeferredQuotaFrames() {
+        while (!deferredQuotaFrames.isEmpty()) {
+            ReferenceCountUtil.safeRelease(deferredQuotaFrames.poll());
+        }
+        deferredQuotaBytes = 0L;
+    }
+
+    private void muteChannelForQuota(String tenant,
+                                     String user,
+                                     String clientId,
+                                     ClientQuotaService.ThrottleResult throttleResult) {
+        int muteMs = throttleResult.muteMs();
+        if (muteMs <= 0 || ctx == null) {
+            return;
+        }
+        if (!ctx.executor().inEventLoop()) {
+            ctx.executor().execute(() -> muteChannelForQuota(tenant, user, clientId, throttleResult));
+            return;
+        }
+        if (!isActive.get()) {
+            return;
+        }
+
+        long nowMs = Time.SYSTEM.milliseconds();
+        long mutedUntilMs = nowMs + muteMs;
+        if (mutedUntilMs > quotaMutedUntilMs) {
+            quotaMutedUntilMs = mutedUntilMs;
+        } else {
+            mutedUntilMs = quotaMutedUntilMs;
+        }
+
+        autoReadDisabledQuota = true;
+        disableCnxAutoRead();
+
+        if (log.isDebugEnabled()) {
+            log.debug("kop quota throttled: tenant={}, user={}, clientId={}, quotaKey={}, resolvedLevel={}, "
+                            + "resolvedDim={}, bytes={}, rawThrottleMs={}, throttleMs={}, muteMs={}, mutedUntilMs={}",
+                    tenant,
+                    user,
+                    clientId,
+                    throttleResult.quotaKey(),
+                    throttleResult.resolvedQuota().resolvedLevel(),
+                    throttleResult.resolvedQuota().resolvedDim().label(),
+                    throttleResult.bytes(),
+                    throttleResult.rawThrottleMs(),
+                    throttleResult.throttleTimeMsInResponse(),
+                    throttleResult.muteMs(),
+                    mutedUntilMs);
+        }
+
+        long delayMs = Math.max(0, quotaMutedUntilMs - nowMs);
+        ctx.executor().schedule(this::unmuteQuotaIfExpired, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    private void unmuteQuotaIfExpired() {
+        if (ctx == null) {
+            return;
+        }
+        if (!ctx.executor().inEventLoop()) {
+            ctx.executor().execute(this::unmuteQuotaIfExpired);
+            return;
+        }
+        if (!isActive.get()) {
+            return;
+        }
+
+        long nowMs = Time.SYSTEM.milliseconds();
+        if (nowMs < quotaMutedUntilMs) {
+            long delayMs = quotaMutedUntilMs - nowMs;
+            ctx.executor().schedule(this::unmuteQuotaIfExpired, delayMs, TimeUnit.MILLISECONDS);
+            return;
+        }
+
+        autoReadDisabledQuota = false;
+        drainDeferredQuotaFrames();
+        enableCnxAutoRead();
+    }
+
+    private void drainDeferredQuotaFrames() {
+        if (ctx == null) {
+            return;
+        }
+        if (!ctx.executor().inEventLoop()) {
+            ctx.executor().execute(this::drainDeferredQuotaFrames);
+            return;
+        }
+        while (!deferredQuotaFrames.isEmpty() && !autoReadDisabledQuota && isActive.get()) {
+            ByteBuf buffer = deferredQuotaFrames.poll();
+            if (buffer == null) {
+                break;
+            }
+            deferredQuotaBytes -= buffer.readableBytes();
+            try {
+                super.channelRead(ctx, buffer);
+            } catch (Exception e) {
+                ReferenceCountUtil.safeRelease(buffer);
+                throw new RuntimeException("Error while draining deferred quota frames", e);
+            }
+        }
+        if (deferredQuotaFrames.isEmpty()) {
+            deferredQuotaBytes = 0L;
         }
     }
 
@@ -876,6 +1056,27 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                         CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(produceHar.getRequest() instanceof ProduceRequest);
         ProduceRequest produceRequest = (ProduceRequest) produceHar.getRequest();
+        final short acks = produceRequest.acks();
+
+        final String quotaTenant = currentQuotaTenant();
+        final String quotaUser = currentQuotaUser();
+        final String quotaClientId = normalizeClientId(produceHar.getHeader().clientId());
+        final long nowMs = Time.SYSTEM.milliseconds();
+        final long requestBytesIn = produceHar.getBuffer().readableBytes();
+        final int throttleTimeMsInResponse = clientQuotaServiceManager
+                .getOrCreate(quotaTenant)
+                .enforceBytesQuota("produce",
+                        ClientQuotaConstants.QUOTA_PRODUCER_BYTE_RATE,
+                        quotaUser,
+                        quotaClientId,
+                        requestBytesIn,
+                        nowMs,
+                        false)
+                .map(throttle -> {
+                    muteChannelForQuota(quotaTenant, quotaUser, quotaClientId, throttle);
+                    return throttle.throttleTimeMsInResponse();
+                })
+                .orElse(0);
 
         final int numPartitions = produceRequest
                 .data()
@@ -884,7 +1085,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 .mapToInt(t -> t.partitionData().size())
                 .sum();
         if (numPartitions == 0) {
-            resultFuture.complete(new ProduceResponse(Collections.emptyMap()));
+            if (acks == 0) {
+                resultFuture.complete(null);
+            } else {
+                resultFuture.complete(new ProduceResponse(Collections.emptyMap(), throttleTimeMsInResponse));
+            }
             return;
         }
         final Map<TopicPartition, PartitionResponse> unauthorizedTopicResponsesMap = new ConcurrentHashMap<>();
@@ -897,7 +1102,11 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             // When complete one authorization or failed, will do the action first.
             if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
                 if (authorizedRequestInfo.isEmpty()) {
-                    resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap));
+                    if (acks == 0) {
+                        resultFuture.complete(null);
+                    } else {
+                        resultFuture.complete(new ProduceResponse(unauthorizedTopicResponsesMap, throttleTimeMsInResponse));
+                    }
                     return;
                 }
                 AppendRecordsContext appendRecordsContext = AppendRecordsContext.get(
@@ -916,14 +1125,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                         appendRecordsContext
                 ).whenComplete((response, ex) -> {
                     if (ex != null) {
-                        resultFuture.completeExceptionally(ex.getCause());
+                        if (acks == 0) {
+                            log.error("[{}] Produce acks=0 failed, closing connection. request={}",
+                                    ctx.channel(), produceHar.getHeader(), ex);
+                            close();
+                            return;
+                        }
+                        Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+                        resultFuture.completeExceptionally(cause);
                         return;
                     }
                     Map<TopicPartition, PartitionResponse> mergedResponse = new HashMap<>();
                     mergedResponse.putAll(response);
                     mergedResponse.putAll(unauthorizedTopicResponsesMap);
                     mergedResponse.putAll(invalidRequestResponses);
-                    resultFuture.complete(new ProduceResponse(mergedResponse));
+                    if (acks == 0) {
+                        resultFuture.complete(null);
+                    } else {
+                        resultFuture.complete(new ProduceResponse(mergedResponse, throttleTimeMsInResponse));
+                    }
                     response.keySet().forEach(tp -> {
                         replicaManager.tryCompleteDelayedFetch(new DelayedOperationKey.TopicPartitionOperationKey(tp));
                     });
@@ -1748,6 +1968,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                       CompletableFuture<AbstractResponse> resultFuture) {
         checkArgument(fetch.getRequest() instanceof FetchRequest);
         FetchRequest request = (FetchRequest) fetch.getRequest();
+        final String quotaTenant = currentQuotaTenant();
+        final String quotaUser = currentQuotaUser();
+        final String quotaClientId = normalizeClientId(fetch.getHeader().clientId());
+        final ClientQuotaService quotaService = clientQuotaServiceManager.getOrCreate(quotaTenant);
 
         FetchRequestData data = request.data();
         if (log.isDebugEnabled()) {
@@ -1776,7 +2000,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
         AtomicInteger unfinishedAuthorizationCount = new AtomicInteger(numPartitions);
         Runnable completeOne = () -> {
-            if (unfinishedAuthorizationCount.decrementAndGet() == 0) {
+            if (unfinishedAuthorizationCount.decrementAndGet() != 0) {
+                return;
+            }
+            ctx.executor().execute(() -> {
                 TransactionCoordinator transactionCoordinator = null;
                 if (request.isolationLevel().equals(IsolationLevel.READ_COMMITTED)
                         && kafkaConfig.isKafkaTransactionCoordinatorEnabled()) {
@@ -1789,10 +2016,26 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     if (log.isDebugEnabled()) {
                         log.debug("Fetch interesting is empty. Partitions: [{}]", data.topics());
                     }
-                    resultFuture.complete(new FetchResponse(new FetchResponseData()
-                            .setErrorCode(Errors.NONE.code())
-                            .setSessionId(request.metadata().sessionId())
-                            .setResponses(buildFetchResponses(erroneous))));
+                    LinkedHashMap<TopicIdPartition, FetchResponseData.PartitionData> ordered =
+                            buildFetchResponseDataInOrder(data, erroneous);
+                    int responseSize = FetchResponse.sizeOf(request.version(), ordered.entrySet().iterator());
+                    long nowMs = Time.SYSTEM.milliseconds();
+                    Optional<ClientQuotaService.ThrottleResult> throttleOpt = quotaService.enforceBytesQuota(
+                            "fetch",
+                            ClientQuotaConstants.QUOTA_CONSUMER_BYTE_RATE,
+                            quotaUser,
+                            quotaClientId,
+                            responseSize,
+                            nowMs,
+                            true);
+                    if (throttleOpt.isPresent()) {
+                        ClientQuotaService.ThrottleResult throttle = throttleOpt.get();
+                        muteChannelForQuota(quotaTenant, quotaUser, quotaClientId, throttle);
+                        resultFuture.complete(FetchResponse.of(Errors.NONE, throttle.throttleTimeMsInResponse(),
+                                request.metadata().sessionId(), new LinkedHashMap<>()));
+                    } else {
+                        resultFuture.complete(FetchResponse.of(Errors.NONE, 0, request.metadata().sessionId(), ordered));
+                    }
                 } else {
                     MessageFetchContext context = MessageFetchContext
                             .get(this, transactionCoordinator, maxReadEntriesNum, namespacePrefix,
@@ -1805,20 +2048,41 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             request.isolationLevel(),
                             context
                     ).thenAccept(resultMap -> {
+                        ctx.executor().execute(() -> {
+                        if (!isActive.get()) {
+                            resultMap.forEach((__, readRecordsResult) -> readRecordsResult.recycle());
+                            context.recycle();
+                            return;
+                        }
                         Map<TopicPartition, FetchResponseData.PartitionData> all = new HashMap<>();
                         resultMap.forEach((tp, results) -> {
                             all.put(tp, results.toPartitionData());
                         });
                         all.putAll(erroneous);
+                        LinkedHashMap<TopicIdPartition, FetchResponseData.PartitionData> ordered =
+                                buildFetchResponseDataInOrder(data, all);
+                        int responseSize = FetchResponse.sizeOf(request.version(), ordered.entrySet().iterator());
+                        long nowMs = Time.SYSTEM.milliseconds();
+                        Optional<ClientQuotaService.ThrottleResult> throttleOpt = quotaService.enforceBytesQuota(
+                                "fetch",
+                                ClientQuotaConstants.QUOTA_CONSUMER_BYTE_RATE,
+                                quotaUser,
+                                quotaClientId,
+                                responseSize,
+                                nowMs,
+                                true);
+                        FetchResponse responseToSend;
+                        if (throttleOpt.isPresent()) {
+                            ClientQuotaService.ThrottleResult throttle = throttleOpt.get();
+                            muteChannelForQuota(quotaTenant, quotaUser, quotaClientId, throttle);
+                            responseToSend = FetchResponse.of(Errors.NONE, throttle.throttleTimeMsInResponse(),
+                                    request.metadata().sessionId(), new LinkedHashMap<>());
+                        } else {
+                            responseToSend = FetchResponse.of(Errors.NONE, 0, request.metadata().sessionId(), ordered);
+                        }
                         boolean triggeredCompletion = resultFuture.complete(new ResponseCallbackWrapper(
-                                new FetchResponse(new FetchResponseData()
-                                        .setErrorCode(Errors.NONE.code())
-                                        .setThrottleTimeMs(0)
-                                        .setSessionId(request.metadata().sessionId())
-                                        .setResponses(buildFetchResponses(all))),
-                                () -> resultMap.forEach((__, readRecordsResult) -> {
-                                    readRecordsResult.recycle();
-                                })
+                                responseToSend,
+                                () -> resultMap.forEach((__, readRecordsResult) -> readRecordsResult.recycle())
                         ));
                         if (!triggeredCompletion) {
                             resultMap.forEach((__, readRecordsResult) -> {
@@ -1826,9 +2090,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                             });
                         }
                         context.recycle();
+                        });
                     });
                 }
-            }
+            });
         };
 
         // Regular Kafka consumers need READ permission on each partition they are fetching.
@@ -1860,34 +2125,46 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     }
 
+    private static LinkedHashMap<TopicIdPartition, FetchResponseData.PartitionData> buildFetchResponseDataInOrder(
+            FetchRequestData requestData,
+            Map<TopicPartition, FetchResponseData.PartitionData> partitionData) {
+        LinkedHashMap<TopicIdPartition, FetchResponseData.PartitionData> ordered = new LinkedHashMap<>();
+        requestData.topics().forEach(topicData -> {
+            topicData.partitions().forEach(partitionData1 -> {
+                TopicPartition tp = new TopicPartition(topicData.topic(), partitionData1.partition());
+                FetchResponseData.PartitionData response = partitionData.get(tp);
+                if (response == null) {
+                    response = errorResponse(Errors.UNKNOWN_SERVER_ERROR);
+                }
+                ordered.put(new TopicIdPartition(Uuid.ZERO_UUID, tp), response);
+            });
+        });
+        return ordered;
+    }
+
     public static List<FetchResponseData.FetchableTopicResponse> buildFetchResponses(
             Map<TopicPartition, FetchResponseData.PartitionData> partitionData) {
-        List<FetchResponseData.FetchableTopicResponse> result = new ArrayList<>();
-        partitionData.keySet()
-                .stream()
-                .map(topicPartition -> topicPartition.topic())
-                .distinct()
-                        .forEach(topic -> {
-                            FetchResponseData.FetchableTopicResponse fetchableTopicResponse =
-                                    new FetchResponseData.FetchableTopicResponse()
-                                    .setTopic(topic)
-                                    .setPartitions(new ArrayList<>());
-                            result.add(fetchableTopicResponse);
+        if (partitionData == null || partitionData.isEmpty()) {
+            return Collections.emptyList();
+        }
+        LinkedHashMap<String, List<FetchResponseData.PartitionData>> byTopic = new LinkedHashMap<>();
+        partitionData.forEach((tp, data) -> {
+            byTopic.computeIfAbsent(tp.topic(), __ -> new ArrayList<>())
+                    .add(new FetchResponseData.PartitionData()
+                            .setPartitionIndex(tp.partition())
+                            .setErrorCode(data.errorCode())
+                            .setHighWatermark(data.highWatermark())
+                            .setLastStableOffset(data.lastStableOffset())
+                            .setLogStartOffset(data.logStartOffset())
+                            .setAbortedTransactions(data.abortedTransactions())
+                            .setPreferredReadReplica(data.preferredReadReplica())
+                            .setRecords(data.records()));
+        });
 
-                            partitionData.forEach((tp, data) -> {
-                                if (tp.topic().equals(topic)) {
-                                    fetchableTopicResponse.partitions().add(new FetchResponseData.PartitionData()
-                                                    .setPartitionIndex(tp.partition())
-                                                    .setErrorCode(data.errorCode())
-                                                    .setHighWatermark(data.highWatermark())
-                                                    .setLastStableOffset(data.lastStableOffset())
-                                                    .setLogStartOffset(data.logStartOffset())
-                                                    .setAbortedTransactions(data.abortedTransactions())
-                                                    .setPreferredReadReplica(data.preferredReadReplica())
-                                                    .setRecords(data.records()));
-                                }
-                            });
-                        });
+        List<FetchResponseData.FetchableTopicResponse> result = new ArrayList<>(byTopic.size());
+        byTopic.forEach((topic, partitions) -> result.add(new FetchResponseData.FetchableTopicResponse()
+                .setTopic(topic)
+                .setPartitions(partitions)));
         return result;
     }
 
@@ -2437,6 +2714,180 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     .setPort(node.port()));
         });
         resultFuture.complete(response);
+    }
+
+    @Override
+    protected void handleDescribeClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                              CompletableFuture<AbstractResponse> resultFuture) {
+        if (!kafkaConfig.isKopClientQuotaEnabled()) {
+            super.handleError(kafkaHeaderAndRequest, resultFuture);
+            return;
+        }
+        checkArgument(kafkaHeaderAndRequest.getRequest() instanceof DescribeClientQuotasRequest);
+        DescribeClientQuotasRequest request = (DescribeClientQuotasRequest) kafkaHeaderAndRequest.getRequest();
+        DescribeClientQuotasRequestData data = request.data();
+
+        List<ClientQuotaIndex.DescribeComponent> filters = new ArrayList<>(data.components().size());
+        for (DescribeClientQuotasRequestData.ComponentData component : data.components()) {
+            String entityType = component.entityType();
+            byte matchType = component.matchType();
+            Optional<ClientQuotaRequestValidator.ValidationError> validationError =
+                    ClientQuotaRequestValidator.validateDescribeComponent(entityType, matchType);
+            if (validationError.isPresent()) {
+                ClientQuotaRequestValidator.ValidationError error = validationError.get();
+                resultFuture.complete(new DescribeClientQuotasResponse(new DescribeClientQuotasResponseData()
+                        .setThrottleTimeMs(0)
+                        .setErrorCode(error.error().code())
+                        .setErrorMessage(error.message())
+                        .setEntries(null)));
+                return;
+            }
+            filters.add(new ClientQuotaIndex.DescribeComponent(entityType, matchType, component.match()));
+        }
+
+        String quotaTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        ClientQuotaService quotaService = clientQuotaServiceManager.getOrCreate(quotaTenant);
+        List<ClientQuotaEntry> matched = quotaService.describe(filters, data.strict());
+
+        List<DescribeClientQuotasResponseData.EntryData> entries = new ArrayList<>(matched.size());
+        for (ClientQuotaEntry entry : matched) {
+            List<DescribeClientQuotasResponseData.EntityData> entityData =
+                    new ArrayList<>(entry.getEntity() == null ? 0 : entry.getEntity().size());
+            if (entry.getEntity() != null) {
+                for (EntityComponent component : entry.getEntity()) {
+                    entityData.add(new DescribeClientQuotasResponseData.EntityData()
+                            .setEntityType(component.getType())
+                            .setEntityName(component.getName()));
+                }
+            }
+
+            Map<String, Double> quotas = entry.getQuotas() == null ? Collections.emptyMap() : entry.getQuotas();
+            Map<String, Double> sortedQuotas = quotas instanceof java.util.SortedMap
+                    ? quotas
+                    : new java.util.TreeMap<>(quotas);
+            List<DescribeClientQuotasResponseData.ValueData> values = new ArrayList<>(sortedQuotas.size());
+            sortedQuotas.forEach((key, value) -> values.add(new DescribeClientQuotasResponseData.ValueData()
+                    .setKey(key)
+                    .setValue(value)));
+
+            entries.add(new DescribeClientQuotasResponseData.EntryData()
+                    .setEntity(entityData)
+                    .setValues(values));
+        }
+
+        resultFuture.complete(new DescribeClientQuotasResponse(new DescribeClientQuotasResponseData()
+                .setThrottleTimeMs(0)
+                .setErrorCode(Errors.NONE.code())
+                .setErrorMessage(null)
+                .setEntries(entries)));
+    }
+
+    @Override
+    protected void handleAlterClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                           CompletableFuture<AbstractResponse> resultFuture) {
+        if (!kafkaConfig.isKopClientQuotaEnabled()) {
+            super.handleError(kafkaHeaderAndRequest, resultFuture);
+            return;
+        }
+        checkArgument(kafkaHeaderAndRequest.getRequest() instanceof AlterClientQuotasRequest);
+        AlterClientQuotasRequest request = (AlterClientQuotasRequest) kafkaHeaderAndRequest.getRequest();
+        AlterClientQuotasRequestData data = request.data();
+
+        boolean validateOnly = data.validateOnly();
+        String quotaTenant = getCurrentTenant(kafkaConfig.getKafkaTenant());
+        ClientQuotaService quotaService = clientQuotaServiceManager.getOrCreate(quotaTenant);
+
+        List<ClientQuotaService.AlterEntry> toApply = new ArrayList<>();
+        List<AlterClientQuotasResponseData.EntryData> responseEntries = new ArrayList<>(data.entries().size());
+        List<AlterClientQuotasResponseData.EntryData> pendingApplyResponseEntries = new ArrayList<>();
+
+        Set<String> entityKeysInRequest = new HashSet<>();
+        for (AlterClientQuotasRequestData.EntryData entry : data.entries()) {
+            Errors error = Errors.NONE;
+            String errorMessage = null;
+
+            List<AlterClientQuotasResponseData.EntityData> responseEntity = new ArrayList<>(entry.entity().size());
+            List<EntityComponent> entityComponents = new ArrayList<>(entry.entity().size());
+            for (AlterClientQuotasRequestData.EntityData entityData : entry.entity()) {
+                String entityType = entityData.entityType();
+                String entityName = entityData.entityName();
+                responseEntity.add(new AlterClientQuotasResponseData.EntityData()
+                        .setEntityType(entityType)
+                        .setEntityName(entityName));
+                entityComponents.add(new EntityComponent(entityType, entityName));
+            }
+
+            if (error == Errors.NONE) {
+                Optional<ClientQuotaRequestValidator.ValidationError> entityError =
+                        ClientQuotaRequestValidator.validateAlterEntity(entityComponents,
+                                kafkaConfig.isKopClientQuotaAllowAlterEmptyClientId());
+                if (entityError.isPresent()) {
+                    ClientQuotaRequestValidator.ValidationError e = entityError.get();
+                    error = e.error();
+                    errorMessage = e.message();
+                }
+            }
+
+            List<ClientQuotaService.QuotaOp> ops = new ArrayList<>(entry.ops().size());
+            List<EntityComponent> canonicalEntity = Collections.emptyList();
+            if (error == Errors.NONE) {
+                canonicalEntity = ClientQuotaEntityUtils.canonicalize(entityComponents);
+                String entityKey = ClientQuotaEntityUtils.canonicalEntityString(canonicalEntity);
+                Optional<ClientQuotaRequestValidator.ValidationError> dupError =
+                        ClientQuotaRequestValidator.validateDuplicateEntityInRequest(entityKey, entityKeysInRequest);
+                if (dupError.isPresent()) {
+                    ClientQuotaRequestValidator.ValidationError e = dupError.get();
+                    error = e.error();
+                    errorMessage = e.message();
+                }
+            }
+
+            if (error == Errors.NONE) {
+                List<String> quotaKeys = new ArrayList<>(entry.ops().size());
+                for (AlterClientQuotasRequestData.OpData op : entry.ops()) {
+                    quotaKeys.add(op.key());
+                    Double value = op.remove() ? null : op.value();
+                    ops.add(new ClientQuotaService.QuotaOp(op.key(), value, op.remove()));
+                }
+                Optional<ClientQuotaRequestValidator.ValidationError> quotaKeyError =
+                        ClientQuotaRequestValidator.validateNoDuplicateQuotaKeys(quotaKeys);
+                if (quotaKeyError.isPresent()) {
+                    ClientQuotaRequestValidator.ValidationError e = quotaKeyError.get();
+                    error = e.error();
+                    errorMessage = e.message();
+                }
+            }
+
+            AlterClientQuotasResponseData.EntryData responseEntry = new AlterClientQuotasResponseData.EntryData()
+                    .setEntity(responseEntity)
+                    .setErrorCode(error.code())
+                    .setErrorMessage(errorMessage);
+            responseEntries.add(responseEntry);
+
+            if (error == Errors.NONE && !validateOnly) {
+                toApply.add(new ClientQuotaService.AlterEntry(canonicalEntity, ops));
+                pendingApplyResponseEntries.add(responseEntry);
+            }
+        }
+
+        AlterClientQuotasResponseData responseData = new AlterClientQuotasResponseData()
+                .setThrottleTimeMs(0)
+                .setEntries(responseEntries);
+
+        if (validateOnly || toApply.isEmpty()) {
+            resultFuture.complete(new AlterClientQuotasResponse(responseData));
+            return;
+        }
+
+        quotaService.alter(toApply).whenComplete((__, ex) -> {
+            if (ex != null) {
+                for (AlterClientQuotasResponseData.EntryData entry : pendingApplyResponseEntries) {
+                    entry.setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code());
+                    entry.setErrorMessage(ex.getMessage());
+                }
+            }
+            resultFuture.complete(new AlterClientQuotasResponse(responseData));
+        });
     }
 
     @Override

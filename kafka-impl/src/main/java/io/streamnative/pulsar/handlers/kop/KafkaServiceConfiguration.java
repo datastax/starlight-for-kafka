@@ -256,6 +256,76 @@ public class KafkaServiceConfiguration extends ServiceConfiguration {
 
     @FieldContext(
             category = CATEGORY_KOP,
+            doc = "Enable Kafka client quotas support (ApiKey 48/49) and enforce bytes quotas for Produce/Fetch.\n"
+                    + "When disabled, KoP will not advertise ApiKey 48/49 in ApiVersions and will not enforce "
+                    + "Produce/Fetch quota throttling."
+    )
+    private boolean kopClientQuotaEnabled = true;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Number of quota windows used by KoP bytes quota limiter. Default is 11 (Kafka default)."
+    )
+    private int kopClientQuotaWindowNum = 11;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Quota window size in seconds used by KoP bytes quota limiter. Default is 1 (Kafka default)."
+    )
+    private int kopClientQuotaWindowSizeSeconds = 1;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Maximum throttleTimeMs written in Produce/Fetch responses for bytes quota enforcement."
+    )
+    private int kopClientQuotaMaxThrottleTimeInResponseMs = 60_000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Maximum connection mute time (autoRead=false) for bytes quota enforcement."
+    )
+    private int kopClientQuotaMaxMuteTimeMs = 5_000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Hard cap for throttle/mute time (ms) to protect against misconfiguration."
+    )
+    private int kopClientQuotaHardMaxThrottleTimeMs = 60_000;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Allow altering client-id quotas with entity_name=\"\".\n"
+                    + "If false, AlterClientQuotas will reject client-id=\"\" with INVALID_REQUEST.\n"
+                    + "DescribeClientQuotas EXACT still allows match=\"\"."
+    )
+    private boolean kopClientQuotaAllowAlterEmptyClientId = false;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Max number of deferred frames while the connection is quota-muted (dispatch gate)."
+    )
+    private int kopClientQuotaMaxDeferredFrames = 100;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Max total bytes of deferred frames while the connection is quota-muted (dispatch gate)."
+    )
+    private long kopClientQuotaMaxDeferredBytes = 64L * 1024 * 1024;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Expire client quota limiters after this idle time (ms), to avoid key explosion."
+    )
+    private long kopClientQuotaLimiterExpireMs = 3_600_000L;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
+            doc = "Cleanup interval for expiring client quota limiters (ms)."
+    )
+    private long kopClientQuotaLimiterCleanupIntervalMs = 60_000L;
+
+    @FieldContext(
+            category = CATEGORY_KOP,
             doc = "Idle connections timeout: the server handler close the connections that idle more than this, \n"
                     + "like connections.max.idle.ms in kafka server."
     )

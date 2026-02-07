@@ -380,6 +380,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
                     case DESCRIBE_CLUSTER:
                         handleDescribeCluster(kafkaHeaderAndRequest, responseFuture);
                         break;
+                    case DESCRIBE_CLIENT_QUOTAS:
+                        handleDescribeClientQuotas(kafkaHeaderAndRequest, responseFuture);
+                        break;
+                    case ALTER_CLIENT_QUOTAS:
+                        handleAlterClientQuotas(kafkaHeaderAndRequest, responseFuture);
+                        break;
                     default:
                         handleError(kafkaHeaderAndRequest, responseFuture);
                 }
@@ -449,10 +455,10 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
             if (responseFuture.isDone()) {
                 responseFuture.thenAccept(response -> {
                     if (response == null) {
-                        // It should not be null, just check it for safety
-                        log.error("[{}] Unexpected null completed future for request {}",
-                                ctx.channel(), request.getHeader());
-                        sendErrorResponse(request, channel, new ApiException("response is null"), true);
+                        // Allow null response (for example, Produce acks=0). Just release the request.
+                        request.close();
+                        requestStats.getRequestStatsLogger(apiKey, KopServerStats.REQUEST_QUEUED_LATENCY)
+                                .registerSuccessfulEvent(nanoSecondsSinceCreated, TimeUnit.NANOSECONDS);
                         return;
                     }
                     if (log.isDebugEnabled()) {
@@ -638,6 +644,12 @@ public abstract class KafkaCommandDecoder extends ChannelInboundHandlerAdapter {
 
     protected abstract void
     handleDescribeCluster(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleDescribeClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
+
+    protected abstract void
+    handleAlterClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest, CompletableFuture<AbstractResponse> response);
 
 
     public static class KafkaHeaderAndRequest {

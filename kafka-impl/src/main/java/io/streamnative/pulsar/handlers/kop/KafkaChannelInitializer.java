@@ -20,6 +20,7 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaServiceManager;
 import io.streamnative.pulsar.handlers.kop.storage.ReplicaManager;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
@@ -52,6 +53,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
 
     private final KafkaTopicLookupService kafkaTopicLookupService;
     private final LookupClient lookupClient;
+    private final ClientQuotaServiceManager clientQuotaServiceManager;
 
     private final AdminManager adminManager;
     private DelayedOperationPurgatory<DelayedOperation> producePurgatory;
@@ -84,7 +86,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                                    KafkaTopicManagerSharedState kafkaTopicManagerSharedState,
                                    Function<String, SchemaManager> schemaManagerForTenant,
                                    KafkaTopicLookupService kafkaTopicLookupService,
-                                   LookupClient lookupClient) {
+                                   LookupClient lookupClient,
+                                   ClientQuotaServiceManager clientQuotaServiceManager) {
         super();
         this.schemaManagerForTenant = schemaManagerForTenant;
         this.pulsarService = pulsarService;
@@ -108,6 +111,7 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
         this.sendResponseScheduler = sendResponseScheduler;
         this.kafkaTopicManagerSharedState = kafkaTopicManagerSharedState;
         this.kafkaTopicLookupService = kafkaTopicLookupService;
+        this.clientQuotaServiceManager = clientQuotaServiceManager;
         this.lengthFieldPrepender = new LengthFieldPrepender(4);
     }
 
@@ -134,7 +138,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 tenantContextManager, replicaManager, kopBrokerLookupManager, adminManager,
                 producePurgatory, fetchPurgatory,
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex, requestStats, sendResponseScheduler,
-                kafkaTopicManagerSharedState, schemaManagerForTenant, kafkaTopicLookupService, lookupClient);
+                kafkaTopicManagerSharedState, schemaManagerForTenant, kafkaTopicLookupService, lookupClient,
+                clientQuotaServiceManager);
     }
 
     @VisibleForTesting
@@ -145,7 +150,8 @@ public class KafkaChannelInitializer extends ChannelInitializer<SocketChannel> {
                 enableTls, advertisedEndPoint, skipMessagesWithoutIndex,
                 requestStats,
                 sendResponseScheduler,
-                kafkaTopicManagerSharedState, schemaManagerForTenant, kafkaTopicLookupService, lookupClient);
+                kafkaTopicManagerSharedState, schemaManagerForTenant, kafkaTopicLookupService, lookupClient,
+                clientQuotaServiceManager);
     }
 
 }

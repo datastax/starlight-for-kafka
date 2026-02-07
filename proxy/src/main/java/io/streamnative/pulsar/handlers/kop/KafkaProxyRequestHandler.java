@@ -1508,6 +1508,18 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         resultFuture.complete(response);
     }
 
+    @Override
+    protected void handleDescribeClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                              CompletableFuture<AbstractResponse> resultFuture) {
+        super.handleError(kafkaHeaderAndRequest, resultFuture);
+    }
+
+    @Override
+    protected void handleAlterClientQuotas(KafkaHeaderAndRequest kafkaHeaderAndRequest,
+                                           CompletableFuture<AbstractResponse> resultFuture) {
+        super.handleError(kafkaHeaderAndRequest, resultFuture);
+    }
+
     protected void handleAlterConfigs(KafkaHeaderAndRequest describeConfigs,
                                       CompletableFuture<AbstractResponse> resultFuture) {
         handleRequestWithCoordinator(describeConfigs, resultFuture, FindCoordinatorRequest.CoordinatorType.GROUP,

@@ -30,6 +30,7 @@ import io.streamnative.pulsar.handlers.kop.format.PulsarAdminSchemaManager;
 import io.streamnative.pulsar.handlers.kop.format.SchemaManager;
 import io.streamnative.pulsar.handlers.kop.http.HttpChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.migration.MigrationManager;
+import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaServiceManager;
 import io.streamnative.pulsar.handlers.kop.schemaregistry.SchemaRegistryChannelInitializer;
 import io.streamnative.pulsar.handlers.kop.stats.PrometheusMetricsProvider;
 import io.streamnative.pulsar.handlers.kop.stats.StatsLogger;
@@ -112,6 +113,7 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
     private KafkaServiceConfiguration kafkaConfig;
     private BrokerService brokerService;
     private KafkaTopicManagerSharedState kafkaTopicManagerSharedState;
+    private ClientQuotaServiceManager clientQuotaServiceManager;
 
     @Getter
     private KopEventManager kopEventManager;
@@ -321,6 +323,13 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 groupCoordinatorsByTenant);
         kopEventManager.start();
 
+        clientQuotaServiceManager = new ClientQuotaServiceManager(
+                kafkaConfig,
+                kafkaConfig.getClusterName(),
+                brokerService.getPulsar().getLocalMetadataStore(),
+                brokerService.getPulsar().getExecutor(),
+                requestStats.getStatsLogger());
+
         if (kafkaConfig.isKafkaTransactionCoordinatorEnabled() && kafkaConfig.isKafkaManageSystemNamespaces()) {
             getTransactionCoordinator(kafkaConfig.getKafkaMetadataTenant());
         }
@@ -489,7 +498,8 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
                 kafkaTopicManagerSharedState,
                 schemaManagerForTenant,
                 kafkaTopicLookupService,
-                lookupClient);
+                lookupClient,
+                clientQuotaServiceManager);
     }
 
     class ProducerStateManagerSnapshotProvider implements Function<String, ProducerStateManagerSnapshotBuffer> {
@@ -587,6 +597,9 @@ public class KafkaProtocolHandler implements ProtocolHandler, TenantContextManag
         groupCoordinatorsByTenant.values().forEach(GroupCoordinator::shutdown);
         transactionCoordinatorByTenant.values().forEach(TransactionCoordinator::shutdown);
         kopEventManager.close();
+        if (clientQuotaServiceManager != null) {
+            clientQuotaServiceManager.close();
+        }
         if (schemaRegistryManager != null) {
             schemaRegistryManager.close();
         }

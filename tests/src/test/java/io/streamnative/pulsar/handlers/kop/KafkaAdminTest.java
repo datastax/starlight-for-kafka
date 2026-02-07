@@ -20,7 +20,6 @@ import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 
 import com.google.common.collect.Sets;
-import io.jsonwebtoken.lang.Maps;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -38,6 +37,7 @@ import lombok.Cleanup;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.AlterClientQuotasOptions;
 import org.apache.kafka.clients.admin.Config;
 import org.apache.kafka.clients.admin.ConsumerGroupDescription;
 import org.apache.kafka.clients.admin.ConsumerGroupListing;
@@ -74,7 +74,6 @@ import org.apache.pulsar.common.policies.data.TenantInfo;
 import org.apache.pulsar.common.util.Murmur3_32Hash;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.Ignore;
 import org.testng.annotations.Test;
 
 
@@ -555,25 +554,59 @@ public class KafkaAdminTest extends KopProtocolHandlerTestBase {
         admin.topics().deletePartitionedTopic(topic, true);
     }
 
-    @Ignore("\"org.apache.kafka.common.errors.UnsupportedVersionException: "
-            + "The version of API is not supported.\" in testAlterClientQuotas")
-    @Test(timeOut = 30000)
+    @Test(timeOut = 30000, invocationCount = 10)
     public void testAlterClientQuotas() throws ExecutionException, InterruptedException {
 
-        // TODO: Support alter client quotas by reuse pulsar topic policy.
+        ClientQuotaEntity clientEntity = new ClientQuotaEntity(
+                Map.of(ClientQuotaEntity.CLIENT_ID, "test_client"));
+
         kafkaAdmin.alterClientQuotas(Collections.singleton(
                 new ClientQuotaAlteration(
-                        new ClientQuotaEntity(Maps.of(ClientQuotaEntity.CLIENT_ID, "test_client").build()),
+                        clientEntity,
                         List.of(new ClientQuotaAlteration.Op("producer_byte_rate", 1024.0))))).all().get();
 
-        // TODO: Support describe client quotas by reuse pulsar topic policy.
-        DescribeClientQuotasResult result = kafkaAdmin.describeClientQuotas(ClientQuotaFilter.all());
+        Map<ClientQuotaEntity, Map<String, Double>> quotas =
+                kafkaAdmin.describeClientQuotas(ClientQuotaFilter.all()).entities().get();
+        assertTrue(quotas.containsKey(clientEntity));
+        assertEquals(quotas.get(clientEntity).get("producer_byte_rate"), 1024.0);
 
-        try {
-            result.entities().get();
-        } catch (Exception ex) {
-            assertTrue(ex.getCause() instanceof UnsupportedVersionException);
-        }
+        // validateOnly should not apply changes
+        kafkaAdmin.alterClientQuotas(Collections.singleton(
+                new ClientQuotaAlteration(
+                        clientEntity,
+                        List.of(new ClientQuotaAlteration.Op("producer_byte_rate", 2048.0)))),
+                new AlterClientQuotasOptions().validateOnly(true)).all().get();
+
+        quotas = kafkaAdmin.describeClientQuotas(ClientQuotaFilter.all()).entities().get();
+        assertEquals(quotas.get(clientEntity).get("producer_byte_rate"), 1024.0);
+
+        // removal should remove the quota and allow effective fallback to lower precedence entries
+        ClientQuotaEntity userClientEntity = new ClientQuotaEntity(
+                Map.of(ClientQuotaEntity.USER, "alice", ClientQuotaEntity.CLIENT_ID, "test_client"));
+        kafkaAdmin.alterClientQuotas(Collections.singleton(
+                new ClientQuotaAlteration(
+                        userClientEntity,
+                        List.of(new ClientQuotaAlteration.Op("producer_byte_rate", 512.0))))).all().get();
+
+        quotas = kafkaAdmin.describeClientQuotas(ClientQuotaFilter.all()).entities().get();
+        assertEquals(quotas.get(userClientEntity).get("producer_byte_rate"), 512.0);
+
+        // remove the more specific quota
+        kafkaAdmin.alterClientQuotas(Collections.singleton(
+                new ClientQuotaAlteration(
+                        userClientEntity,
+                        List.of(new ClientQuotaAlteration.Op("producer_byte_rate", null))))).all().get();
+
+        quotas = kafkaAdmin.describeClientQuotas(ClientQuotaFilter.all()).entities().get();
+        assertTrue(!quotas.containsKey(userClientEntity)
+                        || !quotas.get(userClientEntity).containsKey("producer_byte_rate"));
+        assertEquals(quotas.get(clientEntity).get("producer_byte_rate"), 1024.0);
+
+        // cleanup
+        kafkaAdmin.alterClientQuotas(Collections.singleton(
+                new ClientQuotaAlteration(
+                        clientEntity,
+                        List.of(new ClientQuotaAlteration.Op("producer_byte_rate", null))))).all().get();
     }
 
     @Test(timeOut = 10000)
