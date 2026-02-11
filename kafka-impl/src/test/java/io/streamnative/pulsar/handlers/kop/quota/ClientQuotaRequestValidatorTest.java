@@ -25,6 +25,14 @@ import org.testng.annotations.Test;
 public class ClientQuotaRequestValidatorTest {
 
     @Test
+    public void testAlterEmptyEntityRejected() {
+        Optional<ClientQuotaRequestValidator.ValidationError> error =
+                ClientQuotaRequestValidator.validateAlterEntity(List.of(), false);
+        assertTrue(error.isPresent());
+        assertEquals(error.get().message(), "INVALID_REQUEST: Empty entity is not allowed");
+    }
+
+    @Test
     public void testUnsupportedEntityTypeMessage() {
         Optional<ClientQuotaRequestValidator.ValidationError> error =
                 ClientQuotaRequestValidator.validateSupportedEntityType("unknown");
@@ -87,11 +95,39 @@ public class ClientQuotaRequestValidatorTest {
     @Test
     public void testDuplicateEntityInRequest() {
         Set<String> seen = new java.util.HashSet<>();
-        assertFalse(ClientQuotaRequestValidator.validateDuplicateEntityInRequest("user=alice", seen).isPresent());
+        assertFalse(ClientQuotaRequestValidator
+                .validateDuplicateEntityInRequest("user=alice", seen)
+                .isPresent());
         Optional<ClientQuotaRequestValidator.ValidationError> error =
                 ClientQuotaRequestValidator.validateDuplicateEntityInRequest("user=alice", seen);
         assertTrue(error.isPresent());
         assertEquals(error.get().message(), "Duplicate entity in request");
     }
-}
 
+    @Test
+    public void testQuotaValueValidation() {
+        Optional<ClientQuotaRequestValidator.ValidationError> nan =
+                ClientQuotaRequestValidator.validateQuotaValue("k1", Double.NaN, false);
+        assertTrue(nan.isPresent());
+        assertEquals(nan.get().message(),
+                "INVALID_REQUEST: Invalid quota value for key k1: NaN. Must be finite and >= 0");
+
+        Optional<ClientQuotaRequestValidator.ValidationError> inf =
+                ClientQuotaRequestValidator.validateQuotaValue("k1", Double.POSITIVE_INFINITY, false);
+        assertTrue(inf.isPresent());
+        assertEquals(inf.get().message(),
+                "INVALID_REQUEST: Invalid quota value for key k1: Infinity. Must be finite and >= 0");
+
+        Optional<ClientQuotaRequestValidator.ValidationError> negative =
+                ClientQuotaRequestValidator.validateQuotaValue("k1", -1.0d, false);
+        assertTrue(negative.isPresent());
+        assertEquals(negative.get().message(),
+                "INVALID_REQUEST: Invalid quota value for key k1: -1.0. Must be finite and >= 0");
+
+        assertFalse(ClientQuotaRequestValidator.validateQuotaValue("k1", 0.0d, false).isPresent());
+        assertFalse(ClientQuotaRequestValidator.validateQuotaValue("k1", 1.0d, false).isPresent());
+
+        // remove=true should skip value validation
+        assertFalse(ClientQuotaRequestValidator.validateQuotaValue("k1", Double.NaN, true).isPresent());
+    }
+}

@@ -28,6 +28,8 @@ public final class ClientQuotaRequestValidator {
 
     private ClientQuotaRequestValidator() {}
 
+    private static final String MSG_EMPTY_ENTITY = "INVALID_REQUEST: Empty entity is not allowed";
+
     public static Optional<ValidationError> validateDescribeComponent(String entityType, byte matchType) {
         Optional<ValidationError> typeError = validateSupportedEntityType(entityType);
         if (typeError.isPresent()) {
@@ -43,14 +45,16 @@ public final class ClientQuotaRequestValidator {
 
     public static Optional<ValidationError> validateAlterEntity(List<EntityComponent> entity,
                                                                 boolean allowAlterEmptyClientId) {
-        if (entity == null) {
-            return Optional.empty();
+        if (entity == null || entity.isEmpty()) {
+            return Optional.of(new ValidationError(Errors.INVALID_REQUEST, MSG_EMPTY_ENTITY));
         }
         Set<String> types = new HashSet<>(entity.size());
+        boolean hasComponent = false;
         for (EntityComponent component : entity) {
             if (component == null) {
                 continue;
             }
+            hasComponent = true;
             String entityType = component.getType();
             String entityName = component.getName();
 
@@ -76,6 +80,24 @@ public final class ClientQuotaRequestValidator {
                             "INVALID_REQUEST: Empty entity_name is not allowed for entityType client-id"));
                 }
             }
+        }
+        if (!hasComponent) {
+            return Optional.of(new ValidationError(Errors.INVALID_REQUEST, MSG_EMPTY_ENTITY));
+        }
+        return Optional.empty();
+    }
+
+    public static Optional<ValidationError> validateQuotaValue(String quotaKey,
+                                                               double value,
+                                                               boolean remove) {
+        if (remove) {
+            return Optional.empty();
+        }
+        if (!Double.isFinite(value) || value < 0.0d) {
+            return Optional.of(new ValidationError(
+                    Errors.INVALID_REQUEST,
+                    "INVALID_REQUEST: Invalid quota value for key " + quotaKey + ": " + value
+                            + ". Must be finite and >= 0"));
         }
         return Optional.empty();
     }

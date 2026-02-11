@@ -334,16 +334,18 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
     }
 
     private String currentQuotaUser() {
-        if (authenticator != null && authenticator.session() != null
-                && authenticator.session().getPrincipal() != null) {
-            String name = authenticator.session().getPrincipal().getName();
-            return name == null ? "" : name;
+        if (authenticator == null || authenticator.session() == null
+                || authenticator.session().getPrincipal() == null) {
+            // missing user => default user (entityName=null)
+            return null;
         }
-        return "";
+        // principal name may be "", preserve it as a real value
+        return authenticator.session().getPrincipal().getName();
     }
 
     private static String normalizeClientId(String clientId) {
-        return clientId == null ? "" : clientId;
+        // preserve null => default client-id (entityName=null)
+        return clientId;
     }
 
     private static String extractTenantFromTenantSpec(String tenantSpec) {
@@ -2853,15 +2855,25 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                 List<String> quotaKeys = new ArrayList<>(entry.ops().size());
                 for (AlterClientQuotasRequestData.OpData op : entry.ops()) {
                     quotaKeys.add(op.key());
+                    Optional<ClientQuotaRequestValidator.ValidationError> valueError =
+                            ClientQuotaRequestValidator.validateQuotaValue(op.key(), op.value(), op.remove());
+                    if (valueError.isPresent()) {
+                        ClientQuotaRequestValidator.ValidationError e = valueError.get();
+                        error = e.error();
+                        errorMessage = e.message();
+                        break;
+                    }
                     Double value = op.remove() ? null : op.value();
                     ops.add(new ClientQuotaService.QuotaOp(op.key(), value, op.remove()));
                 }
-                Optional<ClientQuotaRequestValidator.ValidationError> quotaKeyError =
-                        ClientQuotaRequestValidator.validateNoDuplicateQuotaKeys(quotaKeys);
-                if (quotaKeyError.isPresent()) {
-                    ClientQuotaRequestValidator.ValidationError e = quotaKeyError.get();
-                    error = e.error();
-                    errorMessage = e.message();
+                if (error == Errors.NONE) {
+                    Optional<ClientQuotaRequestValidator.ValidationError> quotaKeyError =
+                            ClientQuotaRequestValidator.validateNoDuplicateQuotaKeys(quotaKeys);
+                    if (quotaKeyError.isPresent()) {
+                        ClientQuotaRequestValidator.ValidationError e = quotaKeyError.get();
+                        error = e.error();
+                        errorMessage = e.message();
+                    }
                 }
             }
 
