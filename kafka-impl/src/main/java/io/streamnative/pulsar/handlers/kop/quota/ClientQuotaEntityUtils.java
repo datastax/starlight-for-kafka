@@ -18,19 +18,14 @@ import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.ENT
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import org.apache.kafka.common.quota.ClientQuotaEntity;
 
 public final class ClientQuotaEntityUtils {
 
     private ClientQuotaEntityUtils() {}
-
-    public record EntityComponentKey(String type, String name) {}
-
-    public record CanonicalEntityKey(List<EntityComponentKey> components) {
-        public CanonicalEntityKey {
-            components = components == null ? List.of() : List.copyOf(components);
-        }
-    }
 
     public static List<EntityComponent> canonicalize(List<EntityComponent> entity) {
         if (entity == null || entity.isEmpty()) {
@@ -44,29 +39,26 @@ public final class ClientQuotaEntityUtils {
         }
         copy.sort(Comparator
                 .comparingInt((EntityComponent c) -> typeOrder(c.getType()))
-                .thenComparing(EntityComponent::getType, Comparator.nullsFirst(String::compareTo)));
+                .thenComparing(EntityComponent::getType, Comparator.nullsFirst(String::compareTo))
+                .thenComparing(EntityComponent::getName, Comparator.nullsFirst(String::compareTo)));
         return copy;
     }
 
-    public static CanonicalEntityKey canonicalKey(List<EntityComponent> entity) {
-        return canonicalKeyOfCanonicalEntity(canonicalize(entity));
-    }
-
-    public static CanonicalEntityKey canonicalKeyOfCanonicalEntity(List<EntityComponent> canonicalEntity) {
-        if (canonicalEntity == null || canonicalEntity.isEmpty()) {
-            return new CanonicalEntityKey(List.of());
+    public static ClientQuotaEntity toClientQuotaEntity(List<EntityComponent> entity) {
+        if (entity == null || entity.isEmpty()) {
+            return new ClientQuotaEntity(Collections.emptyMap());
         }
-        List<EntityComponentKey> keys = new ArrayList<>(canonicalEntity.size());
-        for (EntityComponent component : canonicalEntity) {
-            if (component == null) {
+        Map<String, String> entries = new HashMap<>(entity.size());
+        for (EntityComponent component : entity) {
+            if (component == null || component.getType() == null) {
                 continue;
             }
-            keys.add(new EntityComponentKey(component.getType(), component.getName()));
+            entries.put(component.getType(), component.getName());
         }
-        return new CanonicalEntityKey(keys);
+        return new ClientQuotaEntity(Collections.unmodifiableMap(entries));
     }
 
-    public static int compareCanonicalKeys(CanonicalEntityKey left, CanonicalEntityKey right) {
+    public static int compareCanonicalEntities(List<EntityComponent> left, List<EntityComponent> right) {
         if (left == right) {
             return 0;
         }
@@ -76,19 +68,17 @@ public final class ClientQuotaEntityUtils {
         if (right == null) {
             return 1;
         }
-        List<EntityComponentKey> leftComponents = left.components();
-        List<EntityComponentKey> rightComponents = right.components();
-        int min = Math.min(leftComponents.size(), rightComponents.size());
+        int min = Math.min(left.size(), right.size());
         for (int i = 0; i < min; i++) {
-            int cmp = compareComponentKeys(leftComponents.get(i), rightComponents.get(i));
+            int cmp = compareCanonicalComponents(left.get(i), right.get(i));
             if (cmp != 0) {
                 return cmp;
             }
         }
-        return Integer.compare(leftComponents.size(), rightComponents.size());
+        return Integer.compare(left.size(), right.size());
     }
 
-    private static int compareComponentKeys(EntityComponentKey left, EntityComponentKey right) {
+    private static int compareCanonicalComponents(EntityComponent left, EntityComponent right) {
         if (left == right) {
             return 0;
         }
@@ -98,15 +88,15 @@ public final class ClientQuotaEntityUtils {
         if (right == null) {
             return 1;
         }
-        int typeOrderCompare = Integer.compare(typeOrder(left.type()), typeOrder(right.type()));
+        int typeOrderCompare = Integer.compare(typeOrder(left.getType()), typeOrder(right.getType()));
         if (typeOrderCompare != 0) {
             return typeOrderCompare;
         }
-        int typeCompare = compareNullableString(left.type(), right.type());
+        int typeCompare = compareNullableString(left.getType(), right.getType());
         if (typeCompare != 0) {
             return typeCompare;
         }
-        return compareNullableString(left.name(), right.name());
+        return compareNullableString(left.getName(), right.getName());
     }
 
     private static int compareNullableString(String left, String right) {

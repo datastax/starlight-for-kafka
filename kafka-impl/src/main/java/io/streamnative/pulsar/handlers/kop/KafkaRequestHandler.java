@@ -154,6 +154,7 @@ import org.apache.kafka.common.message.SyncGroupRequestData;
 import org.apache.kafka.common.message.TxnOffsetCommitRequestData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.kafka.common.record.ControlRecordType;
 import org.apache.kafka.common.record.EndTransactionMarker;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -2810,7 +2811,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         List<AlterClientQuotasResponseData.EntryData> responseEntries = new ArrayList<>(data.entries().size());
         List<AlterClientQuotasResponseData.EntryData> pendingApplyResponseEntries = new ArrayList<>();
 
-        Set<ClientQuotaEntityUtils.CanonicalEntityKey> entityKeysInRequest = new HashSet<>();
+        Set<ClientQuotaEntity> entityKeysInRequest = new HashSet<>();
         for (AlterClientQuotasRequestData.EntryData entry : data.entries()) {
             Errors error = Errors.NONE;
             String errorMessage = null;
@@ -2841,8 +2842,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
             List<EntityComponent> canonicalEntity = Collections.emptyList();
             if (error == Errors.NONE) {
                 canonicalEntity = ClientQuotaEntityUtils.canonicalize(entityComponents);
-                ClientQuotaEntityUtils.CanonicalEntityKey entityKey =
-                        ClientQuotaEntityUtils.canonicalKeyOfCanonicalEntity(canonicalEntity);
+                ClientQuotaEntity entityKey = ClientQuotaEntityUtils.toClientQuotaEntity(canonicalEntity);
                 Optional<ClientQuotaRequestValidator.ValidationError> dupError =
                         ClientQuotaRequestValidator.validateDuplicateEntityInRequest(entityKey, entityKeysInRequest);
                 if (dupError.isPresent()) {

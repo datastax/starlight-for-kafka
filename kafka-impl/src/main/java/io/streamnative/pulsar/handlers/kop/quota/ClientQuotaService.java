@@ -38,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
 
 @Slf4j
@@ -200,12 +201,11 @@ public class ClientQuotaService implements AutoCloseable {
     }
 
     private ClientQuotaSnapshot applyAlterations(ClientQuotaSnapshot snapshot, List<AlterEntry> alterations) {
-        Map<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry> current = new HashMap<>();
+        Map<ClientQuotaEntity, ClientQuotaEntry> current = new HashMap<>();
         if (snapshot != null && snapshot.getEntries() != null) {
             for (ClientQuotaEntry entry : snapshot.getEntries()) {
                 List<EntityComponent> entity = ClientQuotaEntityUtils.canonicalize(entry.getEntity());
-                ClientQuotaEntityUtils.CanonicalEntityKey entityKey =
-                        ClientQuotaEntityUtils.canonicalKeyOfCanonicalEntity(entity);
+                ClientQuotaEntity entityKey = ClientQuotaEntityUtils.toClientQuotaEntity(entity);
                 Map<String, Double> quotas = canonicalizeQuotas(entry.getQuotas());
                 current.putIfAbsent(entityKey, new ClientQuotaEntry(entity, quotas));
             }
@@ -213,8 +213,7 @@ public class ClientQuotaService implements AutoCloseable {
 
         for (AlterEntry alteration : alterations) {
             List<EntityComponent> entity = ClientQuotaEntityUtils.canonicalize(alteration.entity());
-            ClientQuotaEntityUtils.CanonicalEntityKey entityKey =
-                    ClientQuotaEntityUtils.canonicalKeyOfCanonicalEntity(entity);
+            ClientQuotaEntity entityKey = ClientQuotaEntityUtils.toClientQuotaEntity(entity);
             ClientQuotaEntry existing = current.computeIfAbsent(entityKey,
                     __ -> new ClientQuotaEntry(entity, new TreeMap<>()));
             Map<String, Double> quotas = existing.getQuotas();
@@ -239,14 +238,10 @@ public class ClientQuotaService implements AutoCloseable {
             }
         }
 
-        List<Map.Entry<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry>> entries =
-                new ArrayList<>(current.entrySet());
-        entries.sort(Map.Entry.comparingByKey(ClientQuotaEntityUtils::compareCanonicalKeys));
-        List<ClientQuotaEntry> ordered = new ArrayList<>(entries.size());
-        for (Map.Entry<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry> entry : entries) {
-            ordered.add(entry.getValue());
-        }
-        return new ClientQuotaSnapshot(1, ordered);
+        List<ClientQuotaEntry> entries = new ArrayList<>(current.values());
+        entries.sort((left, right) -> ClientQuotaEntityUtils.compareCanonicalEntities(left.getEntity(),
+                right.getEntity()));
+        return new ClientQuotaSnapshot(1, entries);
     }
 
     private void reloadAsync() {

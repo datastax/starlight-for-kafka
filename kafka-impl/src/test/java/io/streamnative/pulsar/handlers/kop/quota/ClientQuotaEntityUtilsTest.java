@@ -17,6 +17,7 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotEquals;
 
 import java.util.List;
+import org.apache.kafka.common.quota.ClientQuotaEntity;
 import org.testng.annotations.Test;
 
 public class ClientQuotaEntityUtilsTest {
@@ -29,7 +30,9 @@ public class ClientQuotaEntityUtilsTest {
                 new EntityComponent(ClientQuotaConstants.ENTITY_TYPE_USER, "alice"),
                 new EntityComponent(ClientQuotaConstants.ENTITY_TYPE_CLIENT_ID, "bob"));
 
-        assertNotEquals(ClientQuotaEntityUtils.canonicalKey(entityA), ClientQuotaEntityUtils.canonicalKey(entityB));
+        ClientQuotaEntity keyA = ClientQuotaEntityUtils.toClientQuotaEntity(entityA);
+        ClientQuotaEntity keyB = ClientQuotaEntityUtils.toClientQuotaEntity(entityB);
+        assertNotEquals(keyA, keyB);
     }
 
     @Test
@@ -39,8 +42,9 @@ public class ClientQuotaEntityUtilsTest {
         List<EntityComponent> entityLiteral = List.of(
                 new EntityComponent(ClientQuotaConstants.ENTITY_TYPE_CLIENT_ID, "<default>"));
 
-        assertNotEquals(ClientQuotaEntityUtils.canonicalKey(entityDefault),
-                ClientQuotaEntityUtils.canonicalKey(entityLiteral));
+        ClientQuotaEntity keyDefault = ClientQuotaEntityUtils.toClientQuotaEntity(entityDefault);
+        ClientQuotaEntity keyLiteral = ClientQuotaEntityUtils.toClientQuotaEntity(entityLiteral);
+        assertNotEquals(keyDefault, keyLiteral);
     }
 
     @Test
@@ -52,7 +56,7 @@ public class ClientQuotaEntityUtilsTest {
                 new EntityComponent(ClientQuotaConstants.ENTITY_TYPE_USER, "alice"),
                 new EntityComponent(ClientQuotaConstants.ENTITY_TYPE_CLIENT_ID, "c1"));
 
-        assertEquals(ClientQuotaEntityUtils.canonicalKey(entity1), ClientQuotaEntityUtils.canonicalKey(entity2));
+        assertEquals(ClientQuotaEntityUtils.toClientQuotaEntity(entity1),
+                ClientQuotaEntityUtils.toClientQuotaEntity(entity2));
     }
 }
-
