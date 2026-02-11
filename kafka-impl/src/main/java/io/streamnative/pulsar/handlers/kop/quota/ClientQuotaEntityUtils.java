@@ -24,6 +24,14 @@ public final class ClientQuotaEntityUtils {
 
     private ClientQuotaEntityUtils() {}
 
+    public record EntityComponentKey(String type, String name) {}
+
+    public record CanonicalEntityKey(List<EntityComponentKey> components) {
+        public CanonicalEntityKey {
+            components = components == null ? List.of() : List.copyOf(components);
+        }
+    }
+
     public static List<EntityComponent> canonicalize(List<EntityComponent> entity) {
         if (entity == null || entity.isEmpty()) {
             return Collections.emptyList();
@@ -34,8 +42,84 @@ public final class ClientQuotaEntityUtils {
                 copy.add(component);
             }
         }
-        copy.sort(Comparator.comparingInt(c -> typeOrder(c.getType())));
+        copy.sort(Comparator
+                .comparingInt((EntityComponent c) -> typeOrder(c.getType()))
+                .thenComparing(EntityComponent::getType, Comparator.nullsFirst(String::compareTo)));
         return copy;
+    }
+
+    public static CanonicalEntityKey canonicalKey(List<EntityComponent> entity) {
+        return canonicalKeyOfCanonicalEntity(canonicalize(entity));
+    }
+
+    public static CanonicalEntityKey canonicalKeyOfCanonicalEntity(List<EntityComponent> canonicalEntity) {
+        if (canonicalEntity == null || canonicalEntity.isEmpty()) {
+            return new CanonicalEntityKey(List.of());
+        }
+        List<EntityComponentKey> keys = new ArrayList<>(canonicalEntity.size());
+        for (EntityComponent component : canonicalEntity) {
+            if (component == null) {
+                continue;
+            }
+            keys.add(new EntityComponentKey(component.getType(), component.getName()));
+        }
+        return new CanonicalEntityKey(keys);
+    }
+
+    public static int compareCanonicalKeys(CanonicalEntityKey left, CanonicalEntityKey right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        List<EntityComponentKey> leftComponents = left.components();
+        List<EntityComponentKey> rightComponents = right.components();
+        int min = Math.min(leftComponents.size(), rightComponents.size());
+        for (int i = 0; i < min; i++) {
+            int cmp = compareComponentKeys(leftComponents.get(i), rightComponents.get(i));
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return Integer.compare(leftComponents.size(), rightComponents.size());
+    }
+
+    private static int compareComponentKeys(EntityComponentKey left, EntityComponentKey right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        int typeOrderCompare = Integer.compare(typeOrder(left.type()), typeOrder(right.type()));
+        if (typeOrderCompare != 0) {
+            return typeOrderCompare;
+        }
+        int typeCompare = compareNullableString(left.type(), right.type());
+        if (typeCompare != 0) {
+            return typeCompare;
+        }
+        return compareNullableString(left.name(), right.name());
+    }
+
+    private static int compareNullableString(String left, String right) {
+        if (left == right) {
+            return 0;
+        }
+        if (left == null) {
+            return -1;
+        }
+        if (right == null) {
+            return 1;
+        }
+        return left.compareTo(right);
     }
 
     public static String canonicalEntityString(List<EntityComponent> entity) {
@@ -68,4 +152,3 @@ public final class ClientQuotaEntityUtils {
         return idx >= 0 ? idx : Integer.MAX_VALUE;
     }
 }
-

@@ -13,7 +13,6 @@
  */
 package io.streamnative.pulsar.handlers.kop.quota;
 
-import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.ENTITY_TYPE_CANONICAL_ORDER;
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUOTA_CONNECTION_CREATION_RATE;
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUOTA_CONSUMER_BYTE_RATE;
 import static io.streamnative.pulsar.handlers.kop.quota.ClientQuotaConstants.QUOTA_PRODUCER_BYTE_RATE;
@@ -23,8 +22,6 @@ import io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration;
 import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex.DescribeComponent;
 import io.streamnative.pulsar.handlers.kop.quota.ClientQuotaIndex.ResolvedQuota;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -38,6 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pulsar.metadata.api.extended.MetadataStoreExtended;
@@ -68,6 +66,9 @@ public class ClientQuotaService implements AutoCloseable {
     private final ClientQuotaStats stats;
 
     private volatile ClientQuotaIndex index = ClientQuotaIndex.empty();
+    private final AtomicLong snapshotLoadSequence = new AtomicLong(0);
+    private final AtomicLong lastAppliedMetadataVersion =
+            new AtomicLong(ClientQuotaSnapshotStore.NOT_EXISTS_VERSION);
 
     private final ConcurrentHashMap<LimiterKey, SlidingWindowLimiter> limiters = new ConcurrentHashMap<>();
     private final ScheduledExecutorService executor;
@@ -119,8 +120,8 @@ public class ClientQuotaService implements AutoCloseable {
         }
         UnaryOperator<ClientQuotaSnapshot> mutator = snapshot -> applyAlterations(snapshot, alterations);
         return snapshotStore.updateWithCas(mutator).thenApply(loaded -> {
-            this.index = ClientQuotaIndex.ofSnapshot(loaded.snapshot());
-            stats.recordSnapshotReloadSuccess(loaded.metadataVersion());
+            snapshotLoadSequence.incrementAndGet();
+            applySnapshotIfNewerOrReset(loaded.snapshot(), loaded.metadataVersion());
             return loaded.metadataVersion();
         });
     }
@@ -199,19 +200,21 @@ public class ClientQuotaService implements AutoCloseable {
     }
 
     private ClientQuotaSnapshot applyAlterations(ClientQuotaSnapshot snapshot, List<AlterEntry> alterations) {
-        Map<String, ClientQuotaEntry> current = new HashMap<>();
+        Map<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry> current = new HashMap<>();
         if (snapshot != null && snapshot.getEntries() != null) {
             for (ClientQuotaEntry entry : snapshot.getEntries()) {
-                List<EntityComponent> entity = canonicalizeEntity(entry.getEntity());
-                String entityKey = canonicalEntityString(entity);
+                List<EntityComponent> entity = ClientQuotaEntityUtils.canonicalize(entry.getEntity());
+                ClientQuotaEntityUtils.CanonicalEntityKey entityKey =
+                        ClientQuotaEntityUtils.canonicalKeyOfCanonicalEntity(entity);
                 Map<String, Double> quotas = canonicalizeQuotas(entry.getQuotas());
                 current.putIfAbsent(entityKey, new ClientQuotaEntry(entity, quotas));
             }
         }
 
         for (AlterEntry alteration : alterations) {
-            List<EntityComponent> entity = canonicalizeEntity(alteration.entity());
-            String entityKey = canonicalEntityString(entity);
+            List<EntityComponent> entity = ClientQuotaEntityUtils.canonicalize(alteration.entity());
+            ClientQuotaEntityUtils.CanonicalEntityKey entityKey =
+                    ClientQuotaEntityUtils.canonicalKeyOfCanonicalEntity(entity);
             ClientQuotaEntry existing = current.computeIfAbsent(entityKey,
                     __ -> new ClientQuotaEntry(entity, new TreeMap<>()));
             Map<String, Double> quotas = existing.getQuotas();
@@ -236,12 +239,18 @@ public class ClientQuotaService implements AutoCloseable {
             }
         }
 
-        List<ClientQuotaEntry> entries = new ArrayList<>(current.values());
-        entries.sort(Comparator.comparing(e -> canonicalEntityString(e.getEntity())));
-        return new ClientQuotaSnapshot(1, entries);
+        List<Map.Entry<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry>> entries =
+                new ArrayList<>(current.entrySet());
+        entries.sort(Map.Entry.comparingByKey(ClientQuotaEntityUtils::compareCanonicalKeys));
+        List<ClientQuotaEntry> ordered = new ArrayList<>(entries.size());
+        for (Map.Entry<ClientQuotaEntityUtils.CanonicalEntityKey, ClientQuotaEntry> entry : entries) {
+            ordered.add(entry.getValue());
+        }
+        return new ClientQuotaSnapshot(1, ordered);
     }
 
     private void reloadAsync() {
+        long loadSequence = snapshotLoadSequence.incrementAndGet();
         snapshotStore.load().whenComplete((loaded, ex) -> {
             if (ex != null) {
                 stats.recordSnapshotReloadFail();
@@ -249,9 +258,32 @@ public class ClientQuotaService implements AutoCloseable {
                         snapshotStore.snapshotPath(), tenant, ex);
                 return;
             }
-            this.index = ClientQuotaIndex.ofSnapshot(loaded.snapshot());
-            stats.recordSnapshotReloadSuccess(loaded.metadataVersion());
+            if (loadSequence != snapshotLoadSequence.get()) {
+                return;
+            }
+            applySnapshotIfNewerOrReset(loaded.snapshot(), loaded.metadataVersion());
         });
+    }
+
+    private void applySnapshotIfNewerOrReset(ClientQuotaSnapshot snapshot, long metadataVersion) {
+        if (metadataVersion == ClientQuotaSnapshotStore.NOT_EXISTS_VERSION) {
+            // Snapshot path deleted or does not exist => clear quotas.
+            lastAppliedMetadataVersion.set(metadataVersion);
+            this.index = ClientQuotaIndex.ofSnapshot(snapshot);
+            stats.recordSnapshotReloadSuccess(metadataVersion);
+            return;
+        }
+        while (true) {
+            long current = lastAppliedMetadataVersion.get();
+            if (metadataVersion <= current) {
+                return;
+            }
+            if (lastAppliedMetadataVersion.compareAndSet(current, metadataVersion)) {
+                this.index = ClientQuotaIndex.ofSnapshot(snapshot);
+                stats.recordSnapshotReloadSuccess(metadataVersion);
+                return;
+            }
+        }
     }
 
     private void cleanupLimiters() {
@@ -272,50 +304,6 @@ public class ClientQuotaService implements AutoCloseable {
         if (evicted > 0) {
             stats.recordLimitersEvicted(evicted);
         }
-    }
-
-    private static List<EntityComponent> canonicalizeEntity(List<EntityComponent> entity) {
-        if (entity == null || entity.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<EntityComponent> copy = new ArrayList<>(entity.size());
-        for (EntityComponent component : entity) {
-            if (component != null) {
-                copy.add(component);
-            }
-        }
-        copy.sort(Comparator.comparingInt(c -> typeOrder(c.getType())));
-        return copy;
-    }
-
-    private static String canonicalEntityString(List<EntityComponent> entity) {
-        if (entity == null || entity.isEmpty()) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        for (EntityComponent component : entity) {
-            if (component == null) {
-                continue;
-            }
-            if (sb.length() > 0) {
-                sb.append('|');
-            }
-            sb.append(component.getType()).append('=');
-            if (component.getName() == null) {
-                sb.append("<default>");
-            } else {
-                sb.append(component.getName());
-            }
-        }
-        return sb.toString();
-    }
-
-    private static int typeOrder(String entityType) {
-        if (entityType == null) {
-            return Integer.MAX_VALUE;
-        }
-        int idx = ENTITY_TYPE_CANONICAL_ORDER.indexOf(entityType);
-        return idx >= 0 ? idx : Integer.MAX_VALUE;
     }
 
     private static Map<String, Double> canonicalizeQuotas(Map<String, Double> quotas) {

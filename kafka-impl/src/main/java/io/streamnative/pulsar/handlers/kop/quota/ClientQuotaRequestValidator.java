@@ -117,7 +117,7 @@ public final class ClientQuotaRequestValidator {
         return Optional.empty();
     }
 
-    public static Optional<ValidationError> validateDuplicateEntityInRequest(String entityKey, Set<String> seenKeys) {
+    public static <T> Optional<ValidationError> validateDuplicateEntityInRequest(T entityKey, Set<T> seenKeys) {
         Objects.requireNonNull(seenKeys, "seenKeys");
         if (!seenKeys.add(entityKey)) {
             return Optional.of(new ValidationError(Errors.INVALID_REQUEST, "Duplicate entity in request"));
