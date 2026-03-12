@@ -73,7 +73,12 @@
     <snakeyaml.version>2.0</snakeyaml.version>
     <zstd-jni.version>1.5.2-4</zstd-jni.version>
     <asynchttpclient.version>2.12.4</asynchttpclient.version>
-    <aircompressor.version>0.27</aircompressor.version>
+    <aircompressor.version>2.0.3</aircompressor.version>
+    <lz4-java.version>1.10.1</lz4-java.version>
+    <commons-io.version>2.14.0</commons-io.version>
+    <bcpkix-jdk18on.version>1.79</bcpkix-jdk18on.version>
+    <bcprov-jdk18on.version>1.79</bcprov-jdk18on.version>
+    <wire-runtime.version>5.2.0</wire-runtime.version>
     <protobuf.version>3.25.5</protobuf.version>
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -131,6 +136,12 @@
         <groupId>org.apache.kafka</groupId>
         <artifactId>kafka-clients</artifactId>
         <version>${kafka.version}</version>
+        <exclusions>
+          <exclusion>
+            <groupId>org.lz4</groupId>
+            <artifactId>lz4-java</artifactId>
+          </exclusion>
+        </exclusions>
       </dependency>
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
@@ -150,6 +161,30 @@
         <groupId>org.asynchttpclient</groupId>
         <artifactId>async-http-client</artifactId>
         <version>${asynchttpclient.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>commons-io</groupId>
+        <artifactId>commons-io</artifactId>
+        <version>${commons-io.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>${bcpkix-jdk18on.version}</version>
+      </dependency>
+      <!-- override wire-runtime  from com.squareup.wire to fix cve-->
+      <dependency>
+        <groupId>com.squareup.wire</groupId>
+        <artifactId>wire-runtime</artifactId>
+        <version>${wire-runtime.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bcprov-jdk18on.version}</version>
       </dependency>
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
@@ -471,6 +506,13 @@
       <artifactId>vertx-web</artifactId>
       <version>${vertex-web.version}</version>
       <scope>provided</scope>
+    </dependency>
+    
+    <!-- Override the transitive org.lz4:lz4-java@1.8.0 to resolve vulnerability -->
+    <dependency>
+      <groupId>at.yawk.lz4</groupId>
+      <artifactId>lz4-java</artifactId>
+      <version>${lz4-java.version}</version>
     </dependency>
 
     <dependency>
