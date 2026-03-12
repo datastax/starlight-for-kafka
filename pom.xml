@@ -78,7 +78,6 @@
     <commons-io.version>2.14.0</commons-io.version>
     <bcpkix-jdk18on.version>1.79</bcpkix-jdk18on.version>
     <bcprov-jdk18on.version>1.79</bcprov-jdk18on.version>
-    <wire-runtime.version>5.2.0</wire-runtime.version>
     <protobuf.version>3.25.5</protobuf.version>
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -173,12 +172,6 @@
         <groupId>org.bouncycastle</groupId>
         <artifactId>bcpkix-jdk18on</artifactId>
         <version>${bcpkix-jdk18on.version}</version>
-      </dependency>
-      <!-- override wire-runtime  from com.squareup.wire to fix cve-->
-      <dependency>
-        <groupId>com.squareup.wire</groupId>
-        <artifactId>wire-runtime</artifactId>
-        <version>${wire-runtime.version}</version>
       </dependency>
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
