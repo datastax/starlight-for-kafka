@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -47,7 +48,6 @@ import org.apache.kafka.common.message.FetchRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.requests.ProduceResponse;
-import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.service.BrokerServiceException;
 import org.apache.pulsar.broker.service.plugin.EntryFilter;
@@ -243,7 +243,7 @@ public class ReplicaManager {
                 new CompletableFuture<>();
         final boolean readCommitted =
                 (context.getTc() != null && isolationLevel.equals(IsolationLevel.READ_COMMITTED));
-        final long startTime = SystemTime.SYSTEM.hiResClockMs();
+        final long startTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
 
         readFromLocalLog(readCommitted, fetchMaxBytes, context.getMaxReadEntriesNum(), fetchInfos, context)
                 .thenAccept(readResults -> {
@@ -258,7 +258,7 @@ public class ReplicaManager {
                         }
                     });
 
-                    long now = SystemTime.SYSTEM.hiResClockMs();
+                    long now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime());
                     long currentWait = now - startTime;
                     long remainingMaxWait = timeout - currentWait;
                     long maxWait = Math.min(remainingMaxWait, timeout);

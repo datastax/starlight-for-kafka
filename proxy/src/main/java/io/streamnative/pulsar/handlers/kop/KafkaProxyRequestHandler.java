@@ -2138,8 +2138,11 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
                 // see "forConsumer" implementation
                 boolean requireMaxTimestamp = request.version() >= 7;
+                boolean requireEarliestLocalTimestamp = request.version() >= 8;
+                boolean requireTieredStorageTimestamp = request.version() >= 9;
                 ListOffsetsRequest requestForSinglePartition = ListOffsetsRequest.Builder
-                        .forConsumer(false, request.isolationLevel(), requireMaxTimestamp)
+                        .forConsumer(false, request.isolationLevel(), requireMaxTimestamp,
+                            requireEarliestLocalTimestamp, requireTieredStorageTimestamp)
                         .setTargetTimes(Collections.singletonList(tsData))
                         .build(request.version());
 
@@ -2261,7 +2264,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                         responseData.groups().addAll(response.data().groups());
 
                     });
-                    resultFuture.complete(new OffsetFetchResponse(responseData));
+                    resultFuture.complete(new OffsetFetchResponse(responseData, offsetFetchRequest.version()));
                 }
             });
         }
@@ -2560,7 +2563,7 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
                 FindCoordinatorRequest.CoordinatorType.TRANSACTION,
                 AddPartitionsToTxnRequest.class,
                 AddPartitionsToTxnRequestData.class,
-                AddPartitionsToTxnRequestData::transactionalId,
+                AddPartitionsToTxnRequestData::v3AndBelowTransactionalId,
                 null);
     }
 

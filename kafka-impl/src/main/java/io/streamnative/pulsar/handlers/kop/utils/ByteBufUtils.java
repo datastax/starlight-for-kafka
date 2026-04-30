@@ -28,6 +28,7 @@ import java.util.concurrent.CompletionException;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.MathUtils;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.CompressionType;
@@ -184,7 +185,7 @@ public class ByteBufUtils {
                 new DirectBufferOutputStream(DEFAULT_BUFFER_SIZE);
         final MemoryRecordsBuilder builder = new MemoryRecordsBuilder(directBufferOutputStream,
                 magic,
-                CompressionType.NONE,
+                Compression.of(CompressionType.NONE).build(),
                 TimestampType.CREATE_TIME,
                 baseOffset,
                 metadata.getPublishTime(),

@@ -52,6 +52,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.IsolationLevel;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.acl.AclOperation;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.message.CreatePartitionsResponseData;
 import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.MetadataRequestData;
@@ -294,9 +295,9 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition topicPartition1 = new TopicPartition(topic, 0);
         TopicPartition topicPartition2 = new TopicPartition(topic2, 0);
         partitionRecords.put(topicPartition1,
-                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test".getBytes())));
+                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(), new SimpleRecord("test".getBytes())));
         partitionRecords.put(topicPartition2,
-                MemoryRecords.withRecords(CompressionType.NONE, new SimpleRecord("test2".getBytes())));
+                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(), new SimpleRecord("test2".getBytes())));
         ProduceRequestData requestData = new ProduceRequestData()
                 .setAcks((short) 1)
                 .setTimeoutMs(5000);
@@ -395,7 +396,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         // Test for ListOffset request verify Earliest get earliest
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
+                    false, false, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -423,7 +425,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition tp = new TopicPartition(topicName, 0);
 
         ListOffsetsRequest.Builder builder = ListOffsetsRequest.Builder
-                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED, false)
+                .forConsumer(true, IsolationLevel.READ_UNCOMMITTED,
+                    false, false, false)
                 .setTargetTimes(KafkaCommonTestUtils
                         .newListOffsetTargetTimes(tp, ListOffsetsRequest.EARLIEST_TIMESTAMP));
 
@@ -705,7 +708,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         List<TopicPartition> topicPartitions = Arrays.asList(topicPartition1, topicPartition2, topicPartition3);
 
         AddPartitionsToTxnRequest.Builder builder =
-                new AddPartitionsToTxnRequest.Builder(
+                AddPartitionsToTxnRequest.Builder.forClient(
                         "1", 1, (short) 1, topicPartitions);
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
 
@@ -738,7 +741,7 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
     public void testAddPartitionsToTxnPartAuthorizationFailed() throws ExecutionException, InterruptedException {
         TopicPartition topicPartition = new TopicPartition("test", 1);
         AddPartitionsToTxnRequest.Builder builder =
-                new AddPartitionsToTxnRequest.Builder(
+                AddPartitionsToTxnRequest.Builder.forClient(
                         "1", 1, (short) 1, Collections.singletonList(topicPartition));
         KafkaCommandDecoder.KafkaHeaderAndRequest headerAndRequest = buildRequest(builder);
         // Handle request
