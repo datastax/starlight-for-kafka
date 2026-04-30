@@ -295,9 +295,11 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         TopicPartition topicPartition1 = new TopicPartition(topic, 0);
         TopicPartition topicPartition2 = new TopicPartition(topic2, 0);
         partitionRecords.put(topicPartition1,
-                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(), new SimpleRecord("test".getBytes())));
+                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(),
+                    new SimpleRecord("test".getBytes())));
         partitionRecords.put(topicPartition2,
-                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(), new SimpleRecord("test2".getBytes())));
+                MemoryRecords.withRecords(Compression.of(CompressionType.NONE).build(),
+                    new SimpleRecord("test2".getBytes())));
         ProduceRequestData requestData = new ProduceRequestData()
                 .setAcks((short) 1)
                 .setTimeoutMs(5000);

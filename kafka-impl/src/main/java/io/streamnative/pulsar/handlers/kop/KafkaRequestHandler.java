@@ -20,6 +20,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENA
 import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.buildOffsetFetchResponse;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.apache.kafka.common.requests.AddPartitionsToTxnRequest.getPartitions;
+
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Maps;
@@ -2483,7 +2484,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     response.complete(buildAddPartitionsToTxnResponse(0, partitionErrors));
                 } else {
                     transactionCoordinator.handleAddPartitionsToTransaction(data.v3AndBelowTransactionalId(),
-                            data.v3AndBelowProducerId(), data.v3AndBelowProducerEpoch(), authorizedPartitions, (errors) -> {
+                            data.v3AndBelowProducerId(), data.v3AndBelowProducerEpoch(), authorizedPartitions,
+                        (errors) -> {
                                 AddPartitionsToTxnResponseData responseData = new AddPartitionsToTxnResponseData();
                                 // TODO: handle PRODUCER_FENCED errors
                                 Map<TopicPartition, Errors> topicPartitionErrorsMap =
@@ -3170,7 +3172,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         return schemaManagerForTenant.apply(getCurrentTenant());
     }
 
-    private AddPartitionsToTxnResponse buildAddPartitionsToTxnResponse(int throttleTimeMs, Map<TopicPartition, Errors> partitionErrors){
+    private AddPartitionsToTxnResponse buildAddPartitionsToTxnResponse(int throttleTimeMs,
+                                                                       Map<TopicPartition, Errors> partitionErrors){
         Map<String, AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> resultMap =
             new HashMap<>();
 

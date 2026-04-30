@@ -336,7 +336,8 @@ public class EntryFormatterTest {
 
             bufferStream.position(initialPosition + batchHeaderSizeInBytes);
             this.bufferStream = bufferStream;
-            this.appendStream = new DataOutputStream(Compression.of(compressionType).build().wrapForOutput(this.bufferStream, magic));
+            this.appendStream =
+                new DataOutputStream(Compression.of(compressionType).build().wrapForOutput(this.bufferStream, magic));
         }
 
         @Override
