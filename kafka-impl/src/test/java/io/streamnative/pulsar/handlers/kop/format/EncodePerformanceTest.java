@@ -25,6 +25,7 @@ import java.util.Optional;
 import java.util.Random;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -119,7 +120,7 @@ public class EncodePerformanceTest {
         return MemoryRecords.builder(
                 ByteBuffer.allocate(1024 * 1024 * 5),
                 RecordBatch.CURRENT_MAGIC_VALUE,
-                CompressionType.NONE,
+                Compression.of(CompressionType.NONE).build(),
                 TimestampType.CREATE_TIME,
                 0L);
     }

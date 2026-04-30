@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.Locale;
 import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.kafka.common.InvalidRecordException;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.errors.InvalidTimestampException;
 import org.apache.kafka.common.errors.UnsupportedForMessageFormatException;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -115,7 +116,7 @@ public class KopLogValidator {
         ByteBuffer newBuffer = ByteBuffer.allocate(sizeInBytesAfterConversion);
         MemoryRecordsBuilder builder = MemoryRecords.builder(newBuffer,
                 toMagicValue,
-                CompressionType.NONE,
+                Compression.of(CompressionType.NONE).build(),
                 timestampType,
                 offsetCounter.value(),
                 now,
@@ -354,7 +355,7 @@ public class KopLogValidator {
         ByteBuffer buffer = ByteBuffer.allocate(estimatedSize);
         MemoryRecordsBuilder builder = MemoryRecords.builder(buffer,
                 magic,
-                compressionType,
+                Compression.of(compressionType).build(),
                 timestampType,
                 offsetCounter.value(),
                 logAppendTime,

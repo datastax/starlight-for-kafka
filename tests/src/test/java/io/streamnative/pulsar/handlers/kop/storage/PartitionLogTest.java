@@ -22,6 +22,7 @@ import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.errors.RecordTooLargeException;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.ControlRecordType;
@@ -135,7 +136,7 @@ public class PartitionLogTest {
         int baseOffset = 0;
         for (int batchSize : batchSizes) {
             MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, RecordBatch.CURRENT_MAGIC_VALUE,
-                    compressionType, TimestampType.LOG_APPEND_TIME, baseOffset);
+                Compression.of(compressionType).build(), TimestampType.LOG_APPEND_TIME, baseOffset);
             for (int i = 0; i < batchSize; i++) {
                 builder.append(0L, "a".getBytes(), new byte[valueSize]);
             }
@@ -151,7 +152,8 @@ public class PartitionLogTest {
         ByteBuffer buffer = ByteBuffer.allocate(1024);
         int baseOffset = 0;
         for (int batchSize : batchSizes) {
-            MemoryRecordsBuilder builder = MemoryRecords.idempotentBuilder(buffer, CompressionType.NONE, baseOffset,
+            MemoryRecordsBuilder builder = MemoryRecords.idempotentBuilder(buffer,
+                Compression.of(CompressionType.NONE).build(), baseOffset,
                     0, (short) 0, 0);
             for (int i = 0; i < batchSize; i++) {
                 builder.append(0L, "a".getBytes(), "1".getBytes());

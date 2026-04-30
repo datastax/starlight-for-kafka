@@ -19,7 +19,7 @@ import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENA
 import static io.streamnative.pulsar.handlers.kop.KafkaServiceConfiguration.TENANT_PLACEHOLDER;
 import static io.streamnative.pulsar.handlers.kop.utils.KafkaResponseUtils.buildOffsetFetchResponse;
 import static java.nio.charset.StandardCharsets.UTF_8;
-
+import static org.apache.kafka.common.requests.AddPartitionsToTxnRequest.getPartitions;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Maps;
@@ -204,7 +204,6 @@ import org.apache.kafka.common.requests.TxnOffsetCommitRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 import org.apache.kafka.common.requests.WriteTxnMarkersRequest;
 import org.apache.kafka.common.requests.WriteTxnMarkersResponse;
-import org.apache.kafka.common.utils.SystemTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.pulsar.broker.PulsarService;
 import org.apache.pulsar.broker.service.persistent.PersistentTopic;
@@ -1685,7 +1684,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     getGroupCoordinator().handleCommitOffsets(
                             data.groupId(),
                             data.memberId(),
-                            data.generationId(),
+                            data.generationIdOrMemberEpoch(),
                             convertedPartitionData
                     ).thenAccept(offsetCommitResult -> {
                         // recover to original topic name
@@ -2462,7 +2461,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             CompletableFuture<AbstractResponse> response) {
         AddPartitionsToTxnRequest request = (AddPartitionsToTxnRequest) kafkaHeaderAndRequest.getRequest();
         AddPartitionsToTxnRequestData data = request.data();
-        List<TopicPartition> partitionsToAdd = request.partitions();
+        List<TopicPartition> partitionsToAdd = getPartitions(data.v3AndBelowTopics());
         Map<TopicPartition, Errors> unauthorizedTopicErrors = Maps.newConcurrentMap();
         Map<TopicPartition, Errors> nonExistingTopicErrors = Maps.newConcurrentMap();
         Set<TopicPartition> authorizedPartitions = Sets.newConcurrentHashSet();
@@ -2478,10 +2477,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                     for (TopicPartition topicPartition : authorizedPartitions) {
                         partitionErrors.put(topicPartition, Errors.OPERATION_NOT_ATTEMPTED);
                     }
-                    response.complete(new AddPartitionsToTxnResponse(0, partitionErrors));
+                    response.complete(buildAddPartitionsToTxnResponse(0, partitionErrors));
                 } else {
-                    transactionCoordinator.handleAddPartitionsToTransaction(data.transactionalId(),
-                            data.producerId(), data.producerEpoch(), authorizedPartitions, (errors) -> {
+                    transactionCoordinator.handleAddPartitionsToTransaction(data.v3AndBelowTransactionalId(),
+                            data.v3AndBelowProducerId(), data.v3AndBelowProducerEpoch(), authorizedPartitions, (errors) -> {
                                 AddPartitionsToTxnResponseData responseData = new AddPartitionsToTxnResponseData();
                                 // TODO: handle PRODUCER_FENCED errors
                                 Map<TopicPartition, Errors> topicPartitionErrorsMap =
@@ -2494,17 +2493,17 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                             AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult topicResult =
                                                     new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
                                                     .setName(topicName);
-                                            responseData.results().add(topicResult);
+                                            responseData.resultsByTopicV3AndBelow().add(topicResult);
                                             topicPartitionErrorsMap.forEach((TopicPartition tp, Errors error) -> {
                                                 if (tp.topic().equals(topicName)) {
                                                     if (log.isDebugEnabled() && error != Errors.NONE) {
                                                         log.info("Error {} for {}", error, tp);
                                                     }
-                                                    topicResult.results()
+                                                    topicResult.resultsByPartition()
                                                         .add(new AddPartitionsToTxnResponseData
                                                                 .AddPartitionsToTxnPartitionResult()
                                                         .setPartitionIndex(tp.partition())
-                                                        .setErrorCode(error.code()));
+                                                        .setPartitionErrorCode(error.code()));
                                                 }
                                             });
                                         });
@@ -2656,7 +2655,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     private Map<TopicPartition, OffsetAndMetadata> convertTxnOffsets(
                         Map<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> offsetsMap) {
-        long currentTimestamp = SystemTime.SYSTEM.milliseconds();
+        long currentTimestamp = System.currentTimeMillis();
         Map<TopicPartition, OffsetAndMetadata> offsetAndMetadataMap = new HashMap<>();
         for (Map.Entry<TopicPartition, TxnOffsetCommitRequest.CommittedOffset> entry : offsetsMap.entrySet()) {
             TxnOffsetCommitRequest.CommittedOffset partitionData = entry.getValue();
@@ -3166,5 +3165,49 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
 
     public SchemaManager getSchemaManager() {
         return schemaManagerForTenant.apply(getCurrentTenant());
+    }
+
+    private AddPartitionsToTxnResponse buildAddPartitionsToTxnResponse(int throttleTimeMs, Map<TopicPartition, Errors> partitionErrors){
+        Map<String, AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> resultMap =
+            new HashMap<>();
+
+        for (Map.Entry<TopicPartition, Errors> entry : partitionErrors.entrySet()) {
+            TopicPartition tp = entry.getKey();
+            Errors error = entry.getValue();
+
+            AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult partitionResult =
+                new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult()
+                    .setPartitionIndex(tp.partition())
+                    .setPartitionErrorCode(error.code());
+
+            AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection partitionCollection =
+                resultMap.getOrDefault(
+                    tp.topic(),
+                    new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection()
+                );
+
+            partitionCollection.add(partitionResult);
+            resultMap.put(tp.topic(), partitionCollection);
+        }
+
+        AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResultCollection topicCollection =
+            new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResultCollection();
+
+        for (Map.Entry<String,
+            AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> entry
+            : resultMap.entrySet()) {
+
+            topicCollection.add(
+                new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
+                    .setName(entry.getKey())
+                    .setResultsByPartition(entry.getValue())
+            );
+        }
+
+        AddPartitionsToTxnResponseData data = new AddPartitionsToTxnResponseData()
+            .setThrottleTimeMs(throttleTimeMs)
+            .setResultsByTopicV3AndBelow(topicCollection);
+
+        return new AddPartitionsToTxnResponse(data);
     }
 }

@@ -531,7 +531,7 @@ public class KafkaResponseUtils {
                                     .collect(Collectors.toList())));
                 });
             }
-            return new OffsetFetchResponse(data);
+            return new OffsetFetchResponse(data, (short) version);
         }
 
     }

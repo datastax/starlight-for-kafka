@@ -65,6 +65,7 @@ import org.apache.bookkeeper.common.util.MathUtils;
 import org.apache.bookkeeper.mledger.impl.PositionImpl;
 import org.apache.commons.lang3.tuple.Triple;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.AbstractRecords;
 import org.apache.kafka.common.record.CompressionType;
@@ -346,7 +347,7 @@ public class GroupMetadataManager {
         MemoryRecordsBuilder recordsBuilder = MemoryRecords.builder(
             buffer,
             magicValue,
-            compressionType,
+            Compression.of(compressionType).build(),
             timestampType,
             0L
         );
@@ -448,7 +449,7 @@ public class GroupMetadataManager {
         );
 
         MemoryRecordsBuilder builder = MemoryRecords.builder(
-            buffer, magicValue, compressionType,
+            buffer, magicValue, Compression.of(compressionType).build(),
             timestampType, 0L, timestamp,
             producerId,
             producerEpoch,
@@ -1007,7 +1008,7 @@ public class GroupMetadataManager {
 
             if (!tombstones.isEmpty()) {
                 MemoryRecords records = MemoryRecords.withRecords(
-                    magicValue, 0L, compressionType,
+                    magicValue, 0L, Compression.of(compressionType).build(),
                     timestampType,
                     tombstones.toArray(new SimpleRecord[0])
                 );

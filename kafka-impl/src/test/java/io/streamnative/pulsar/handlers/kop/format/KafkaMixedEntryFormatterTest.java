@@ -17,6 +17,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopLogValidator;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MemoryRecordsBuilder;
@@ -82,7 +83,7 @@ public class KafkaMixedEntryFormatterTest {
         MemoryRecordsBuilder builder = MemoryRecords.builder(
                 ByteBuffer.allocate(1024 * 1024 * 5),
                 magic,
-                type,
+                Compression.of(type).build(),
                 TimestampType.CREATE_TIME,
                 0L);
 
