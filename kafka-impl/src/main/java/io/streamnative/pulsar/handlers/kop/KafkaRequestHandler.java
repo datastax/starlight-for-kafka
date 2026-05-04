@@ -58,17 +58,7 @@ import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperation;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationKey;
 import io.streamnative.pulsar.handlers.kop.utils.delayed.DelayedOperationPurgatory;
 import java.net.InetSocketAddress;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
@@ -232,6 +222,9 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
      */
     private static final int WRITE_TXN_MARKERS_TIMEOUT = 120000;
     private static final String POLICY_ROOT = "/admin/policies/";
+    private static final Set<Short> UNSUPPORTED_API_KEYS = new HashSet<>(Arrays.asList(
+        ApiKeys.DESCRIBE_TOPIC_PARTITIONS.id, ApiKeys.GET_TELEMETRY_SUBSCRIPTIONS.id
+    ));
 
     private final PulsarService pulsarService;
     private final KafkaTopicManager topicManager;
@@ -511,7 +504,7 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
-                if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE && !UNSUPPORTED_API_KEYS.contains(apiKey.id)) {
                     switch (apiKey) {
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
