@@ -515,6 +515,10 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
+                // Temporarily exclude API keys that KOP advertises via the Kafka registry but does not yet implement.
+                // Without this, clients that support these APIs will attempt to use them and receive a runtime error
+                // instead of falling back gracefully. Remove each entry from UNSUPPORTED_API_KEYS once the
+                // corresponding handler is added. This can be tracked via https://datastax.jira.com/browse/LS-1420
                 if (!UNSUPPORTED_API_KEYS.contains(apiKey.id)
                     && apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
