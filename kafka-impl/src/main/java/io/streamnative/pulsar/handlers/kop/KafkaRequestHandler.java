@@ -3181,44 +3181,34 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
                                                                        Map<TopicPartition, Errors> partitionErrors){
         Map<String, AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> resultMap =
             new HashMap<>();
-
         for (Map.Entry<TopicPartition, Errors> entry : partitionErrors.entrySet()) {
             TopicPartition tp = entry.getKey();
             Errors error = entry.getValue();
-
             AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult partitionResult =
                 new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResult()
                     .setPartitionIndex(tp.partition())
                     .setPartitionErrorCode(error.code());
-
             AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection partitionCollection =
                 resultMap.getOrDefault(
                     tp.topic(),
                     new AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection()
                 );
-
             partitionCollection.add(partitionResult);
             resultMap.put(tp.topic(), partitionCollection);
         }
-
         AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResultCollection topicCollection =
             new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResultCollection();
-
         for (Map.Entry<String,
-            AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> entry
-            : resultMap.entrySet()) {
-
+            AddPartitionsToTxnResponseData.AddPartitionsToTxnPartitionResultCollection> entry : resultMap.entrySet()) {
             topicCollection.add(
                 new AddPartitionsToTxnResponseData.AddPartitionsToTxnTopicResult()
                     .setName(entry.getKey())
                     .setResultsByPartition(entry.getValue())
             );
         }
-
         AddPartitionsToTxnResponseData data = new AddPartitionsToTxnResponseData()
             .setThrottleTimeMs(throttleTimeMs)
             .setResultsByTopicV3AndBelow(topicCollection);
-
         return new AddPartitionsToTxnResponse(data);
     }
 }
