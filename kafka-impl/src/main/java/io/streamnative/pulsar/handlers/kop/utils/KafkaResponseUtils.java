@@ -490,7 +490,7 @@ public class KafkaResponseUtils {
 
     public static OffsetFetchResponse buildOffsetFetchResponse(
             List<OffsetFetchResponseGroupData> groups,
-            int version) {
+            short version) {
 
         if (version < 8) {
             // old clients
@@ -531,7 +531,7 @@ public class KafkaResponseUtils {
                                     .collect(Collectors.toList())));
                 });
             }
-            return new OffsetFetchResponse(data, (short) version);
+            return new OffsetFetchResponse(data, version);
         }
 
     }
