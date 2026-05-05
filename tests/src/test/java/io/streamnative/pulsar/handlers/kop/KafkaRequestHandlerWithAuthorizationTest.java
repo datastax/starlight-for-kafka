@@ -732,11 +732,12 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
         assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 2);
 
         // OPERATION_NOT_ATTEMPTED Or TOPIC_AUTHORIZATION_FAILED
-        assertEquals(addPartitionsToTxnResponse.errors().size(), 3);
+        Map<TopicPartition, Errors> partitionErrors = addPartitionsToTxnResponse.errors().get("");
+        assertEquals(partitionErrors.size(), 3);
 
-        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition1), Errors.OPERATION_NOT_ATTEMPTED);
-        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
-        assertEquals(addPartitionsToTxnResponse.errors().get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(partitionErrors.get(topicPartition1), Errors.OPERATION_NOT_ATTEMPTED);
+        assertEquals(partitionErrors.get(topicPartition2), Errors.TOPIC_AUTHORIZATION_FAILED);
+        assertEquals(partitionErrors.get(topicPartition3), Errors.TOPIC_AUTHORIZATION_FAILED);
     }
 
     @Test(timeOut = 20000)
@@ -755,7 +756,8 @@ public class KafkaRequestHandlerWithAuthorizationTest extends KopProtocolHandler
 
         assertEquals(addPartitionsToTxnResponse.errorCounts().size(), 1);
         addPartitionsToTxnResponse.errors().values()
-                .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED));
+                .forEach(partitionErrors -> partitionErrors.values()
+                    .forEach(errors -> assertEquals(errors, Errors.TOPIC_AUTHORIZATION_FAILED)));
     }
 
     @Test(timeOut = 20000)

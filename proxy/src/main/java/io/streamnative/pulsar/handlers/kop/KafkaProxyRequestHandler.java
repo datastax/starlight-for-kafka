@@ -35,6 +35,7 @@ import io.streamnative.pulsar.handlers.kop.utils.KopTopic;
 import io.streamnative.pulsar.handlers.kop.utils.MetadataUtils;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -189,6 +190,11 @@ import org.apache.pulsar.common.util.FutureUtil;
 public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
 
     final String id;
+
+    private static final Set<Short> UNSUPPORTED_API_KEYS = new HashSet<>(Arrays.asList(
+        ApiKeys.DESCRIBE_TOPIC_PARTITIONS.id, ApiKeys.GET_TELEMETRY_SUBSCRIPTIONS.id
+    ));
+
     private final KafkaProtocolProxyMain.PulsarAdminProvider admin;
     private final SaslAuthenticator authenticator;
     private final Authorizer authorizer;
@@ -359,7 +365,8 @@ public class KafkaProxyRequestHandler extends KafkaCommandDecoder {
         } else {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
-                if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
+                if (!UNSUPPORTED_API_KEYS.contains(apiKey.id)
+                    && apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka

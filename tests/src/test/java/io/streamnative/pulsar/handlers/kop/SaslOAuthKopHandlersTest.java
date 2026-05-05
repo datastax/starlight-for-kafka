@@ -216,7 +216,7 @@ public class SaslOAuthKopHandlersTest extends SaslOAuthBearerTestBase {
             new KafkaProducer<>(producerProps);
         } catch (Exception e) {
             Assert.assertNotNull(e.getCause());
-            assertTrue(e.getCause().getCause() instanceof LoginException);
+            assertTrue(e.getCause().getCause().getCause() instanceof LoginException);
         }
     }
 
