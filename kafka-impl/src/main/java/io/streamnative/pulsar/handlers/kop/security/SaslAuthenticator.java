@@ -46,8 +46,10 @@ import org.apache.kafka.common.errors.IllegalSaslStateException;
 import org.apache.kafka.common.errors.SaslAuthenticationException;
 import org.apache.kafka.common.message.ApiMessageType;
 import org.apache.kafka.common.message.ApiVersionsRequestData;
+import org.apache.kafka.common.message.ApiVersionsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.RecordVersion;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiVersionsRequest;
@@ -560,9 +562,10 @@ public class SaslAuthenticator {
                     request.getErrorResponse(0, Errors.UNSUPPORTED_VERSION.exception()),
                     null);
         } else {
-            ApiVersionsResponse versionsResponse =
-                    ApiVersionsResponse.defaultApiVersionsResponse(ApiMessageType.ListenerType.BROKER);
-            registerRequestLatency.accept(header.apiKey(), startProcessTime);
+            ApiVersionsResponseData apiVersionsResponseData = new ApiVersionsResponseData()
+                .setApiKeys(ApiVersionsResponse.filterApis(RecordVersion.current(), ApiMessageType.ListenerType.BROKER,
+                    false, false));
+            ApiVersionsResponse versionsResponse = new ApiVersionsResponse(apiVersionsResponseData);
             sendKafkaResponse(ctx,
                     header,
                     request,
