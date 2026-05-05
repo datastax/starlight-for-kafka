@@ -516,8 +516,8 @@ public class KafkaRequestHandler extends KafkaCommandDecoder {
         } else {
             List<ApiVersion> versionList = new ArrayList<>();
             for (ApiKeys apiKey : ApiKeys.values()) {
-                if (apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE
-                    && !UNSUPPORTED_API_KEYS.contains(apiKey.id)) {
+                if (!UNSUPPORTED_API_KEYS.contains(apiKey.id)
+                    && apiKey.minRequiredInterBrokerMagic <= RecordBatch.CURRENT_MAGIC_VALUE) {
                     switch (apiKey) {
                         case LIST_OFFSETS:
                             // V0 is needed for librdkafka
