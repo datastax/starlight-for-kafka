@@ -99,6 +99,7 @@
     <wire-schema.version>6.4.0</wire-schema.version>
     <libthrift.version>0.23.0</libthrift.version>
     <bcprov-ext-jdk18on.version>1.78</bcprov-ext-jdk18on.version>
+    <httpcore5-h2.version>5.3.6</httpcore5-h2.version>
   </properties>
 
   <licenses>
@@ -238,28 +239,30 @@
         <artifactId>netty-resolver-dns</artifactId>
         <version>${netty.version}</version>
       </dependency>
-
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
         <groupId>io.netty</groupId>
         <artifactId>netty-codec-haproxy</artifactId>
         <version>${netty.version}</version>
       </dependency>
-
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
         <groupId>io.netty</groupId>
         <artifactId>netty-handler-proxy</artifactId>
         <version>${netty.version}</version>
       </dependency>
-
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
         <groupId>org.apache.thrift</groupId>
         <artifactId>libthrift</artifactId>
         <version>${libthrift.version}</version>
       </dependency>
-
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.httpcomponents.core5</groupId>
+        <artifactId>httpcore5-h2</artifactId>
+        <version>${httpcore5-h2.version}</version>
+      </dependency>
       <!-- Override transitive dependency version to fix vulnerability -->
       <dependency>
         <groupId>org.bouncycastle</groupId>
@@ -283,6 +286,12 @@
       <dependency>
         <groupId>org.glassfish.jersey.core</groupId>
         <artifactId>jersey-client</artifactId>
+        <version>${jersey-client.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to ensure compatibility with jersey-client -->
+      <dependency>
+        <groupId>org.glassfish.jersey.core</groupId>
+        <artifactId>jersey-common</artifactId>
         <version>${jersey-client.version}</version>
       </dependency>
 
