@@ -64,7 +64,7 @@
     <commons-compress.version>1.26.0</commons-compress.version>
     <netty.version>4.1.135.Final</netty.version>
     <jose4j.version>0.9.6</jose4j.version>
-    <vertex-web.version>4.5.24</vertex-web.version>
+    <vertex-web.version>4.5.27</vertex-web.version>
     <grpc.version>1.45.1</grpc.version>
     <commons-lang3.version>3.18.0</commons-lang3.version>
     <protobuf3.version>3.25.5</protobuf3.version>
@@ -94,10 +94,11 @@
     <kotlinx-serialization-core.version>1.5.0</kotlinx-serialization-core.version>
     <kotlin.version>1.8.10</kotlin.version>
     <org-json.version>20231013</org-json.version>
-    <jetty-server.version>12.0.33</jetty-server.version>
     <jersey-client.version>2.48</jersey-client.version>
     <zookeeper.version>3.9.5</zookeeper.version>
     <wire-schema.version>6.4.0</wire-schema.version>
+    <libthrift.version>0.23.0</libthrift.version>
+    <bcprov-ext-jdk18on.version>1.78</bcprov-ext-jdk18on.version>
   </properties>
 
   <licenses>
@@ -195,13 +196,6 @@
         </exclusions>
       </dependency>
 
-      <!-- Override transitive dependency version to fix vulnerability -->
-      <dependency>
-        <groupId>org.eclipse.jetty</groupId>
-        <artifactId>jetty-server</artifactId>
-        <version>${jetty-server.version}</version>
-      </dependency>
-
       <dependency>
         <groupId>io.grpc</groupId>
         <artifactId>grpc-all</artifactId>
@@ -250,6 +244,27 @@
         <groupId>io.netty</groupId>
         <artifactId>netty-codec-haproxy</artifactId>
         <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler-proxy</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.thrift</groupId>
+        <artifactId>libthrift</artifactId>
+        <version>${libthrift.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-ext-jdk18on</artifactId>
+        <version>${bcprov-ext-jdk18on.version}</version>
       </dependency>
 
       <dependency>
