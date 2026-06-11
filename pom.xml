@@ -96,7 +96,6 @@
     <org-json.version>20231013</org-json.version>
     <jersey-client.version>2.48</jersey-client.version>
     <zookeeper.version>3.9.5</zookeeper.version>
-    <wire-schema.version>6.4.0</wire-schema.version>
     <libthrift.version>0.23.0</libthrift.version>
     <bcprov-ext-jdk18on.version>1.78</bcprov-ext-jdk18on.version>
     <httpcore5-h2.version>5.3.6</httpcore5-h2.version>
@@ -397,18 +396,6 @@
         <groupId>com.squareup.okhttp3</groupId>
         <artifactId>logging-interceptor</artifactId>
         <version>${okhttp3.version}</version>
-      </dependency>
-      <!-- Override transitive dependency version to fix vulnerability -->
-      <dependency>
-        <groupId>com.squareup.wire</groupId>
-        <artifactId>wire-schema</artifactId>
-        <version>${wire-schema.version}</version>
-      </dependency>
-      <!-- Required by wire-schema 6.4.0 -->
-      <dependency>
-        <groupId>com.google.guava</groupId>
-        <artifactId>guava</artifactId>
-        <version>33.5.0-jre</version>
       </dependency>
       <dependency>
         <groupId>com.google.code.gson</groupId>
