@@ -486,6 +486,12 @@ public class DistributedClusterTest extends KopProtocolHandlerTestBase {
             log.info("Unload namespace, lookup will trigger another reload.");
             pulsarService1.getAdminClient().namespaces().unload(kopNamespace);
 
+            // Old producers have stale metadata/connections to the deleted topic.
+            // Recreate producers to force fresh metadata discovery and topic auto-creation.
+            log.info("Recreating producers after namespace unload.");
+            kProducer1.close();
+            kProducer1 = new KProducer(kafkaTopicName, false, kafkaBrokerPort, true);
+
             // 4. publish consume again
             log.info("Re Publish / Consume again.");
             kafkaPublishMessage(kProducer1, totalMsgs, messageStrPrefix);

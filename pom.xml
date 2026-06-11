@@ -52,7 +52,7 @@
     <mockito.version>4.11.0</mockito.version>
     <wiremock.version>3.0.0-beta-2</wiremock.version>
     <pulsar.group.id>org.apache.pulsar</pulsar.group.id>
-    <pulsar.version>3.1.2</pulsar.version>
+    <pulsar.version>3.1.3</pulsar.version>
     <slf4j.version>1.7.25</slf4j.version>
     <spotbugs-annotations.version>3.1.12</spotbugs-annotations.version>
     <apicurio.version>2.1.3.Final</apicurio.version>
@@ -62,9 +62,9 @@
     <okhttp3.version>4.9.3</okhttp3.version>
     <gson.version>2.8.9</gson.version>
     <commons-compress.version>1.26.0</commons-compress.version>
-    <netty.version>4.1.125.Final</netty.version>
+    <netty.version>4.1.135.Final</netty.version>
     <jose4j.version>0.9.6</jose4j.version>
-    <vertex-web.version>4.5.24</vertex-web.version>
+    <vertex-web.version>4.5.27</vertex-web.version>
     <grpc.version>1.45.1</grpc.version>
     <commons-lang3.version>3.18.0</commons-lang3.version>
     <protobuf3.version>3.25.5</protobuf3.version>
@@ -72,12 +72,12 @@
     <fusionauth-jwt.version>5.2.1</fusionauth-jwt.version>
     <snakeyaml.version>2.0</snakeyaml.version>
     <zstd-jni.version>1.5.2-4</zstd-jni.version>
-    <asynchttpclient.version>2.12.4</asynchttpclient.version>
+    <asynchttpclient.version>2.15.0</asynchttpclient.version>
     <aircompressor.version>2.0.3</aircompressor.version>
     <lz4-java.version>1.10.1</lz4-java.version>
     <commons-io.version>2.14.0</commons-io.version>
-    <bcpkix-jdk18on.version>1.79</bcpkix-jdk18on.version>
-    <bcprov-jdk18on.version>1.79</bcprov-jdk18on.version>
+    <bcpkix-jdk18on.version>1.84</bcpkix-jdk18on.version>
+    <bcprov-jdk18on.version>1.84</bcprov-jdk18on.version>
     <protobuf.version>3.25.5</protobuf.version>
     <!-- plugin dependencies -->
     <license-maven-plugin.version>3.0.rc1</license-maven-plugin.version>
@@ -94,6 +94,11 @@
     <kotlinx-serialization-core.version>1.5.0</kotlinx-serialization-core.version>
     <kotlin.version>1.8.10</kotlin.version>
     <org-json.version>20231013</org-json.version>
+    <jersey-client.version>2.48</jersey-client.version>
+    <zookeeper.version>3.9.5</zookeeper.version>
+    <libthrift.version>0.23.0</libthrift.version>
+    <bcprov-ext-jdk18on.version>1.78</bcprov-ext-jdk18on.version>
+    <httpcore5-h2.version>5.3.6</httpcore5-h2.version>
   </properties>
 
   <licenses>
@@ -227,6 +232,43 @@
         <version>${pulsar.version}</version>
       </dependency>
 
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-resolver-dns</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-haproxy</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler-proxy</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.thrift</groupId>
+        <artifactId>libthrift</artifactId>
+        <version>${libthrift.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.httpcomponents.core5</groupId>
+        <artifactId>httpcore5-h2</artifactId>
+        <version>${httpcore5-h2.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-ext-jdk18on</artifactId>
+        <version>${bcprov-ext-jdk18on.version}</version>
+      </dependency>
+
       <dependency>
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-common</artifactId>
@@ -237,6 +279,19 @@
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-admin-original</artifactId>
         <version>${pulsar.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.glassfish.jersey.core</groupId>
+        <artifactId>jersey-client</artifactId>
+        <version>${jersey-client.version}</version>
+      </dependency>
+      <!-- Override transitive dependency version to ensure compatibility with jersey-client -->
+      <dependency>
+        <groupId>org.glassfish.jersey.core</groupId>
+        <artifactId>jersey-common</artifactId>
+        <version>${jersey-client.version}</version>
       </dependency>
 
       <dependency>
@@ -256,6 +311,13 @@
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>testmocks</artifactId>
         <version>${pulsar.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.zookeeper</groupId>
+        <artifactId>zookeeper</artifactId>
+        <version>${zookeeper.version}</version>
       </dependency>
 
       <dependency>
