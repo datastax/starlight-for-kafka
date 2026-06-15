@@ -86,6 +86,18 @@
     <kotlinx-serialization-core.version>1.5.0</kotlinx-serialization-core.version>
     <kotlin.version>1.8.10</kotlin.version>
     <org-json.version>20231013</org-json.version>
+    <netty.version>4.1.135.Final</netty.version>
+    <zookeeper.version>3.9.5</zookeeper.version>
+    <opentelemetry-api.version>1.63.0</opentelemetry-api.version>
+    <libthrift.version>0.23.0</libthrift.version>
+    <vertx-web.version>4.5.28</vertx-web.version>
+    <jcommander.version>1.82</jcommander.version>
+    <commons-configuration2.version>2.15.0</commons-configuration2.version>
+    <httpcore5-h2.version>5.3.6</httpcore5-h2.version>
+    <aircompressor.version>2.0.3</aircompressor.version>
+    <async-http-client.version>2.15.0</async-http-client.version>
+    <bcpkix-jdk18on.version>1.84</bcpkix-jdk18on.version>
+    <bcprov-jdk18on.version>1.84</bcprov-jdk18on.version>
   </properties>
 
   <licenses>
@@ -200,6 +212,104 @@
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-admin-original</artifactId>
         <version>${pulsar.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.zookeeper</groupId>
+        <artifactId>zookeeper</artifactId>
+        <version>${zookeeper.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.commons</groupId>
+        <artifactId>commons-configuration2</artifactId>
+        <version>${commons-configuration2.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.thrift</groupId>
+        <artifactId>libthrift</artifactId>
+        <version>${libthrift.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-http</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-resolver-dns</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-handler-proxy</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.netty</groupId>
+        <artifactId>netty-codec-haproxy</artifactId>
+        <version>${netty.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.airlift</groupId>
+        <artifactId>aircompressor</artifactId>
+        <version>${aircompressor.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.asynchttpclient</groupId>
+        <artifactId>async-http-client</artifactId>
+        <version>${async-http-client.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcpkix-jdk18on</artifactId>
+        <version>${bcpkix-jdk18on.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.bouncycastle</groupId>
+        <artifactId>bcprov-jdk18on</artifactId>
+        <version>${bcprov-jdk18on.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>org.apache.httpcomponents.core5</groupId>
+        <artifactId>httpcore5-h2</artifactId>
+        <version>${httpcore5-h2.version}</version>
+      </dependency>
+
+      <!-- Override transitive dependency version to fix vulnerability -->
+      <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-api</artifactId>
+        <version>${opentelemetry-api.version}</version>
       </dependency>
 
       <dependency>
@@ -428,7 +538,6 @@
       <scope>provided</scope>
     </dependency>
 
-
     <dependency>
       <groupId>${pulsar.group.id}</groupId>
       <artifactId>testmocks</artifactId>
@@ -436,19 +545,11 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Override the transitive netty-codec-http@4.1.119.Final to resolve vulnerability -->
-    <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty-codec-http</artifactId>
-      <version>4.1.125.Final</version>
-      <scope>provided</scope>
-    </dependency>
-
     <!-- Override the transitive netty-codec-http2@4.1.108.Final to resolve vulnerability -->
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-codec-http2</artifactId>
-      <version>4.1.125.Final</version>
+      <version>${netty.version}</version>
       <scope>provided</scope>
     </dependency>
 
@@ -464,10 +565,9 @@
     <dependency>
       <groupId>io.vertx</groupId>
       <artifactId>vertx-web</artifactId>
-      <version>4.5.22</version>
+      <version>${vertx-web.version}</version>
       <scope>provided</scope>
     </dependency>
-
 
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -524,6 +624,14 @@
       <groupId>org.testng</groupId>
       <artifactId>testng</artifactId>
       <version>${testng.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Override transitive dependency version to fix vulnerability -->
+    <dependency>
+      <groupId>com.beust</groupId>
+      <artifactId>jcommander</artifactId>
+      <version>${jcommander.version}</version>
       <scope>test</scope>
     </dependency>
 
