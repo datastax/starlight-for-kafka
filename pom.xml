@@ -89,7 +89,6 @@
     <netty.version>4.1.135.Final</netty.version>
     <zookeeper.version>3.9.5</zookeeper.version>
     <opentelemetry-api.version>1.63.0</opentelemetry-api.version>
-    <jersey-client.version>2.46</jersey-client.version>
     <libthrift.version>0.23.0</libthrift.version>
     <vertx-web.version>4.5.28</vertx-web.version>
     <jcommander.version>1.82</jcommander.version>
@@ -213,13 +212,6 @@
         <groupId>${pulsar.group.id}</groupId>
         <artifactId>pulsar-client-admin-original</artifactId>
         <version>${pulsar.version}</version>
-      </dependency>
-
-      <!-- Override transitive dependency version to fix vulnerability -->
-      <dependency>
-        <groupId>org.glassfish.jersey.core</groupId>
-        <artifactId>jersey-client</artifactId>
-        <version>${jersey-client.version}</version>
       </dependency>
 
       <!-- Override transitive dependency version to fix vulnerability -->
