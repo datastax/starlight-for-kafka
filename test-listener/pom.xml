@@ -23,6 +23,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>test-listener</artifactId>
+    <name>StreamNative :: Pulsar Protocol Handler :: Test Listener</name>
 
     <dependencies>
         <dependency>
